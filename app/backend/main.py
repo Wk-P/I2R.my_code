@@ -434,8 +434,9 @@ def _tail_log_progress(path_str: str) -> dict:
     }
 
 
-def _ps_snapshot() -> list[dict]:
-    """Read-only process table lookup — never touches the processes themselves."""
+def _ps_all() -> list[dict]:
+    """Read-only process table lookup — never touches the processes themselves.
+    Unfiltered; callers narrow down for their own purpose."""
     out = subprocess.run(
         ["ps", "-eo", "pid,psr,etimes,pcpu,cmd", "--no-headers"],
         capture_output=True, text=True, timeout=5,
@@ -446,10 +447,116 @@ def _ps_snapshot() -> list[dict]:
         if len(parts) < 5:
             continue
         pid, psr, etimes, pcpu, cmd = parts
-        if re.search(r"(?:^|[\s/])\w+/run_all(_bc)?\.py", cmd) or "self_imitation_finetune_v2.py" in cmd:
-            procs.append({"pid": int(pid), "psr": int(psr), "etimes": int(etimes),
-                          "pcpu": float(pcpu), "cmd": cmd})
+        procs.append({"pid": int(pid), "psr": int(psr), "etimes": int(etimes),
+                       "pcpu": float(pcpu), "cmd": cmd})
     return procs
+
+
+def _ps_snapshot() -> list[dict]:
+    """Narrow the full process table down to the canonical training-pipeline
+    shape (scenarios/<scenario>/<algo>/run_all.py or its self-imitation
+    sibling) that /api/progress's one-process-per-scenario model expects."""
+    return [
+        p for p in _ps_all()
+        if re.search(r"(?:^|[\s/])\w+/run_all(_bc)?\.py", p["cmd"]) or "self_imitation_finetune_v2.py" in p["cmd"]
+    ]
+
+
+PROJECT_VENV_PYTHON_MARKER = str(PROJECT_ROOT / ".venv" / "bin")
+
+
+def _proc_cwd(pid: int) -> str | None:
+    try:
+        return str(Path(f"/proc/{pid}/cwd").resolve())
+    except OSError:
+        return None
+
+
+# Human-readable English titles for the project's own long-lived infra
+# scripts/modules, keyed by the "-m <module>" or "<script>.py" name
+# _project_related_procs() extracts. Anything not listed here (any ad-hoc
+# exploratory script) falls back to a title-cased version of its filename —
+# see _friendly_label() — so this dict only needs entries worth a nicer
+# name than that fallback would produce on its own.
+KNOWN_SCRIPT_LABELS = {
+    "app.backend.monitor": "Backend Monitor",
+    "uvicorn": "Dashboard Server",
+    "run_full_5M_campaign.py": "Full 5M-Step Campaign",
+}
+
+
+def _friendly_label(scenario: str | None, algo: str | None, script_name: str | None, script_args: list[str]) -> str:
+    """One human-readable English label per process, for the frontend's
+    "Running now" list — never the raw cmd line, which is unreadable at a
+    glance (venv path, flags, etc.) and was the complaint that prompted
+    this. Priority: recognized training pipeline > a name from
+    KNOWN_SCRIPT_LABELS > a title-cased guess from the script's own
+    filename, with its leading args appended for context (e.g. which algo
+    a generic sweep script was launched with)."""
+    if scenario and algo:
+        return f"Training: {scenario}/{algo}"
+    if not script_name:
+        return "Unrecognized process"
+    if script_name in KNOWN_SCRIPT_LABELS:
+        return KNOWN_SCRIPT_LABELS[script_name]  # args are internal (e.g. uvicorn's own flags), not worth surfacing
+    stem = re.sub(r"\.py$", "", script_name)
+    base = stem.replace("_", " ").replace("-", " ").title()
+    if script_args:
+        return f"{base} ({' '.join(script_args)})"
+    return base
+
+
+def _project_related_procs() -> list[dict]:
+    """Broader than _ps_snapshot(): every live process tied to this project,
+    not just the canonical run_all.py training pipeline. Two independent
+    signals, either one qualifies:
+      - the process was launched with THIS project's venv interpreter
+        (.venv/bin/python...) — catches ad-hoc/one-off scripts too, even
+        ones living outside the repo (e.g. a scratch script under /tmp that
+        imports scenarios/shared via sys.path), since what matters is which
+        Python env it's running under, not where the .py file sits;
+      - its cwd resolves under PROJECT_ROOT — catches a system-python
+        invocation run from within the repo.
+    Best-effort process/log introspection only; this never touches the
+    processes it finds (see module docstring)."""
+    out = []
+    for p in _ps_all():
+        if p["cmd"].startswith("ps ") or " ps -eo" in p["cmd"]:
+            continue  # don't report this endpoint's own `ps` subprocess
+        if not re.search(r"(?:^|/)python[\d.]*(?:\s|$)", p["cmd"]):
+            continue  # cwd can match for a plain shell/editor helper too; require an actual python invocation
+        if "multiprocessing" in p["cmd"] or "resource_tracker" in p["cmd"]:
+            continue  # uvicorn --reload's own internal worker/tracker helpers, not a project script
+        cwd = None
+        related = PROJECT_VENV_PYTHON_MARKER in p["cmd"]
+        if not related:
+            cwd = _proc_cwd(p["pid"])
+            related = bool(cwd and cwd.startswith(str(PROJECT_ROOT)))
+        if not related:
+            continue
+        scenario, algo = _match_scenario_algo(p["cmd"], p["pid"])
+        # cmd's last token(s) after the interpreter path make a readable
+        # label for ad-hoc scripts that don't match the run_all.py shape
+        # (_match_scenario_algo returns (None, None) for those) — covers
+        # both `python foo.py args...` and `python -m pkg.module args...`.
+        tokens = p["cmd"].split()
+        script_name, script_args = None, []
+        for i, tok in enumerate(tokens):
+            if tok.endswith(".py"):
+                script_name, script_args = Path(tok).name, tokens[i + 1:i + 3]
+                break
+            if tok == "-m" and i + 1 < len(tokens):
+                script_name, script_args = tokens[i + 1], tokens[i + 2:i + 4]
+                break
+        script_label = " ".join([script_name] + script_args) if script_name else None
+        out.append({
+            "pid": p["pid"], "core": p["psr"], "elapsed_seconds": p["etimes"], "cpu_percent": p["pcpu"],
+            "cmd": p["cmd"], "cwd": cwd if cwd is not None else _proc_cwd(p["pid"]),
+            "scenario": scenario, "algo": algo, "script": script_label,
+            "label": _friendly_label(scenario, algo, script_name, script_args),
+        })
+    out.sort(key=lambda r: -r["elapsed_seconds"])
+    return out
 
 
 def _match_scenario_algo(cmd: str, pid: int | None = None):
@@ -548,6 +655,51 @@ def get_progress():
     return result
 
 
+@app.get("/api/system")
+def get_system():
+    """Live, generic "what's actually running right now" view — independent
+    of /api/progress's one-process-per-scenario assumption and /api/batches'
+    scripts/logs/ naming convention, so it also picks up ad-hoc/exploratory
+    runs (a hyperparameter sweep, a one-off timing probe, anything launched
+    by hand) that neither of those endpoints know how to parse. A process
+    counts as "related" if it runs under this project's venv interpreter or
+    its cwd is inside the repo — see _project_related_procs()."""
+    procs = _project_related_procs()
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except OSError:
+        load1 = load5 = load15 = None
+    return {
+        "cpu_count": os.cpu_count(),
+        "load_avg": {"1m": load1, "5m": load5, "15m": load15},
+        "processes": procs,
+    }
+
+
+def _live_exp_ids(procs: list[dict]) -> set[str]:
+    """Returns the exp_id of every currently-live training process, resolved
+    from each process's own stdout log filename (which every campaign
+    launcher names "{scenario}_{algo}_{steps}_seed{seed}_{exp_id}.log" --
+    see scripts/run_*_campaign.py's launch()). Matching on exp_id (rather
+    than just (scenario, algo)) is required once two campaigns can have a
+    live run for the same (scenario, algo) pair at once -- e.g. a killed
+    batch's still-"queued"/"running"-looking entries must not borrow
+    liveness from an unrelated, later campaign's process for that same
+    scenario/algo (see the lt_eq_gt_10M_extension incident where a stale
+    ppo_opt entry showed "running" only because the NEW lt_1M_bestofN_retry
+    campaign happened to have its own, unrelated ppo_opt process live).
+    """
+    exp_ids = set()
+    for p in procs:
+        log_path = _proc_stdout_log_path(p["pid"])
+        if not log_path:
+            continue
+        m = BATCH_LOG_DIR_RE.match(Path(log_path).name)
+        if m:
+            exp_ids.add(m["exp_id"])
+    return exp_ids
+
+
 BATCH_LOG_DIR_RE = re.compile(
     r"^(?P<scenario>eq|gt|lt)_(?P<algo>\w+)_(?P<steps>\d+)_seed(?P<seed>\d+)_(?P<exp_id>[0-9a-f]+)\.log$"
 )
@@ -555,20 +707,45 @@ BATCH_LOG_DIR_RE = re.compile(
 
 @app.get("/api/batches")
 def list_batches():
-    """Auto-discovers every ad-hoc batch under scripts/logs/ so the frontend
-    doesn't need a hardcoded, ever-growing list of batch names — any
-    subdirectory containing at least one log file matching
-    BATCH_LOG_DIR_RE counts as a batch. Sorted by most-recently-modified log
-    file first (newest/most relevant batch on top)."""
+    """Auto-discovers every ad-hoc batch under scripts/logs/ that is STILL
+    LIVE, so the frontend doesn't need a hardcoded, ever-growing list of
+    batch names — any subdirectory containing at least one log file matching
+    BATCH_LOG_DIR_RE counts as a batch, PROVIDED at least one of its
+    (scenario, algo) pairs currently has a matching run_all.py process alive
+    (same live-process check get_batch_progress uses for each run's
+    "running" status). A batch that finished normally (all runs done) or was
+    killed/abandoned partway (no runs done, nothing left running either) both
+    end up with zero live rows, so both disappear from this list the same
+    way — no separate "mark it finished" bookkeeping needed, and a batch
+    that gets relaunched later reappears automatically the moment its first
+    process starts. Historical batches are still fully queryable via
+    /api/batch_progress/{batch_name} directly; this list only decides what
+    the frontend's "Live Training Progress" section shows right now.
+    Sorted by most-recently-modified log file first."""
     logs_root = PROJECT_ROOT / "scripts" / "logs"
     if not logs_root.is_dir():
         return {"batches": []}
+    live_exp_ids = _live_exp_ids(_ps_snapshot())
     batches = []
     for d in logs_root.iterdir():
         if not d.is_dir():
             continue
+        if (d / ".cancelled").is_file():
+            # A batch is marked cancelled by dropping a .cancelled file in
+            # its log dir (see scripts/logs/gt_full_5M_rerun/.cancelled) --
+            # e.g. after an oversubscription incident where the run was
+            # aborted and its partial results explicitly discarded. Hidden
+            # from the frontend entirely rather than shown as "stale" so a
+            # cancelled batch never gets mistaken for real data.
+            continue
         log_files = [f for f in d.glob("*.log") if BATCH_LOG_DIR_RE.match(f.name)]
         if not log_files:
+            continue
+        still_live = any(
+            m["exp_id"] in live_exp_ids
+            for m in (BATCH_LOG_DIR_RE.match(f.name) for f in log_files)
+        )
+        if not still_live:
             continue
         latest_mtime = max(f.stat().st_mtime for f in log_files)
         batches.append({"batch_name": d.name, "last_updated": latest_mtime, "run_count": len(log_files)})
@@ -606,7 +783,7 @@ def get_batch_progress(batch_name: str):
     elapsed_seconds = (time.time() - batch_started_at) if batch_started_at else None
 
     procs = _ps_snapshot()
-    live_scenario_algo = {_match_scenario_algo(p["cmd"], p["pid"]) for p in procs}
+    live_exp_ids = _live_exp_ids(procs)
     results_root = _results_root()
 
     runs = []
@@ -618,7 +795,7 @@ def get_batch_progress(batch_name: str):
         run_dir = results_root / scenario / algo / exp_id
         results_path = run_dir / "results.json"
         done = results_path.is_file()
-        running = (not done) and (scenario, algo) in live_scenario_algo
+        running = (not done) and (exp_id in live_exp_ids)
         run = {
             "scenario": scenario, "algo": algo, "seed": int(seed), "exp_id": exp_id,
             "status": "done" if done else ("running" if running else "queued"),
@@ -641,11 +818,56 @@ def get_batch_progress(batch_name: str):
                 pass
         runs.append(run)
 
+    # Dedup to one entry per (scenario, algo, seed): a slot can have more
+    # than one underlying run when a crashed/interrupted attempt was retried
+    # under a fresh exp_id (each launch mints its own — see
+    # scripts/run_full_5M_campaign.py's new_exp_id() call), leaving the dead
+    # attempt's log behind. Rank done > running > queued so a completed
+    # retry always wins over a stale dead entry, and drop the losers
+    # entirely (not just deprioritize) so the frontend never has to
+    # reimplement this same dedup logic or accidentally render a stale row.
+    STATUS_RANK = {"done": 0, "running": 1, "queued": 2}
+    best_by_slot: dict[tuple[str, str, int], dict] = {}
+    for r in runs:
+        slot = (r["scenario"], r["algo"], r["seed"])
+        existing = best_by_slot.get(slot)
+        if existing is None or STATUS_RANK[r["status"]] < STATUS_RANK[existing["status"]]:
+            best_by_slot[slot] = r
+    runs = list(best_by_slot.values())
+
     by_scenario: dict[str, dict] = {}
     for r in runs:
         sc = by_scenario.setdefault(r["scenario"], {"runs": [], "done": 0, "running": 0, "queued": 0})
         sc["runs"].append(r)
         sc[r["status"]] += 1
+
+    # Seed aggregation: mean±std of ar_mean/success_rate across each
+    # (scenario, algo)'s DONE seeds, so the frontend can show one summary
+    # row per algo instead of one row per seed once a batch is far enough
+    # along to be meaningful. n < total seed count for that algo means the
+    # aggregate is partial (still-running seeds not yet included) — the
+    # frontend should label it as such, not present it as final.
+    import statistics
+    aggregates: dict[str, list[dict]] = {}
+    by_scenario_algo: dict[tuple[str, str], list[dict]] = {}
+    for r in runs:
+        if r["status"] == "done" and r.get("ar_mean") is not None:
+            by_scenario_algo.setdefault((r["scenario"], r["algo"]), []).append(r)
+    for (scenario, algo), done_runs in by_scenario_algo.items():
+        ar_vals = [r["ar_mean"] for r in done_runs]
+        succ_vals = [r["success_rate"] for r in done_runs if r.get("success_rate") is not None]
+        total_seeds_for_slot = sum(
+            1 for r in runs if r["scenario"] == scenario and r["algo"] == algo
+        )
+        aggregates.setdefault(scenario, []).append({
+            "algo": algo,
+            "n_done": len(done_runs),
+            "n_total": total_seeds_for_slot,
+            "ar_mean": round(statistics.fmean(ar_vals), 6) if ar_vals else None,
+            "ar_std": round(statistics.pstdev(ar_vals), 6) if len(ar_vals) > 1 else 0.0,
+            "success_rate_mean": round(statistics.fmean(succ_vals), 6) if succ_vals else None,
+            "success_rate_std": round(statistics.pstdev(succ_vals), 6) if len(succ_vals) > 1 else 0.0,
+        })
 
     total_done = sum(1 for r in runs if r["status"] == "done")
     return {
@@ -655,6 +877,7 @@ def get_batch_progress(batch_name: str):
         "overall_pct": round(100.0 * total_done / len(runs), 1) if runs else 0.0,
         "elapsed_seconds": round(elapsed_seconds, 1) if elapsed_seconds is not None else None,
         "by_scenario": by_scenario,
+        "aggregates": aggregates,
     }
 
 

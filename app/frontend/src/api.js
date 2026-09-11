@@ -9,6 +9,11 @@ export async function getProgress() {
   return res.json();
 }
 
+export async function getSystem() {
+  const res = await fetch("/api/system");
+  return res.json();
+}
+
 export async function getBatchProgress(batchName) {
   const res = await fetch(`/api/batch_progress/${encodeURIComponent(batchName)}`);
   if (!res.ok) return null;

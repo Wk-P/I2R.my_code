@@ -59,14 +59,23 @@ TORCH_NUM_THREADS = 10       # shared host: keep total concurrent demand ~30 cor
 PROGRESS_LOG_EVERY_STEPS = 200_000
 
 # ── PPO hyperparameters ───────────────────────────────────────────────────────
-PPO_LR          = 3e-4
-PPO_N_STEPS     = 512    # collect multiple episodes per rollout to amortise SB3 overhead
-PPO_BATCH_SIZE  = 256
-PPO_N_EPOCHS    = 10
+# 2026-09-07: replaced with the config found by full_hparam_sweep.py's
+# hyperparameter search + net-depth probe (see paper_contents/) and
+# confirmed across 200k/1M/5M budgets and all three scenarios (lt/eq/gt),
+# including a periodic-checkpoint convergence check at 5M (plateaus by
+# ~500k-1M steps, then holds flat — not mid-training like dqn/ddqn was).
+# ent_coef was previously unset here (defaulting to SB3's 0.0) despite eq's
+# ppo_opt having PPO_ENT_COEF=0.005 all along — that inconsistency is why
+# ent_coef is now an explicit, uniform value across all three scenarios.
+PPO_LR          = 1e-4
+PPO_N_STEPS     = 1024   # collect multiple episodes per rollout to amortise SB3 overhead
+PPO_BATCH_SIZE  = 64
+PPO_N_EPOCHS    = 20
 PPO_GAMMA       = 0.999  # reward is dense but still benefits from long-horizon credit assignment
 PPO_GAE_LAMBDA  = 0.95
-PPO_CLIP_RANGE  = 0.2
-PPO_NET_ARCH    = [256, 256]
+PPO_CLIP_RANGE  = 0.3
+PPO_ENT_COEF    = 0.001
+PPO_NET_ARCH    = [256, 256, 256]
 
 # ── Behavior-cloning pretraining (ILP expert warm-start) ──────────────────────
 BC_EPOCHS     = 20
@@ -76,6 +85,12 @@ BC_LR         = 1e-3
 # ── Evaluation ────────────────────────────────────────────────────────────────
 EVAL_EPS  = len(TEST_SCENARIOS)
 SMOOTH_W  = 1000
+
+# 2026-09-11: added for evaluation-protocol parity with ppo_mask/ppo_lagrangian,
+# which already re-roll a stochastic policy up to EVAL_BEST_OF_N times per test
+# scenario and keep the best attempt. Requires run_all.py's eval call to use
+# deterministic=False (otherwise every retry reproduces the same trajectory).
+EVAL_BEST_OF_N = 32
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir

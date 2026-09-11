@@ -23,30 +23,45 @@ PROBLEM_TOTAL_STEPS: dict[str, int] = {
 # IMPORTANT: steps must stay uniform ACROSS ALGORITHMS WITHIN one scenario --
 # a controlled cross-algorithm comparison table is meaningless if some
 # algorithms in it got more training budget than others (you can no longer
-# tell whether a gap is the algorithm or the step count). lt is 5M for every
-# algorithm listed below AND for ppo/ppo_opt/dqn/ddqn via explicit
-# `--total-timesteps 5000000` in scripts/lt_other_algos_5seed.sh -- this dict
-# only shows ppo_mask/ppo_lagrangian because those two are launched through
-# run_all.py's own default (no CLI override), not because the other four run
-# at a different budget.
+# tell whether a gap is the algorithm or the step count).
 #
-# 2026-09-04: gt/dqn and gt/ddqn's eq_gt_migration_5seed batch showed they
-# hadn't converged at 2M (Episode AR still trending up, conflict violation
-# rate still trending down at the cutoff), unlike gt/ppo and
-# gt/ppo_lagrangian which plateau by ~500k. Per the uniform-budget rule
-# above, the fix is to move ALL of gt's algorithms to 5M together, not just
-# the two that individually looked unconverged -- mirrors how lt did it.
-# eq is left at 2M: all five of its algorithms are confirmed converged
-# there, so there's no unconverged outlier forcing eq's budget up.
+# 2026-09-05: moved to fully uniform 5M across ALL THREE scenarios (lt/eq/gt)
+# and all six algorithms, superseding the earlier lt-only-then-gt-only
+# per-scenario rollout. gt/dqn and gt/ddqn were confirmed not converged at
+# 2M (Episode AR still trending up, conflict violation rate still trending
+# down at the cutoff); rather than keep chasing per-scenario exceptions
+# (eq was "confirmed converged at 2M" right up until it needed rechecking
+# too), the whole three-scenario x six-algorithm campaign now runs on one
+# shared 5M budget so every cell in the final comparison table came from
+# the same steps count, full stop -- no per-scenario judgment calls left
+# to get wrong later.
+#
+# 2026-09-07 (a): dqn/ddqn briefly carved OUT of the uniform 5M bucket to
+# 15M -- a convergence probe run with a NEW candidate hyperparameter set
+# (net_arch=[64,64], larger replay buffers, from a since-rejected
+# full_hparam_sweep.py search) showed that config nowhere near converged at
+# 5M (success_rate ~0.05-0.16, still climbing to a ~0.35-0.50 plateau that
+# only stabilizes from ~10M steps onward).
+#
+# 2026-09-07 (b): that 15M number turned out to be measuring the WRONG
+# config -- the candidate hyperparameters were separately rejected (a 5M
+# head-to-head across lt/eq/gt showed the OLD default config winning or
+# tying in every case; see paper_contents/), so dqn/ddqn's kept
+# hyperparameters were never actually the ones the 15M figure was based on.
+# Rerunning the SAME convergence probe with the actual kept defaults
+# (net_arch=[128,128], buffer_size=100_000, from scenarios/*/dqn|ddqn/
+# config.py) shows a much faster climb that's already within a noisy-but-
+# flat band by 5M (dqn: 0.40-0.52 across 5M-7M; ddqn: 0.24-0.38 across
+# 5M-7M -- residual spread here reads as off-policy evaluation noise, not a
+# still-rising trend, unlike the rejected candidate's clear multi-million-
+# step climb). Reverted to the uniform 5M budget on that basis -- every
+# cell in the six-algorithm comparison table is back to the same steps
+# count, and this time the convergence check was actually run against the
+# hyperparameters being kept.
 SCENARIO_TOTAL_STEPS: dict[tuple[str, str], int] = {
-    ("lt", "ppo_mask"): 5_000_000,
-    ("lt", "ppo_lagrangian"): 5_000_000,
-    ("gt", "ppo_mask"): 5_000_000,
-    ("gt", "ppo_lagrangian"): 5_000_000,
-    ("gt", "ppo"): 5_000_000,
-    ("gt", "ppo_opt"): 5_000_000,
-    ("gt", "dqn"): 5_000_000,
-    ("gt", "ddqn"): 5_000_000,
+    (scenario, algo): 5_000_000
+    for scenario in ("lt", "eq", "gt")
+    for algo in ("ppo_mask", "ppo_lagrangian", "ppo", "ppo_opt", "dqn", "ddqn")
 }
 
 

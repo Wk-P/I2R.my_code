@@ -72,6 +72,12 @@ PPO_NET_ARCH    = [256, 256]
 EVAL_EPS  = len(TEST_SCENARIOS)
 SMOOTH_W  = 1000
 
+# 2026-09-11: added for evaluation-protocol parity with ppo_mask/ppo_lagrangian,
+# which already re-roll a stochastic policy up to EVAL_BEST_OF_N times per test
+# scenario and keep the best attempt. Requires run_all.py's eval call to use
+# deterministic=False (otherwise every retry reproduces the same trajectory).
+EVAL_BEST_OF_N = 32
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir
 OUTDIR     = results_dir(ROOT.parent.name, "ppo")

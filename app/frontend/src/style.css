@@ -247,6 +247,25 @@ a.run-id { text-decoration: none; }
 .batch-cell-status--running { background: #78350f; color: #fbbf24; }
 .batch-cell-status--queued { background: var(--bg-elevated); color: var(--text-faint); }
 .batch-cell-metric { color: var(--text-dim); margin-right: 8px; font-family: var(--font-mono); }
+.batch-partial-tag { color: #fbbf24; font-size: 0.7rem; margin-left: 4px; }
+.batch-seed-dots { display: flex; gap: 4px; }
+
+/* SystemPanel.vue — generic live process list, independent of the
+   run_all.py/batch-log conventions the two panels above assume. */
+.system-panel { padding: var(--space-4); margin-bottom: var(--space-4); }
+.system-panel .title { font-weight: 700; font-size: 0.95rem; margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2); }
+.sys-load { font-family: var(--font-mono); font-weight: 600; font-size: 0.78rem; color: var(--text-dim); }
+.sys-load--mid { color: #fbbf24; }
+.sys-load--high { color: #f87171; }
+.system-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.system-table th {
+  text-align: left; padding: 4px 8px; color: var(--text-faint); font-weight: 600;
+  border-bottom: 1px solid var(--border-soft); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.system-table td { padding: 4px 8px; border-bottom: 1px solid var(--border-soft); }
+.system-label { font-family: var(--font-mono); }
+.system-dim { color: var(--text-dim); font-family: var(--font-mono); }
+.system-empty { color: var(--text-faint); font-size: 0.82rem; }
 .log-tail {
   background: var(--bg); border-radius: var(--radius-md); margin-top: var(--space-3);
   border: 1px solid var(--border-soft); overflow: hidden;

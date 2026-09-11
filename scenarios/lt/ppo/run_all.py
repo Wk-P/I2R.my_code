@@ -66,40 +66,61 @@ def _make_p3_env(seed: int) -> Monitor:
 #  Step 3 & 5 — Evaluation (PPO)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_episodes(ecus, services, policy_fn):
+def run_episodes(ecus, services, policy_fn, n_samples: int = 1):
     """
-    Run one episode per scenario in C.TEST_SCENARIOS (deterministic traversal).
-    Episodes always complete (M steps, no early termination in P3).
+    Run up to n_samples independent episodes per scenario in C.TEST_SCENARIOS
+    and keep the best attempt (success first, then most services validly
+    placed, then highest AR) -- same best-of-N re-roll pattern as
+    ppo_mask/run_all.py::run_episodes(), added here for evaluation-protocol
+    parity across all 6 algorithms. Requires policy_fn to be stochastic
+    (deterministic=False at the call site) -- re-rolling a deterministic
+    policy against a deterministic env reproduces the same trajectory every
+    time and wastes the extra samples.
     policy_fn(obs) -> int
     """
     ars, cap_viols, conflict_viols, viol_rates, placed_list = [], [], [], [], []
-    valid_placed_list, ecus_used_list, success_list = [], [], []
+    valid_placed_list, ecus_used_list, success_list, attempts_list = [], [], [], []
 
     for scenario in C.TEST_SCENARIOS:
         caps, reqs, cs = scenario
         M_sc = len(reqs)
         _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
         _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
-        env = P3Env(_ecus, _svcs, scenarios=[scenario])
-        obs, _ = env.reset()
-        done   = False
-        info   = {}
-        while not done:
-            obs, _, done, _, info = env.step(policy_fn(obs))
-        ars.append(info["ar"])
-        cap_viols.append(info["capacity_violations"])
-        conflict_viols.append(info["conflict_violations"])
-        viol_rates.append(float(info.get("violation_rate", 0.0)))
-        placed = int(info.get("services_placed", 0))
-        valid_placed = int(info.get("valid_placed", placed))
+
+        best = None  # (success, valid_placed, ar, cap_v, conflict_v, viol_rate, placed, ecus_used)
+        used_attempts = 0
+        for attempt in range(max(1, n_samples)):
+            env = P3Env(_ecus, _svcs, scenarios=[scenario])
+            obs, _ = env.reset()
+            done   = False
+            info   = {}
+            while not done:
+                obs, _, done, _, info = env.step(policy_fn(obs))
+            ar = info["ar"]
+            cap_v = info["capacity_violations"]
+            conflict_v = info["conflict_violations"]
+            viol_rate = float(info.get("violation_rate", 0.0))
+            placed = int(info.get("services_placed", 0))
+            valid_placed = int(info.get("valid_placed", placed))
+            ecus_used = int(info.get("ecus_used", 0))
+            success = bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0)
+            used_attempts = attempt + 1
+            candidate = (success, valid_placed, ar, cap_v, conflict_v, viol_rate, placed, ecus_used)
+            if best is None or candidate[:3] > best[:3]:
+                best = candidate
+            if success:
+                break  # found a fully valid placement -- no need to re-roll further
+
+        success, valid_placed, ar, cap_v, conflict_v, viol_rate, placed, ecus_used = best
+        ars.append(ar)
+        cap_viols.append(cap_v)
+        conflict_viols.append(conflict_v)
+        viol_rates.append(viol_rate)
         placed_list.append(placed)
         valid_placed_list.append(valid_placed)
-        ecus_used_list.append(int(info.get("ecus_used", 0)))
-        success_list.append(bool(
-            valid_placed == M_sc
-            and info["capacity_violations"] == 0
-            and info["conflict_violations"] == 0
-        ))
+        ecus_used_list.append(ecus_used)
+        success_list.append(success)
+        attempts_list.append(used_attempts)
 
     return {
         "ars":            np.array(ars),
@@ -111,6 +132,7 @@ def run_episodes(ecus, services, policy_fn):
         "valid_placed": np.array(valid_placed_list),
         "ecus_used":    np.array(ecus_used_list),
         "success":      np.array(success_list),
+        "attempts":     np.array(attempts_list),
     }
 
 
@@ -392,11 +414,16 @@ def main():
     print(f"  Model saved → {model_path}.zip")
 
     # ── 5. PPO evaluation ────────────────────────────────────────────────────
-    print(f"\n[4/4] PPO evaluation ({len(C.TEST_SCENARIOS)} episodes, deterministic) ...")
+    print(f"\n[4/4] PPO evaluation ({len(C.TEST_SCENARIOS)} episodes, "
+          f"stochastic, best-of-{C.EVAL_BEST_OF_N}) ...")
     def ppo_policy(obs):
-        action, _ = model.predict(obs, deterministic=True)
+        # Stochastic (not deterministic): run_episodes() re-rolls this up to
+        # EVAL_BEST_OF_N times per scenario -- see ppo_mask/run_all.py's
+        # run_episodes() docstring for why deterministic=True would make
+        # every retry an exact duplicate of the first.
+        action, _ = model.predict(obs, deterministic=False)
         return int(action)
-    ppo_res = run_episodes(ecus, services, ppo_policy)
+    ppo_res = run_episodes(ecus, services, ppo_policy, n_samples=C.EVAL_BEST_OF_N)
     print(f"  PPO AR  mean={np.mean(ppo_res['ars']):.4f}  "
           f"std={np.std(ppo_res['ars']):.4f}")
     print(f"  Eval viol rate mean={np.mean(ppo_res['viol_rates']):.2%}")

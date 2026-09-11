@@ -92,7 +92,20 @@ def run_episodes(ecus, services, policy_fn):
         conflict_v = int(info.get("conflict_violations", 0))
         cap_viol_list.append(cap_v)
         conflict_viol_list.append(conflict_v)
-        success_list.append(bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0))
+        # v2.8.1: success == "did this episode finish with all M_sc services
+        # placed" only -- NOT "cap_v==0 and conflict_v==0" as well. For P6
+        # (best-fit repair), cap_v/conflict_v count REPAIR TRIGGERS, not
+        # unrepaired violations left in the final delivered placement -- a
+        # repair, by construction, always yields a constraint-compliant
+        # placement (or the episode terminates early with valid_placed <
+        # M_sc if no repair is possible). Requiring zero repairs on top of
+        # full completion made "success" mean "the raw policy never once
+        # picked wrong", a much stricter bar than every other algorithm's
+        # success definition (which only checks the delivered result, not
+        # the process) -- that mismatch made P6 look like it had ~0% success
+        # in eq/gt (near-100% repair-trigger rate there) even though its
+        # final AR was competitive with the masked/Lagrangian methods.
+        success_list.append(bool(valid_placed == M_sc))
 
     return {
         "ars":              np.array(ars),
@@ -134,11 +147,11 @@ class P6Callback(BaseCallback):
                 self.episode_placed.append(int(info.get("services_placed", 0)))
                 self.episode_cap_violations.append(int(info.get("cap_violations", 0)))
                 self.episode_conflict_violations.append(int(info.get("conflict_violations", 0)))
-                self.episode_success.append(bool(
-                    int(info.get("valid_placed", 0)) == C.M
-                    and int(info.get("cap_violations", 0)) == 0
-                    and int(info.get("conflict_violations", 0)) == 0
-                ))
+                # v2.8.1: matches run_episodes' eval-time success formula --
+                # see that function's comment for why cap_v/conflict_v
+                # (repair-trigger counts, not unrepaired final violations)
+                # don't belong in this check.
+                self.episode_success.append(bool(int(info.get("valid_placed", 0)) == C.M))
                 self.timesteps_at_ep.append(self.num_timesteps)
 
         if self.num_timesteps >= self._next_progress_step:
@@ -179,6 +192,7 @@ def train_ppo(ecus, services, device: str) -> tuple[PPO, P6Callback]:
         gamma         = C.PPO_GAMMA,
         gae_lambda    = C.PPO_GAE_LAMBDA,
         clip_range    = C.PPO_CLIP_RANGE,
+        ent_coef      = C.PPO_ENT_COEF,
         policy_kwargs = dict(net_arch=C.PPO_NET_ARCH),
         device        = device,
         verbose       = 0,
@@ -233,14 +247,14 @@ def plot_training_curve(cb: P6Callback, ilp_ar: float, outdir: Path, scenario_na
     ax1.set_title(f"Training Metrics — {scenario_name}  ({C.TOTAL_STEPS:,} steps)", fontsize=12)
     ax1.grid(alpha=0.3)
 
-    sm_r, off_r = moving_avg(cb.episode_repair_rates, C.SMOOTH_W)
-    ax2.plot(ts, cb.episode_repair_rates, color="darkorange", alpha=0.15, linewidth=0.6)
-    ax2.plot(ts[off_r:off_r+len(sm_r)], sm_r, color="darkorange", linewidth=2,
-             label="Repair rate (smoothed)")
+    # v2.8.1: repair rate curve dropped from this panel per user request --
+    # episode_repair_rates is still recorded (CSV + episode_repair_rates
+    # list) for anyone who wants it, just not plotted here anymore, so this
+    # panel reads as a plain success-rate curve like every other algorithm's.
     sm_s, off_s = moving_avg([float(s) for s in cb.episode_success], C.SMOOTH_W)
     ax2.plot(ts[off_s:off_s+len(sm_s)], sm_s, color="mediumseagreen", linewidth=2,
              label=f"episode success rate (smoothed w={C.SMOOTH_W})")
-    ax2.set_ylabel("Rate", fontsize=11)
+    ax2.set_ylabel("Success Rate", fontsize=11)
     ax2.set_ylim(-0.05, 1.05)
     ax2.legend(fontsize=9)
     ax2.grid(alpha=0.3)

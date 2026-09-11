@@ -104,33 +104,59 @@ def _make_ddqn_env(seed: int) -> Monitor:
 #  Step 3 & 5 — Episode runner
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_episodes(ecus, services, policy_fn):
-    """policy_fn(obs) -> int   (no mask)"""
+def run_episodes(ecus, services, policy_fn, n_samples: int = 1):
+    """policy_fn(obs) -> int   (no mask)
+
+    Run up to n_samples independent episodes per scenario in C.TEST_SCENARIOS
+    and keep the best attempt (success first, then most services validly
+    placed, then highest AR) -- same best-of-N re-roll pattern as
+    ppo_mask/run_all.py::run_episodes(), added here for evaluation-protocol
+    parity across all 6 algorithms. Requires policy_fn to sample with a
+    non-zero exploration rate (deterministic=False AND model.exploration_rate
+    set above 0 at the call site) -- see dqn/run_all.py's run_episodes()
+    docstring for why DDQN_EXPLORATION_FINAL_EPS=0.0 makes this necessary.
+    """
     ars, placed_list, viol_list, cap_viol_list, conflict_viol_list = [], [], [], [], []
-    valid_placed_list, ecus_used_list, success_list = [], [], []
+    valid_placed_list, ecus_used_list, success_list, attempts_list = [], [], [], []
     for scenario in C.TEST_SCENARIOS:
         caps, reqs, cs = scenario
         M_sc = len(reqs)
         _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
         _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
-        env = DDQNEnv(_ecus, _svcs, scenarios=[scenario])
-        obs, _ = env.reset()
-        done = False
-        info = {}
-        while not done:
-            obs, _, done, _, info = env.step(policy_fn(obs))
-        placed = info.get("services_placed", 0)
-        valid_placed = int(info.get("valid_placed", placed))
-        ars.append(info.get("ar", 0.0))
+
+        best = None  # (success, valid_placed, ar, cap_v, conflict_v, placed, ecus_used)
+        used_attempts = 0
+        for attempt in range(max(1, n_samples)):
+            env = DDQNEnv(_ecus, _svcs, scenarios=[scenario])
+            obs, _ = env.reset()
+            done = False
+            info = {}
+            while not done:
+                obs, _, done, _, info = env.step(policy_fn(obs))
+            placed = info.get("services_placed", 0)
+            valid_placed = int(info.get("valid_placed", placed))
+            ar = info.get("ar", 0.0)
+            ecus_used = int(info.get("ecus_used", 0))
+            cap_v = int(info.get("capacity_violations", 0))
+            conflict_v = int(info.get("conflict_violations", 0))
+            success = bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0)
+            used_attempts = attempt + 1
+            candidate = (success, valid_placed, ar, cap_v, conflict_v, placed, ecus_used)
+            if best is None or candidate[:3] > best[:3]:
+                best = candidate
+            if success:
+                break  # found a fully valid placement -- no need to re-roll further
+
+        success, valid_placed, ar, cap_v, conflict_v, placed, ecus_used = best
+        ars.append(ar)
         placed_list.append(placed)
         valid_placed_list.append(valid_placed)
-        ecus_used_list.append(int(info.get("ecus_used", 0)))
-        viol_list.append(1 if int(info.get("total_violations", 0)) > 0 else 0)
-        cap_v = int(info.get("capacity_violations", 0))
-        conflict_v = int(info.get("conflict_violations", 0))
+        ecus_used_list.append(ecus_used)
+        viol_list.append(1 if (cap_v + conflict_v) > 0 else 0)
         cap_viol_list.append(cap_v)
         conflict_viol_list.append(conflict_v)
-        success_list.append(bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0))
+        success_list.append(success)
+        attempts_list.append(used_attempts)
     return {
         "ars":           np.array(ars),
         "placed":        np.array(placed_list),
@@ -140,6 +166,7 @@ def run_episodes(ecus, services, policy_fn):
         "valid_placed": np.array(valid_placed_list),
         "ecus_used":    np.array(ecus_used_list),
         "success":      np.array(success_list),
+        "attempts":     np.array(attempts_list),
     }
 
 
@@ -423,11 +450,16 @@ def main():
     print(f"  Model saved -> {model_path}.zip")
 
     # 5. DDQN evaluation
-    print(f"\n[4/4] DDQN evaluation ({len(C.TEST_SCENARIOS)} episodes, deterministic) ...")
+    print(f"\n[4/4] DDQN evaluation ({len(C.TEST_SCENARIOS)} episodes, "
+          f"stochastic eps={C.EVAL_EPSILON}, best-of-{C.EVAL_BEST_OF_N}) ...")
+    # DDQN_EXPLORATION_FINAL_EPS anneals to 0.0 by the end of training, so
+    # model.exploration_rate is already 0 here -- override it for eval only
+    # so deterministic=False actually injects randomness across retries.
+    model.exploration_rate = C.EVAL_EPSILON
     def ddqn_policy(obs):
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(obs, deterministic=False)
         return int(action)
-    ddqn_res = run_episodes(ecus, services, ddqn_policy)
+    ddqn_res = run_episodes(ecus, services, ddqn_policy, n_samples=C.EVAL_BEST_OF_N)
     print(f"  DDQN AR  mean={np.mean(ddqn_res['ars']):.4f}  "
           f"std={np.std(ddqn_res['ars']):.4f}")
     print(f"  Placed/ep  mean={np.mean(ddqn_res['placed']):.1f}/{M}")

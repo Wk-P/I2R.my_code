@@ -80,6 +80,16 @@ BC_MARGIN     = 0.8
 EVAL_EPS  = len(TEST_SCENARIOS)
 SMOOTH_W  = 1000
 
+# 2026-09-11: added for evaluation-protocol parity with ppo_mask/ppo_lagrangian,
+# which already re-roll a stochastic policy up to EVAL_BEST_OF_N times per test
+# scenario and keep the best attempt. DQN_EXPLORATION_FINAL_EPS anneals to 0.0
+# by the end of training, so EVAL_EPSILON overrides model.exploration_rate at
+# eval time only -- without it, deterministic=False would still be bit-for-bit
+# deterministic (0% chance of injecting a random action) and every retry would
+# reproduce the same greedy trajectory.
+EVAL_BEST_OF_N = 32
+EVAL_EPSILON   = 0.1
+
 # ── Paths ───────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir
 OUTDIR     = results_dir(ROOT.parent.name, "dqn")

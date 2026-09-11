@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import ProgressPanel from "./components/ProgressPanel.vue";
 import BatchProgressPanel from "./components/BatchProgressPanel.vue";
+import SystemPanel from "./components/SystemPanel.vue";
 import ExperimentTree from "./components/ExperimentTree.vue";
 import RunDetail from "./components/RunDetail.vue";
 import VersionList from "./components/VersionList.vue";
@@ -113,6 +114,7 @@ onUnmounted(() => clearInterval(batchesTimer));
     </div>
 
     <h2>Live Training Progress</h2>
+    <SystemPanel />
     <BatchProgressPanel v-for="name in batchNames" :key="name" :batch-name="name" />
     <ProgressPanel />
 

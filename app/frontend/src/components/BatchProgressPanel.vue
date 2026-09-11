@@ -1,15 +1,17 @@
 <script setup>
 // Progress + results view for an ad-hoc parallel batch (many algos x many
-// seeds running at once), e.g. scripts/eq_gt_migration_5seed.sh —
-// deliberately separate from ProgressPanel.vue, which assumes one
-// sequential process per scenario and shows "N/6 models done" against a
-// fixed ALGO_ORDER. That model breaks down for a batch like this: 5 algos x
-// 5 seeds run concurrently per scenario, so "which one is 'current'" is
-// meaningless and the phase-marker log parsing never matches. This instead
-// shows a table grouped by scenario -> algo -> seed, one row per run, with
-// its status and (once done) its actual success_rate/AR — so it's always
-// clear which runs belong together and what they found, without clicking
-// into the separate Results Summary tree.
+// seeds running at once), e.g. scripts/run_full_5M_campaign.py — deliberately
+// separate from ProgressPanel.vue, which assumes one sequential process per
+// scenario and shows "N/6 models done" against a fixed ALGO_ORDER. That
+// model breaks down for a batch like this: many algos x many seeds run
+// concurrently, so "which one is 'current'" is meaningless.
+//
+// Per-(scenario, algo) rows show seed progress as a compact dot row plus a
+// seed-averaged mean±std once at least one seed is done -- not one row per
+// seed. Dedup (a slot can have more than one run behind it after a
+// crashed/retried attempt) and the mean/std math both happen server-side
+// (see app/backend/main.py's get_batch_progress) so this component only
+// renders what it's given.
 import { ref, onMounted, onUnmounted } from "vue";
 import { getBatchProgress } from "../api.js";
 import { secToClock } from "../format.js";
@@ -59,18 +61,13 @@ function algosFor(scenarioBlock) {
   }
   return seen;
 }
-// A (scenario, algo, seed) cell can have more than one run behind it when a
-// crashed/interrupted attempt was retried under a fresh exp_id (see
-// scripts/eq_gt_migration_5seed.sh — each launch mints its own exp_id, so a
-// retry doesn't overwrite the dead attempt's log). Picking array order would
-// surface a stale "queued"/dead entry ahead of the real completed one, so
-// rank by status instead: a finished run always wins, then a live one, and
-// only fall back to "queued" when nothing better exists.
-const STATUS_RANK = { done: 0, running: 1, queued: 2 };
 function runFor(scenarioBlock, algo, seed) {
-  const matches = (scenarioBlock?.runs || []).filter((r) => r.algo === algo && r.seed === seed);
-  if (matches.length === 0) return undefined;
-  return matches.reduce((best, r) => (STATUS_RANK[r.status] < STATUS_RANK[best.status] ? r : best));
+  // Backend already dedups to one run per (scenario, algo, seed) slot, so
+  // this is a plain lookup, not a rank-and-pick.
+  return (scenarioBlock?.runs || []).find((r) => r.algo === algo && r.seed === seed);
+}
+function aggregateFor(scenario, algo) {
+  return (data.value?.aggregates?.[scenario] || []).find((a) => a.algo === algo);
 }
 function pct(x) {
   return x === undefined || x === null ? "—" : (x * 100).toFixed(1) + "%";
@@ -100,24 +97,41 @@ function fixed(x, n = 4) {
         <thead>
           <tr>
             <th>algo</th>
-            <th v-for="seed in SEED_ORDER" :key="seed">seed {{ seed }}</th>
+            <th>seeds</th>
+            <th>success_rate (mean±std)</th>
+            <th>AR (mean±std)</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="algo in algosFor(block)" :key="algo">
             <td class="batch-algo-name">{{ algo }}</td>
-            <td v-for="seed in SEED_ORDER" :key="seed" class="batch-cell">
-              <template v-if="runFor(block, algo, seed)?.status === 'done'">
-                <span class="batch-cell-status batch-cell-status--done">done</span>
-                <span class="batch-cell-metric">succ {{ pct(runFor(block, algo, seed).success_rate) }}</span>
-                <span class="batch-cell-metric">AR {{ fixed(runFor(block, algo, seed).ar_mean) }}</span>
-              </template>
-              <span
-                v-else
-                class="batch-cell-status"
-                :class="`batch-cell-status--${runFor(block, algo, seed)?.status ?? 'queued'}`"
-              >{{ runFor(block, algo, seed)?.status ?? "queued" }}</span>
+            <td class="batch-cell">
+              <span class="batch-seed-dots">
+                <span
+                  v-for="seed in SEED_ORDER"
+                  :key="seed"
+                  class="batch-seed-dot"
+                  :class="`batch-seed-dot--${runFor(block, algo, seed)?.status ?? 'queued'}`"
+                  :title="`seed ${seed}: ${runFor(block, algo, seed)?.status ?? 'queued'}`"
+                ></span>
+              </span>
             </td>
+            <template v-if="aggregateFor(scenario, algo)?.n_done">
+              <td class="batch-cell-metric">
+                {{ pct(aggregateFor(scenario, algo).success_rate_mean) }} ± {{ pct(aggregateFor(scenario, algo).success_rate_std) }}
+                <span v-if="aggregateFor(scenario, algo).n_done < aggregateFor(scenario, algo).n_total" class="batch-partial-tag"
+                      :title="'Only ' + aggregateFor(scenario, algo).n_done + '/' + aggregateFor(scenario, algo).n_total + ' seeds done — average will shift as more finish'">
+                  ({{ aggregateFor(scenario, algo).n_done }}/{{ aggregateFor(scenario, algo).n_total }}, partial)
+                </span>
+              </td>
+              <td class="batch-cell-metric">
+                {{ fixed(aggregateFor(scenario, algo).ar_mean) }} ± {{ fixed(aggregateFor(scenario, algo).ar_std) }}
+              </td>
+            </template>
+            <template v-else>
+              <td class="batch-cell-metric">—</td>
+              <td class="batch-cell-metric">—</td>
+            </template>
           </tr>
         </tbody>
       </table>
@@ -127,7 +141,7 @@ function fixed(x, n = 4) {
       <span class="batch-legend-item"><span class="batch-seed-dot batch-seed-dot--done"></span> done</span>
       <span class="batch-legend-item"><span class="batch-seed-dot batch-seed-dot--running"></span> running</span>
       <span class="batch-legend-item"><span class="batch-seed-dot batch-seed-dot--queued"></span> queued</span>
-      <span>rows = algorithm · columns = seed · succ/AR shown once a run finishes</span>
+      <span>rows = algorithm · dots = per-seed progress · metrics = mean±std across done seeds ("partial" until all seeds finish)</span>
     </div>
   </div>
 </template>

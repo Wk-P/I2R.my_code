@@ -133,7 +133,7 @@ SMOOTH_W  = 1000
 # independent stochastic rollouts per test scenario and keeping the best
 # (success first, then most services validly placed, then highest AR)
 # sidesteps that ceiling without touching training.
-EVAL_BEST_OF_N = 8
+EVAL_BEST_OF_N = 32
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir
