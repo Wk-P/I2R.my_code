@@ -7,6 +7,7 @@
 - 每次训练均为 5,000,000 步，使用各场景/算法**实际保留**的最终超参数配置（见 `本轮实验总结-超参调优与收敛性验证.md` 第 3 节）。
 - 结果写入项目正式目录 `results/add_states/<scenario>/<algo>/<exp_id>/`，原始数据（`summary.csv` 为测试集评估结果，`training_curve.csv` 为逐 episode 训练曲线）均可追溯。
 - exp_id 与种子的完整映射见本文档同目录 `campaign_5seed_figs/summary_data.json`。
+- **说明**：提交 `ed58a6e` 的 commit message 字面写的是"lt 场景 1M 步 + best-of-32 实验"，指代的是另一批探索性实验，与该提交实际写入的 `summary_data.json`／图表内容（即本文档描述的 5M 步、90 次完整 campaign）不符。已通过 exp_id 反查 `results/` 目录下的原始日志确认：本文档引用的数据确为 5M 步 campaign 产出，不受该 commit message 描述误导，特此注明避免混淆。
 
 ---
 
