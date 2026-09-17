@@ -21,6 +21,7 @@ Serves:
 """
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -107,6 +108,17 @@ def _algo_key(data: dict) -> str | None:
     return next((k for k in data.keys() if k not in reserved), None)
 
 
+def _nan_to_none(v):
+    """A crashed/degenerate training run can leave NaN in results.json
+    (e.g. ar_mean over zero successful episodes). Python's json module
+    round-trips NaN fine, but Starlette's JSONResponse.render() calls
+    json.dumps(..., allow_nan=False) and raises ValueError on it, which
+    previously took down /api/experiments (and everything downstream of it,
+    including the whole batch/results dashboard) for ALL runs the instant
+    a single bad run's NaN was in the list."""
+    return None if isinstance(v, float) and math.isnan(v) else v
+
+
 def _row_from_run(scenario: str, algo: str, run_dir: Path) -> dict | None:
     try:
         data = json.loads((run_dir / "results.json").read_text())
@@ -143,15 +155,15 @@ def _row_from_run(scenario: str, algo: str, run_dir: Path) -> dict | None:
         "M":             data.get("M"),
         "train_count":   data.get("train_count"),
         "test_count":    data.get("test_count"),
-        "ilp_ar":        ilp.get("ar"),
-        "test_ar_mean":  algo_eval.get("ar_mean"),
-        "test_ar_std":   algo_eval.get("ar_std"),
-        "test_success_rate":        algo_eval.get("success_rate"),
-        "test_cap_viol_rate":       algo_eval.get("cap_viol_rate"),
-        "test_conflict_viol_rate":  algo_eval.get("conflict_viol_rate"),
+        "ilp_ar":        _nan_to_none(ilp.get("ar")),
+        "test_ar_mean":  _nan_to_none(algo_eval.get("ar_mean")),
+        "test_ar_std":   _nan_to_none(algo_eval.get("ar_std")),
+        "test_success_rate":        _nan_to_none(algo_eval.get("success_rate")),
+        "test_cap_viol_rate":       _nan_to_none(algo_eval.get("cap_viol_rate")),
+        "test_conflict_viol_rate":  _nan_to_none(algo_eval.get("conflict_viol_rate")),
         "test_cap_viol_total":      algo_eval.get("cap_viol_total"),
         "test_conflict_viol_total": algo_eval.get("conflict_viol_total"),
-        "train_ar_last50": training.get("ar_last50"),
+        "train_ar_last50": _nan_to_none(training.get("ar_last50")),
         "train_steps":     training.get("total_steps"),
         "train_episodes":  training.get("n_episodes"),
     }
@@ -812,8 +824,8 @@ def get_batch_progress(batch_name: str):
                     None,
                 )
                 if metrics:
-                    run["ar_mean"] = metrics.get("ar_mean")
-                    run["success_rate"] = metrics.get("success_rate")
+                    run["ar_mean"] = _nan_to_none(metrics.get("ar_mean"))
+                    run["success_rate"] = _nan_to_none(metrics.get("success_rate"))
             except (json.JSONDecodeError, OSError):
                 pass
         runs.append(run)

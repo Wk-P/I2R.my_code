@@ -295,47 +295,53 @@ def save_training_curve_csv(cb, outdir):
 
 
 def plot_training_curve(cb, ilp_ar, outdir, scenario_name):
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+    # 2026-09-11: 4-panel layout (reward / AR / CapViolation / PrivacyViolation)
+    # standardized across all 6 algorithms -- see ppo_mask/run_all.py's
+    # plot_training_curve() comment for rationale.
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
     ts = np.array(cb.timesteps_at_ep)
 
-    sm, off = moving_avg(cb.episode_ars, C.SMOOTH_W)
-    ax1.plot(ts, cb.episode_ars, color="seagreen", alpha=0.2, linewidth=0.8)
-    ax1.plot(ts[off:off+len(sm)], sm, color="seagreen", linewidth=2,
-             label=f"DDQN AR (smoothed w={C.SMOOTH_W})")
-    ax1.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
-                label=f"ILP Optimal  AR={ilp_ar:.4f}")
-    ax1.set_ylabel("Episode AR", fontsize=11)
-    ax1.set_ylim(0.0, 1.05)
+    sm_r, off_r = moving_avg(cb.episode_rewards, C.SMOOTH_W)
+    ax1.plot(ts, cb.episode_rewards, color="steelblue", alpha=0.2, linewidth=0.8)
+    ax1.plot(ts[off_r:off_r+len(sm_r)], sm_r, color="steelblue", linewidth=2,
+             label=f"episode reward (smoothed w={C.SMOOTH_W})")
+    ax1.axhline(0.0, color="black", linewidth=0.8, alpha=0.4)
+    ax1.set_ylabel("Episode Reward", fontsize=11)
     ax1.legend(fontsize=9)
     ax1.set_title(f"Training Metrics — {scenario_name}  ({C.TOTAL_STEPS:,} steps)", fontsize=12)
     ax1.grid(alpha=0.3)
 
-    cap_rate  = np.array(cb.episode_cap_violated,  dtype=float)
-    conf_rate = np.array(cb.episode_conf_violated, dtype=float)
-    sm_cap,  off_cap  = moving_avg(cap_rate,  C.SMOOTH_W)
-    sm_conf, off_conf = moving_avg(conf_rate, C.SMOOTH_W)
-    ax2.plot(ts, cap_rate,  color="tomato",    alpha=0.15, linewidth=0.6)
-    ax2.plot(ts, conf_rate, color="darkorange", alpha=0.15, linewidth=0.6)
-    ax2.plot(ts[off_cap:off_cap+len(sm_cap)],   sm_cap,  color="tomato",    linewidth=2, label="Cap viol rate (smoothed)")
-    ax2.plot(ts[off_conf:off_conf+len(sm_conf)], sm_conf, color="darkorange", linewidth=2, label="Conflict viol rate (smoothed)")
-    sm_s, off_s = moving_avg([float(s) for s in cb.episode_success], C.SMOOTH_W)
-    ax2.plot(ts[off_s:off_s+len(sm_s)], sm_s, color="mediumseagreen", linewidth=2,
-             label=f"episode success rate (smoothed w={C.SMOOTH_W})")
-    ax2.set_ylabel("Rate", fontsize=11)
-    ax2.set_ylim(-0.05, 1.1)
+    sm, off = moving_avg(cb.episode_ars, C.SMOOTH_W)
+    ax2.plot(ts, cb.episode_ars, color="seagreen", alpha=0.2, linewidth=0.8)
+    ax2.plot(ts[off:off+len(sm)], sm, color="seagreen", linewidth=2,
+             label=f"DDQN AR (smoothed w={C.SMOOTH_W})")
+    ax2.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
+                label=f"ILP Optimal  AR={ilp_ar:.4f}")
+    ax2.set_ylabel("Episode AR", fontsize=11)
+    ax2.set_ylim(0.0, 1.05)
     ax2.legend(fontsize=9)
     ax2.grid(alpha=0.3)
 
-    sm_p, off_p = moving_avg(cb.episode_placed, C.SMOOTH_W)
-    ax3.plot(ts, cb.episode_placed, color="royalblue", alpha=0.2, linewidth=0.8)
-    ax3.plot(ts[off_p:off_p+len(sm_p)], sm_p, color="royalblue", linewidth=2,
-             label="Services placed (smoothed)")
-    ax3.axhline(C.M, color="gray", linestyle=":", alpha=0.6, label=f"M={C.M}")
-    ax3.set_ylabel("Services Placed", fontsize=11)
-    ax3.set_xlabel("Training steps", fontsize=11)
-    ax3.set_ylim(0, C.M + 1)
+    cap_rate  = np.array(cb.episode_cap_violated,  dtype=float)
+    conf_rate = np.array(cb.episode_conf_violated, dtype=float)
+    sm_cap, off_cap = moving_avg(cap_rate, C.SMOOTH_W)
+    ax3.plot(ts, cap_rate, color="tomato", alpha=0.2, linewidth=0.8)
+    ax3.plot(ts[off_cap:off_cap+len(sm_cap)], sm_cap, color="tomato", linewidth=2,
+             label=f"cap violation rate (smoothed w={C.SMOOTH_W})")
+    ax3.set_ylabel("Cap Violation Rate", fontsize=11)
+    ax3.set_ylim(-0.02, 1.02)
     ax3.legend(fontsize=9)
     ax3.grid(alpha=0.3)
+
+    sm_conf, off_conf = moving_avg(conf_rate, C.SMOOTH_W)
+    ax4.plot(ts, conf_rate, color="darkorange", alpha=0.2, linewidth=0.8)
+    ax4.plot(ts[off_conf:off_conf+len(sm_conf)], sm_conf, color="darkorange", linewidth=2,
+             label=f"privacy (conflict) violation rate (smoothed w={C.SMOOTH_W})")
+    ax4.set_ylabel("Privacy Violation Rate", fontsize=11)
+    ax4.set_xlabel("Training steps", fontsize=11)
+    ax4.set_ylim(-0.02, 1.02)
+    ax4.legend(fontsize=9)
+    ax4.grid(alpha=0.3)
 
     plt.tight_layout()
     path = outdir / "training_curve.png"
@@ -344,64 +350,40 @@ def plot_training_curve(cb, ilp_ar, outdir, scenario_name):
     print(f"  Saved -> {path}")
 
 
-def plot_comparison(ilp_ar, ddqn_res, ddqn_train_viol_mean, ddqn_train_viol_std, outdir, scenario_name):
-    colors = ["#e74c3c", "#2ecc71"]
-    labels = ["ILP\n(Optimal)", "DDQN\n(no mask)"]
+def plot_comparison(ilp_ar, ddqn_res, cap_viol_rate, conflict_viol_rate, outdir, scenario_name):
+    # 2026-09-11: 2-panel layout (AR vs ILP bar chart / success+viol-rate bar
+    # chart) standardized across all 6 algorithms -- see ppo_mask/run_all.py's
+    # plot_comparison() comment for rationale.
+    algo_label = "DDQN\n(no mask)"
+    success_rate = float(np.mean(ddqn_res["success"]))
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 5))
     fig.suptitle(f"ILP vs DDQN - {scenario_name}", fontsize=13, fontweight="bold")
 
-    # AR box plot
-    ax = axes[0]
-    bp = ax.boxplot(
-        [ddqn_res["ars"]],
-        positions=[2], widths=0.5, patch_artist=True,
-        medianprops=dict(color="black", linewidth=2),
-    )
-    for patch, color in zip(bp["boxes"], colors[1:]):
-        patch.set_facecolor(color); patch.set_alpha(0.7)
+    labels1 = ["ILP\n(Optimal)", algo_label]
+    ar_means = [ilp_ar, float(np.mean(ddqn_res["ars"]))]
+    ar_stds  = [0.0, float(np.std(ddqn_res["ars"]))]
+    colors = ["#e74c3c", "#2ecc71"]
+    bars = ax1.bar(labels1, ar_means, yerr=ar_stds, capsize=5, color=colors, alpha=0.8, ecolor="black")
+    for bar, v in zip(bars, ar_means):
+        ax1.text(bar.get_x() + bar.get_width()/2, v + 0.02,
+                  f"{v:.4f}", ha="center", fontsize=10, fontweight="bold", color="black")
+    ax1.set_ylim(0, 1.1)
+    ax1.set_ylabel("Average Resource Utilisation (AR)", fontsize=11)
+    ax1.set_title("Test AR: Algorithm vs ILP", fontsize=11)
+    ax1.grid(axis="y", alpha=0.3)
 
-    ax.axhline(ilp_ar, color=colors[0], linestyle="--", linewidth=2, alpha=0.9,
-               label=f"ILP  AR={ilp_ar:.4f}")
-    ax.plot(1, ilp_ar, marker="D", color=colors[0], markersize=10, zorder=5)
-
-    for pos, data, color in zip([2], [ddqn_res["ars"]], colors[1:]):
-        mv = np.mean(data)
-        ax.text(pos, mv + 0.02, f"mu={mv:.3f}", ha="center", fontsize=9,
-                fontweight="bold", color="black")
-
-    ax.set_xticks([1, 2]); ax.set_xticklabels(labels, fontsize=10)
-    ax.set_ylim(0, 1.1)
-    ax.set_ylabel("Average Resource Utilisation (AR)", fontsize=11)
-    ax.set_title("Episode-end AR Distribution", fontsize=11)
-    ax.legend(fontsize=9, loc="lower right")
-    ax.grid(axis="y", alpha=0.3)
-
-    ax2 = axes[1]
-    vr_means = [0.0, ddqn_train_viol_mean]
-    vr_stds  = [0.0, ddqn_train_viol_std]
-    bars = ax2.bar(labels, vr_means, color=colors, alpha=0.75,
-                   yerr=vr_stds, capsize=5, ecolor="black")
-    for bar, v in zip(bars, vr_means):
+    labels2 = ["Success\nRate", "Cap Viol\nRate", "Privacy Viol\nRate"]
+    vals2 = [success_rate, cap_viol_rate, conflict_viol_rate]
+    colors2 = ["#2ecc71", "#e67e22", "#c0392b"]
+    bars2 = ax2.bar(labels2, vals2, color=colors2, alpha=0.8)
+    for bar, v in zip(bars2, vals2):
         ax2.text(bar.get_x() + bar.get_width()/2, v + 0.02,
-                 f"{v:.2f}", ha="center", fontsize=10, fontweight="bold", color="black")
-    ax2.set_ylim(0, 1.1)
-    ax2.set_ylabel("Violation Rate", fontsize=11)
-    ax2.set_title("Violation Rate (eval)", fontsize=11)
+                  f"{v:.2%}", ha="center", fontsize=10, fontweight="bold", color="black")
+    ax2.set_ylim(0, 1.05)
+    ax2.set_ylabel("Rate", fontsize=11)
+    ax2.set_title("Test Success Rate & Violation Rates", fontsize=11)
     ax2.grid(axis="y", alpha=0.3)
-
-    ax3 = axes[2]
-    pl_means = [C.M, np.mean(ddqn_res["placed"])]
-    pl_stds = [0.0, np.std(ddqn_res["placed"])]
-    bars = ax3.bar(labels, pl_means, color=colors, alpha=0.75,
-                   yerr=pl_stds, capsize=5, ecolor="black")
-    for bar, v in zip(bars, pl_means):
-        ax3.text(bar.get_x() + bar.get_width()/2, v + 0.05,
-                 f"{v:.1f}", ha="center", fontsize=10, fontweight="bold", color="black")
-    ax3.set_ylim(0, C.M + 1)
-    ax3.set_ylabel("Services Placed", fontsize=11)
-    ax3.set_title("Placement Completeness", fontsize=11)
-    ax3.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
     path = outdir / "comparison.png"
@@ -450,14 +432,13 @@ def main():
     print(f"  Model saved -> {model_path}.zip")
 
     # 5. DDQN evaluation
-    print(f"\n[4/4] DDQN evaluation ({len(C.TEST_SCENARIOS)} episodes, "
-          f"stochastic eps={C.EVAL_EPSILON}, best-of-{C.EVAL_BEST_OF_N}) ...")
-    # DDQN_EXPLORATION_FINAL_EPS anneals to 0.0 by the end of training, so
-    # model.exploration_rate is already 0 here -- override it for eval only
-    # so deterministic=False actually injects randomness across retries.
-    model.exploration_rate = C.EVAL_EPSILON
+    print(f"\n[4/4] DDQN evaluation ({len(C.TEST_SCENARIOS)} episodes, deterministic) ...")
+    # 2026-09-11: reverted to a single deterministic pass (EVAL_BEST_OF_N=1) --
+    # see lt/ppo/run_all.py's comment for why best-of-N was dropped. No
+    # longer overriding model.exploration_rate -- eval should reflect the
+    # model's actual greedy policy.
     def ddqn_policy(obs):
-        action, _ = model.predict(obs, deterministic=False)
+        action, _ = model.predict(obs, deterministic=True)
         return int(action)
     ddqn_res = run_episodes(ecus, services, ddqn_policy, n_samples=C.EVAL_BEST_OF_N)
     print(f"  DDQN AR  mean={np.mean(ddqn_res['ars']):.4f}  "
@@ -543,7 +524,7 @@ def main():
 
     save_training_curve_csv(cb, base_dir)
     plot_training_curve(cb, ilp_ar, base_dir, sc_name)
-    plot_comparison(ilp_ar, ddqn_res, ddqn_train_v, ddqn_train_v_std, base_dir, sc_name)
+    plot_comparison(ilp_ar, ddqn_res, cap_viol_rate, conflict_viol_rate, base_dir, sc_name)
 
     print("\nAll done! Output files:")
     print(f"  {base_dir}/training_curve.png")

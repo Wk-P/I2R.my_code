@@ -84,7 +84,7 @@ env.set_lambda(λ)                                # broadcast the new λ to ever
 
 ---
 
-## PPO+Repair (P6, ppo_opt, heuristic repair fallback)
+## Repair PPO (P6, ppo_opt, heuristic repair fallback)
 
 The policy samples over the fully unconstrained action space; if the chosen action would violate a constraint, the environment immediately **reassigns** it to a feasible ECU using a best-fit heuristic and continues — the repair happens inside `env.step()`, and the policy itself is never aware a repair occurred (it only observes the post-repair outcome).
 
@@ -166,7 +166,7 @@ class DDQN(DQN):
 | PPO (P3) | No — free sampling over the full space | Never — recorded only | Yes, and never corrected | None |
 | PPO+Mask (P4) | Yes — hard mask before sampling (capacity + conflict + one-step lookahead) | Before sampling | In theory, no (whenever the mask isn't all-False) | Yes (structural guarantee) |
 | PPO+Lagrangian (P5) | Partial — capacity hard-masked, conflict unmasked | Capacity: before sampling; conflict: soft penalty after the fact + dual-ascent update of λ | Conflict violations can occur (soft constraint) | No strict guarantee — relies on λ suppressing the violation rate once training has converged |
-| PPO+Repair (P6 / ppo_opt) | No — free sampling over the full space | After the fact: reassigned in-env via best-fit | The policy's raw action often violates, but is silently repaired | Conditional guarantee (fails when repair is impossible) |
+| Repair PPO (P6 / ppo_opt) | No — free sampling over the full space | After the fact: reassigned in-env via best-fit | The policy's raw action often violates, but is silently repaired | Conditional guarantee (fails when repair is impossible) |
 | DQN | No — free sampling over the full space | Never — recorded only | Yes, and never corrected | None |
 | DDQN | No — free sampling over the full space | Never — recorded only (shares the env with DQN) | Yes, and never corrected | None |
 

@@ -76,7 +76,7 @@ SMOOTH_W  = 1000
 # which already re-roll a stochastic policy up to EVAL_BEST_OF_N times per test
 # scenario and keep the best attempt. Requires run_all.py's eval call to use
 # deterministic=False (otherwise every retry reproduces the same trajectory).
-EVAL_BEST_OF_N = 32
+EVAL_BEST_OF_N = 1
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir

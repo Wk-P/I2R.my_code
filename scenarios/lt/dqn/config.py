@@ -87,7 +87,7 @@ SMOOTH_W  = 1000
 # eval time only -- without it, deterministic=False would still be bit-for-bit
 # deterministic (0% chance of injecting a random action) and every retry would
 # reproduce the same greedy trajectory.
-EVAL_BEST_OF_N = 32
+EVAL_BEST_OF_N = 1
 EVAL_EPSILON   = 0.1
 
 # ── Paths ───────────────────────────────────────────────────────────────────────

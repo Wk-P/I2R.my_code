@@ -6,7 +6,7 @@ run_all.py — One-shot P6 full pipeline:
   3. Train PPO + repair heuristic        -> training curve
   4. Evaluate the trained PPO agent      -> ppo_ars + repair_rates
   5. Produce two plots:
-       - comparison.png      — AR box plot + repair rate bar (2-way: ILP vs PPO+Repair)
+       - comparison.png      — AR box plot + repair rate bar (2-way: ILP vs Repair PPO)
        - training_curve.png  — AR & repair rate during training
 
 P6 Design: standard PPO + best-fit repair heuristic.
@@ -227,7 +227,7 @@ def plot_training_curve(cb: P6Callback, ilp_ar: float, outdir: Path, scenario_na
     sm, off = moving_avg(cb.episode_ars, C.SMOOTH_W)
     ax1.plot(ts, cb.episode_ars, color="steelblue", alpha=0.2, linewidth=0.8)
     ax1.plot(ts[off:off+len(sm)], sm, color="steelblue", linewidth=2,
-             label=f"PPO+Repair AR (smoothed w={C.SMOOTH_W})")
+             label=f"Repair PPO AR (smoothed w={C.SMOOTH_W})")
     ax1.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
                 label=f"ILP Optimal  AR={ilp_ar:.4f}")
     ax1.set_ylabel("Episode AR", fontsize=11)
@@ -268,10 +268,10 @@ def plot_training_curve(cb: P6Callback, ilp_ar: float, outdir: Path, scenario_na
 def plot_comparison(ilp_ar, ppo_res, ppo_train_repair_mean, ppo_train_repair_std,
                     outdir: Path, scenario_name: str):
     fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-    fig.suptitle(f"ILP vs PPO+Repair (P6) — {scenario_name}", fontsize=13, fontweight="bold")
+    fig.suptitle(f"ILP vs Repair PPO (P6) — {scenario_name}", fontsize=13, fontweight="bold")
 
     colors = ["#e74c3c", "#2ecc71"]
-    labels = ["ILP\n(Optimal)", "PPO+Repair\n(P6)"]
+    labels = ["ILP\n(Optimal)", "Repair PPO\n(P6)"]
 
     ax = axes[0]
     ppo_ars = ppo_res["ars"]
@@ -403,7 +403,7 @@ def main():
     print(f"  {'Method':<24} {'AR (mean±std)':<22} {'RepairRate':<10}")
     print(f"  {'-'*24} {'-'*22} {'-'*10}")
     print(f"  {'ILP (Optimal)':<24} {ilp_ar:.4f} ± 0.0000       {'0':<10}  cap=0   conf=0")
-    print(f"  {'PPO+Repair (P6)':<24} "
+    print(f"  {'Repair PPO (P6)':<24} "
           f"{np.mean(ppo_res['ars']):.4f} ± {np.std(ppo_res['ars']):.4f}   "
           f"  {p_rr:<10.2%}  cap={p_cap_viol:.0f}  conf={p_con_viol:.0f}")
     print(f"{'='*62}\n")
@@ -467,7 +467,7 @@ def main():
         writer.writerow(["method", "ar_mean", "ar_std", "placed_mean", "valid_placed_mean", "ecus_used_mean", "success_rate", "cap_viol_rate", "conflict_viol_rate", "cap_viol_total", "conflict_viol_total"])
         writer.writerow(["ILP (Optimal)", round(ilp_ar, 6), 0.0, M, M, C.N, 1.0, 0.0, 0.0, 0, 0])
         writer.writerow([
-            "PPO+Repair (P6)",
+            "Repair PPO (P6)",
             round(float(np.mean(ppo_res["ars"])), 6),
             round(float(np.std(ppo_res["ars"])), 6),
             round(float(np.mean(ppo_res["placed"])), 2),
