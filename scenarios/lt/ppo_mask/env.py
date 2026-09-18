@@ -454,7 +454,7 @@ class P4Env(gym.Env):
                 # matched only in the limit by success's unreachable ar->0.
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            reward = 0.0
+            reward = violation_penalty  # v4.1.0: wire in forced-overflow penalty (was dead code in v4.0.0)
 
         # Potential-based shaping F(s,a,s') = gamma*Phi(s') - Phi(s), added on
         # top of the terminal/zero reward above. beta=0.0 makes phi_s and

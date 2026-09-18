@@ -1,5 +1,12 @@
 """
-P5 Environment — Lagrangian Constraint Relaxation.
+P5 Environment — Lagrangian Constraint Relaxation (no action masking).
+
+Neither constraint is action-masked here -- hard masking is exclusively P4
+(ppo_mask)'s mechanism; P5's entire point is to compare a penalty/dual-ascent
+approach against P4's structural guarantee, so masking capacity here would
+collapse that distinction. action_masks() is defined below but is dead code
+(never wrapped via ActionMasker/MaskablePPO in run_all.py -- P5 trains a
+plain PrunedPPO), kept only as an unused interface.
 
 Design:
     - Capacity violation  → fixed large penalty (-2.0 per step); episode continues.
@@ -7,7 +14,8 @@ Design:
                             λ is updated externally via dual ascent.
     - Episode always runs M steps; remaining_vms can go negative.
 
-Reward (potential-based shaping, same as P4):
+Reward (per-step, v4.1.0: actually wired into the returned reward, was dead
+code in v4.0.0):
     ru / n_active                      (dense utilisation signal; always ≥ 0)
     - cap_penalty                      (-2.0 if capacity violated, else 0)
     - (λ + base_penalty) * c_t        (Lagrangian conflict penalty)
@@ -247,13 +255,16 @@ class LagrangeEnv(gym.Env):
         step_reward = ru / max(_active, 1)
         cap_penalty    = -2.0 if cap_violated else 0.0
         base_penalty   = 0.2
+        lagrange_penalty = -(self.lambda_val + base_penalty) * c_t
         if done:
             if self.episode_violations == 0:
                 reward = float(self.M) * (2.0 * self.ar - 1.0)
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            reward = 0.0
+            # v4.1.0: wire in full per-step formula (was dead code in v4.0.0; docstring's
+            # r_t = match_gain - (lambda+base_penalty)*c_t - cap_penalty)
+            reward = step_reward + cap_penalty + lagrange_penalty
 
         return self._obs(), reward, done, False, {
             "ar":                             self.ar,

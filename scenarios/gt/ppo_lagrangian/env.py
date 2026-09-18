@@ -1,12 +1,23 @@
 """
 P5 Environment — Lagrangian Constraint Relaxation.
 
-Constraints are SOFT (both capacity and conflict):
-    - Violations are NOT blocking; episode always runs M steps.
-    - Each violated step incurs a per-step penalty: (lambda_val + base_penalty) * c_t.
-    - c_t = 1.0 if capacity violated OR conflict violated, else 0.0.
-    - lambda_val is updated externally by the training callback via dual ascent.
-    - Multiple services may share an ECU (no uniqueness constraint).
+Neither constraint is action-masked here -- hard masking is exclusively P4
+(ppo_mask)'s mechanism; P5's entire point is to compare a penalty/dual-ascent
+approach against P4's structural guarantee, so masking capacity here would
+collapse that distinction. (v4.1.0: an earlier version of this file had a
+step()-internal capacity redirect using action_masks() -- inconsistent with
+lt/eq, which never had one -- removed for cross-scenario consistency; see
+v4.1.0 changelog. action_masks() is still defined below but is dead code,
+same as in lt/eq, kept only as an unused interface.)
+
+Design:
+    - Capacity violation → fixed penalty (-2.0 per step); episode continues,
+      remaining_vms may go negative.
+    - Conflict violation → adaptive Lagrangian penalty (λ + base_penalty) * c_t;
+      λ is updated externally by the training callback via dual ascent.
+    - v4.1.0: the per-step reward r_t = match_gain - cap_penalty -
+      (lambda_val+base_penalty)*c_t is now actually wired into the returned
+      reward (was dead code in v4.0.0).
 """
 
 import sys
@@ -192,16 +203,9 @@ class LagrangeEnv(gym.Env):
     def step(self, action: int):
         svc = self.services[self._step]
 
-        # Hard capacity enforcement
-        mask = self.action_masks()
-        if not mask[action]:
-            valid = np.where(mask)[0]
-            if len(valid) > 0:
-                action = int(valid[np.argmax(self.remaining_vms[valid])])
-
         cap_violated      = bool(self.remaining_vms[action] < svc.requirement)
         conflict_violated = self._has_conflict(action, self._step)
-        violated          = conflict_violated  # only conflict counts as violation now
+        violated          = cap_violated or conflict_violated
         c_t               = 1.0 if conflict_violated else 0.0  # Lagrangian only for conflict
 
         ru = svc.requirement / (self.initial_vms[action] + 1e-8)
@@ -227,15 +231,22 @@ class LagrangeEnv(gym.Env):
             self.valid_placed += 1
 
         done = self._step >= self.M
-        match_gain     = float(ru)  # no capacity penalty since mask enforces it
-        base_penalty   = 0.2
+        match_gain       = float(ru)
+        cap_penalty      = -2.0 if cap_violated else 0.0
+        base_penalty     = 0.2
+        lagrange_penalty = -(self.lambda_val + base_penalty) * c_t
         if done:
             if self.episode_violations == 0:
                 reward = float(self.M) * (2.0 * self.ar - 1.0)
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            reward = 0.0
+            # v4.1.0: wire in full per-step formula (was dead code in v4.0.0; docstring's
+            # r_t = match_gain - cap_penalty - (lambda+base_penalty)*c_t). Also removed the
+            # step()-internal capacity redirect that used to make gt inconsistent with lt/eq
+            # (see v4.1.0 changelog) -- capacity is now handled the same way in all 3 scenarios:
+            # a fixed penalty, not a structural guarantee.
+            reward = match_gain + cap_penalty + lagrange_penalty
 
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,

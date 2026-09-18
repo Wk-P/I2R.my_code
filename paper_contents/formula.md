@@ -95,8 +95,8 @@ $$
 
 ### 3.2 统一分级终端奖励 / Unified Graded Terminal Reward
 
-这是全部 6 个算法共享的**终端奖励**公式（非终端步奖励为 0，见各算法小节的例外情况）：
-*This terminal-reward formula is shared by all 6 algorithms (non-terminal step reward is 0 unless noted otherwise below):*
+这是全部 6 个算法共享的**终端奖励**公式，在 `add_states`（v4.0.0冻结）和 `final_paper_experiments`（v4.1.0）两个分支上都不变。**非终端步奖励是否为 0，两个分支不同**：v4.0.0 上全部 6 算法非终端步恒为 0；v4.1.0 上 `ppo_mask`/`ppo_lagrangian`/`ppo_opt`/`dqn`/`ddqn` 五个算法的非终端步奖励已接入各自的逐步惩罚项（见第4节及 `v4.1.0_changelog.md`），只有 `ppo`(P3) 仍保持非终端步恒为 0。
+*Shared by all 6 algorithms on both the `add_states` (v4.0.0, frozen) and `final_paper_experiments` (v4.1.0) branches. Whether the non-terminal step reward is 0 differs by branch: on v4.0.0 all 6 algorithms have it hardcoded to 0; on v4.1.0, `ppo_mask`/`ppo_lagrangian`/`ppo_opt`/`dqn`/`ddqn` now wire in their respective per-step penalty terms (Section 4, and the changelog) — only `ppo`(P3) still returns 0 for non-terminal steps.*
 
 $$
 R_{\text{terminal}} =
@@ -159,17 +159,25 @@ $$
 
 **中文**：$\beta$（`bottleneck_shaping_weight`）默认为 $0.0$，此时塑形项恒为 0（no-op），依据 Ng-Harada-Russell (1999) 的势函数塑形理论，该项在任意 $\beta \ge 0$ 下都不改变最优策略。
 
-### 4.3 `ppo_lagrangian`（P5，容量硬掩码 + 冲突拉格朗日软约束 / hard-cap + Lagrangian-soft-conflict）
+**版本差异**：v4.0.0 上 $R_t^{\text{violation-penalty}}$ 虽已计算但未组装进非终端步 `reward`（恒为 $0$，只有 shaping 项生效）；v4.1.0 上 `reward = violation_penalty`（lt/gt两场景；eq场景本身没有强制溢出兜底分支，不适用此项，未改动）。由于掩码已结构性防住了绝大多数情况，该修复预期影响很小。
 
-**Docstring 中描述的逐步奖励公式 / per-step formula as documented**：
+### 4.3 `ppo_lagrangian`（P5，无动作掩码，容量固定惩罚 + 冲突拉格朗日软约束 / no action masking; fixed-penalty capacity + Lagrangian-soft conflict）
+
+**⚠️ v4.0.0 阶段的表述订正 / correction to the v4.0.0-era description**：此前（包括本文档更早版本）曾把 P5 描述为"容量硬掩码 + 冲突拉格朗日"，这是**错误的**。核实 `run_all.py` 发现三场景（lt/eq/gt）训练用的都是普通 `PrunedPPO`（`stable_baselines3.PPO` 子类），从未用 `ActionMasker`/`MaskablePPO` 包装环境——`env.py` 里定义的 `action_masks()` 是**死代码，从未被调用**。这不是bug，是设计意图：硬掩码是 `ppo_mask`(P4) 专属机制，P5 的方法论意义就是"用惩罚/对偶变量代替掩码"，若P5也硬掩码就与P4没有区别。**准确描述是：P5 对容量和冲突都不做任何结构性阻止，两者都只是惩罚。**
+
+（另外，`gt` 场景的 `env.py` 历史上有一段 `step()` 内部的容量重定向逻辑，会把违规动作事后纠正到可行ECU，与 lt/eq 不一致——v4.1.0 已删除该逻辑，三场景现已完全对齐。）
+
+**逐步奖励公式 / per-step formula**（v4.1.0 已真正接入 `step()` 返回值；v4.0.0 阶段这几项虽已计算但从未组装进 reward，非终端步 `reward` 恒为 `0.0`，见下方"版本差异"）：
 
 $$
-r_t = \text{match\_gain} - (\lambda + \text{base\_penalty}) \cdot c_t - \text{forced\_overflow\_penalty}
+r_t = \text{match\_gain}_t \;-\; \text{cap\_penalty}_t \;-\; (\lambda + \text{base\_penalty}) \cdot c_t
 $$
 
-其中 $c_t = \mathbf{1}[\text{conflict\_violated}_t]$，$\text{base\_penalty} = 0.2$。
+$$
+\text{cap\_penalty}_t = -2.0 \cdot \mathbf{1}[\text{cap\_violated}_t], \qquad c_t = \mathbf{1}[\text{conflict\_violated}_t], \qquad \text{base\_penalty} = 0.2
+$$
 
-**对偶上升 / dual ascent**（在训练回调中，每 `LAMBDA_UPDATE_WINDOW` 个 episode 更新一次）：
+**对偶上升 / dual ascent**（在训练回调中，每 `LAMBDA_UPDATE_WINDOW` 个 episode 更新一次，只针对冲突，不针对容量）：
 
 $$
 \lambda \leftarrow \text{clip}\big(\lambda + \eta \cdot \bar{v},\; 0,\; \lambda_{\max}\big), \qquad \eta = \text{LAMBDA\_LR} = 3\times10^{-4}
@@ -177,9 +185,11 @@ $$
 
 $\bar{v}$ 为窗口内的平均冲突违反率，$\lambda_{\max}$ 为配置中的 `LAMBDA_MAX`。
 
-**⚠️ 实现说明 / Implementation note**：核对 `scenarios/lt/ppo_lagrangian/env.py` 第 231-251 行发现，`match_gain`、`lagrange_penalty`、`forced_overflow_penalty`、`step_reward` 均已计算，但**实际返回的非终端步奖励恒为 `reward = 0.0`**，上述逐步公式并未真正接入 `step()` 返回值——只有 `match_gain` 被累加进 `self._total_ru`（用于计算 AR），冲突/容量惩罚在非终端步并不体现在返回给智能体的 reward 里。真正影响训练信号的，只有第 3.2 节的终端分级公式（其成功/失败分支由 `episode_violations` 决定，间接反映了整个 episode 的违反情况）。$\lambda$ 的对偶上升更新依据的是 episode 级违反率统计，与这段未接入的逐步惩罚公式无关。
+**版本差异 / version history**：
+- **v4.0.0（`add_states`分支，冻结）**：`match_gain` 累加进 `self._total_ru`（影响 AR），但 `cap_penalty`/`lagrange_penalty` 从未组装进 `reward`——非终端步 `reward` 恒为 `0.0`。唯一真正生效的信号是第 3.2 节的终端分级公式。
+- **v4.1.0（`final_paper_experiments`分支）**：上述公式已真正接入 `reward`，见 `paper_contents/v4.1.0_changelog.md`。
 
-**English**: Verified against the code — `match_gain`, `lagrange_penalty`, `forced_overflow_penalty`, and `step_reward` are all computed but **never assigned to the actual returned non-terminal `reward`, which is hardcoded to `0.0`**. Only `match_gain` feeds into the running AR total. The per-step formula in the docstring (and above) describes intent, not runtime behaviour; the only live training signal is the Section 3.2 terminal formula. The $\lambda$ dual-ascent update is driven by episode-level violation-rate statistics, independent of this dead per-step formula.
+**English**: Prior descriptions of P5 as "hard-masked capacity" were incorrect — verified that `run_all.py` trains a plain `PrunedPPO` (a `PPO` subclass) with no `ActionMasker`/`MaskablePPO` wrapping in any of the 3 scenarios; `action_masks()` is dead code by design (masking is P4-exclusive). P5 correctly has no structural constraint enforcement at all — both capacity and conflict are pure penalties. In v4.0.0 these penalty terms were computed but never assembled into the returned reward (non-terminal `reward` was hardcoded `0.0`); v4.1.0 wires them in (see changelog).
 
 ### 4.4 `ppo_opt`（P6，最佳适应修复启发式 / best-fit repair heuristic）
 
@@ -201,9 +211,11 @@ $$
 \text{repair\_penalty} = -0.1 \;\; \text{（每次触发修复 / per repair event）}
 $$
 
-**⚠️ 实现说明**：核对 `scenarios/lt/ppo_opt/env.py` 第 243-267 行，`repair_penalty` 与 `step_reward` 同样是计算后未使用的变量——非终端步实际返回 `reward` 也恒为该分支未显式赋值时的 $0$（仅"无法修复"分支会立即返回 $-M$ 并终止）。docstring 里另一处描述的"Terminal bonus: $+AR \cdot (1-\text{repair\_rate})$"同样是过时文档，实际终端奖励用的是第 3.2 节的统一分级公式，未按修复率加权。
+**版本差异 / version history**：
+- **v4.0.0（冻结）**：`repair_penalty`/`step_reward` 计算后未使用，非终端步 `reward` 恒为 $0$（仅"无法修复"分支立即返回 $-M$ 并终止）。docstring 里"Terminal bonus: $+AR\cdot(1-\text{repair\_rate})$"是过时描述，实际终端奖励一直是第 3.2 节统一分级公式，未按修复率加权。
+- **v4.1.0**：非终端步 `reward = repair_penalty`，见 `v4.1.0_changelog.md`。
 
-**English**: `repair_penalty` and `step_reward` are computed but unused for non-terminal steps (which return `0`, except the unrepairable-fallback branch which returns `-M` immediately and ends the episode). The docstring's alternative terminal formula "$+AR\cdot(1-\text{repair\_rate})$" is likewise stale; the actual terminal reward uses the unified Section 3.2 formula, not repair-rate weighting.
+**English**: In v4.0.0, `repair_penalty`/`step_reward` were computed but unused (non-terminal reward hardcoded `0`, except the unrepairable-fallback branch returning `-M` immediately). The docstring's "$+AR\cdot(1-\text{repair\_rate})$" terminal formula was likewise stale. v4.1.0 wires `repair_penalty` into the non-terminal reward.
 
 ### 4.5 `dqn` / `ddqn`（Q-learning 族 / Q-learning family）
 
@@ -217,7 +229,9 @@ $$
 y_t = r_t + \gamma \, Q_{\theta^-}\!\big(s_{t+1},\; \arg\max_{a'} Q_\theta(s_{t+1}, a')\big) \qquad \text{(Double DQN, 消除过高估计 / de-biases overestimation)}
 $$
 
-**中文**：DDQN 与 DQN 唯一区别在于目标 Q 值的动作选择与评估解耦（动作选择用在线网络 $\theta$，评估用目标网络 $\theta^-$），环境侧奖励结构完全相同，均沿用 4.1 节的 0/分级公式。
+**中文**：DDQN 与 DQN 唯一区别在于目标 Q 值的动作选择与评估解耦（动作选择用在线网络 $\theta$，评估用目标网络 $\theta^-$）。环境侧：v4.0.0 上两者非终端步 `reward` 都恒为 $0$（`cap_penalty`/`conflict_penalty` 计算后未使用）；v4.1.0 已接入 `reward = cap_penalty + conflict_penalty`（gt场景无独立cap_penalty，容量违规是硬终止），见 `v4.1.0_changelog.md`。
+
+**English**: The only DQN/DDQN difference is decoupling target-Q action-selection (online network) from evaluation (target network). Environment-wise: on v4.0.0 both had non-terminal reward hardcoded to `0`; v4.1.0 wires in `reward = cap_penalty + conflict_penalty` (gt has no separate cap_penalty — capacity violation there is an immediate hard termination).
 
 ---
 

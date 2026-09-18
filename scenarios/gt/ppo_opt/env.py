@@ -247,7 +247,7 @@ class P6Env(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            reward = 0.0
+            reward = repair_penalty  # v4.1.0: wire in repair penalty (was dead code in v4.0.0)
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "step":                self._step,

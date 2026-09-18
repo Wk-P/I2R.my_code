@@ -210,7 +210,8 @@ class DDQNEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            reward = 0.0
+            # v4.1.0: wire in the per-step violation penalty (was dead code in v4.0.0)
+            reward = cap_penalty + conflict_penalty
         return self._obs(), reward, done, False, {
             "ar":                             self.ar,
             "step":                           self._step,

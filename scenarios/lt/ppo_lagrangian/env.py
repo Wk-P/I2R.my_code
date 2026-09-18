@@ -1,13 +1,23 @@
 """
-P5 Environment — Hard capacity (masked), Lagrangian conflict (adaptive penalty).
+P5 Environment — Lagrangian Constraint Relaxation (no action masking).
 
 N < M: each ECU hosts multiple services.
 
-Constraints:
-    - Capacity violation → HARD (action masking; forced-overflow fallback
-      triggers only when ALL ECUs are full, incurring a heavy penalty).
-    - Conflict violation → Lagrangian (soft but adaptively penalised via λ;
-      the training callback updates λ via dual ascent to drive violations → 0).
+Neither constraint is action-masked here -- hard masking is exclusively P4
+(ppo_mask)'s mechanism; P5's entire point is to compare a penalty/dual-ascent
+approach against P4's structural guarantee, so masking capacity here would
+collapse that distinction. action_masks() is defined below but is dead code
+(never wrapped via ActionMasker/MaskablePPO in run_all.py -- P5 trains a
+plain PrunedPPO), kept only as an unused interface.
+
+Design:
+    - Capacity violation → fixed penalty (-2.0 per step); episode continues,
+      remaining_vms may go negative.
+    - Conflict violation → adaptive Lagrangian penalty (λ + base_penalty) * c_t;
+      λ is updated externally by the training callback via dual ascent.
+    - v4.1.0: the per-step reward r_t = match_gain - forced_overflow_penalty -
+      (lambda_val+base_penalty)*c_t is now actually wired into the returned
+      reward (was dead code in v4.0.0).
 """
 
 import sys
@@ -259,7 +269,9 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            reward = 0.0
+            # v4.1.0: wire in full per-step formula (was dead code in v4.0.0; docstring's
+            # r_t = match_gain - (lambda+base_penalty)*c_t - forced_overflow_penalty)
+            reward = step_reward + lagrange_penalty + forced_overflow_penalty
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "violated":            violated,

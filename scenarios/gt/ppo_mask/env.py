@@ -45,9 +45,12 @@ class P4Env(gym.Env):
         [6+4N:6+5N]  valid-action flags (1 = capacity OK AND no conflict)
         [6+5N:6+5N+M] remaining service demands (sorted descending)
 
-    Reward (terminal only, step reward is 0):
+    Reward:
         M*ar    zero-violation episode (quality-proportional, v2.2.0-style)
         -M      any capacity/conflict violation
+        -2.0    per-step forced-overflow penalty when no valid ECU exists
+                (v4.1.0: wired in, was dead code in v4.0.0; step reward is
+                otherwise 0 since violations should not occur under masking)
     """
 
     metadata = {"render_modes": []}
@@ -270,7 +273,7 @@ class P4Env(gym.Env):
                 # step() for the full rationale.
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            reward = 0.0
+            reward = violation_penalty  # v4.1.0: wire in forced-overflow penalty (was dead code in v4.0.0)
 
         info = {
             "ar":                  self.ar,
