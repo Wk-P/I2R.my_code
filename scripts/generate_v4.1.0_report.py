@@ -36,11 +36,39 @@ ALGO_LABELS = {
 
 FIXED_ALGOS = {"ppo_mask", "ppo_lagrangian", "ppo_opt", "dqn", "ddqn"}
 
-# v4.0.0 frozen baseline (results/add_states, 5M steps, 5 seeds) exp_ids are
-# not tracked by a manifest -- read whatever exp_id directories exist there
-# for reference-only comparison. Different step budget/seed count, so this
-# is directional context, not an apples-to-apples ablation.
+# v4.0.0 frozen baseline (results/add_states, 5M steps, 5 seeds).
 V4_0_0_RESULTS_ROOT = PROJECT_ROOT / "results" / "add_states"
+
+# The exact exp_ids belonging to the frozen v4.0.0_final_1 5-seed campaign are
+# recorded here -- NOT derivable by just listing results/add_states/<s>/<a>/,
+# which also contains many older exploratory/rejected-candidate exp_id dirs
+# (different hyperparameters, different step budgets) mixed in over the
+# project's history. Pooling all of those (an earlier version of this script
+# did) silently averages together runs from completely different configs --
+# e.g. lt/ppo_opt's pooled reference had a conflict_viol_rate stdev (0.40)
+# larger than its own mean, which is a giveaway that it wasn't one coherent
+# experiment. Load the frozen manifest instead so the "v4.0.0参考" column is
+# the actual 5 kept seeds, not everything ever run under that path.
+FROZEN_V4_0_0_MANIFEST = PROJECT_ROOT / "paper_contents" / "campaign_5seed_figs" / "summary_data.json"
+
+
+def _load_frozen_v4_0_0_exp_ids() -> dict:
+    """{(scenario, algo): [exp_id, ...]} for the 5 seeds kept in v4.0.0_final_1."""
+    if not FROZEN_V4_0_0_MANIFEST.exists():
+        return {}
+    data = json.loads(FROZEN_V4_0_0_MANIFEST.read_text())
+    out = {}
+    for key, entry in data.items():
+        if key.endswith("_ILP"):
+            continue
+        scenario, algo = key.split("_", 1)
+        exp_ids = entry.get("exp_ids")
+        if exp_ids:
+            out[(scenario, algo)] = exp_ids
+    return out
+
+
+_FROZEN_V4_0_0_EXP_IDS = _load_frozen_v4_0_0_exp_ids()
 
 
 def read_summary_row(exp_dir: Path) -> dict | None:
@@ -82,16 +110,26 @@ def fmt_mean_std(values: list[float]) -> str:
 
 
 def collect_v4_0_0_reference(scenario: str, algo: str) -> dict | None:
-    """Best-effort: scan results/add_states/<scenario>/<algo>/*/summary.csv,
-    pool all exp_id dirs found (no manifest for the frozen run), used only
-    as directional before/after context in the report."""
+    """Prefer the exact 5 exp_ids from the frozen v4.0.0_final_1 campaign
+    (paper_contents/campaign_5seed_figs/summary_data.json). Falls back to
+    pooling every exp_id dir under results/add_states/<scenario>/<algo>/ only
+    if that manifest doesn't cover this (scenario, algo) -- and clearly marks
+    the result as a "pooled/mixed" fallback so it isn't mistaken for the
+    clean frozen reference."""
+    frozen_ids = _FROZEN_V4_0_0_EXP_IDS.get((scenario, algo))
     algo_dir = V4_0_0_RESULTS_ROOT / scenario / algo
     if not algo_dir.is_dir():
         return None
+
     ars, success, cap_v, conflict_v = [], [], [], []
-    for exp_dir in algo_dir.iterdir():
-        if not exp_dir.is_dir():
-            continue
+    if frozen_ids:
+        exp_dirs = [algo_dir / eid for eid in frozen_ids]
+        source_note = ""
+    else:
+        exp_dirs = [d for d in algo_dir.iterdir() if d.is_dir()]
+        source_note = " ⚠️POOLED(非冻结5seed,混合历史run)"
+
+    for exp_dir in exp_dirs:
         row = read_summary_row(exp_dir)
         if row is None:
             continue
@@ -105,11 +143,12 @@ def collect_v4_0_0_reference(scenario: str, algo: str) -> dict | None:
     if not ars:
         return None
     return {
-        "ar": fmt_mean_std(ars),
+        "ar": fmt_mean_std(ars) + source_note,
         "success_rate": fmt_mean_std(success),
         "cap_viol_rate": fmt_mean_std(cap_v),
         "conflict_viol_rate": fmt_mean_std(conflict_v),
         "n_runs_pooled": len(ars),
+        "is_frozen": bool(frozen_ids),
     }
 
 
