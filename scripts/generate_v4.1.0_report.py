@@ -66,11 +66,19 @@ def read_ilp_row(exp_dir: Path) -> dict | None:
 
 
 def fmt_mean_std(values: list[float]) -> str:
-    if not values:
+    # Historical results/add_states/ runs include old exploratory/degenerate
+    # configs whose summary.csv can carry "nan" (e.g. a run with 0 valid
+    # episodes) -- Python 3.12's statistics.stdev raises an unhelpful
+    # AttributeError on NaN input instead of a clean error, so filter first.
+    finite = [v for v in values if v == v and abs(v) != float("inf")]
+    dropped = len(values) - len(finite)
+    if not finite:
         return "N/A"
-    if len(values) == 1:
-        return f"{values[0]:.4f}"
-    return f"{statistics.mean(values):.4f}±{statistics.stdev(values):.4f}"
+    if len(finite) == 1:
+        suffix = f" (dropped {dropped} NaN/inf)" if dropped else ""
+        return f"{finite[0]:.4f}{suffix}"
+    suffix = f" [n={len(finite)}, dropped {dropped} NaN/inf]" if dropped else ""
+    return f"{statistics.mean(finite):.4f}±{statistics.stdev(finite):.4f}{suffix}"
 
 
 def collect_v4_0_0_reference(scenario: str, algo: str) -> dict | None:
