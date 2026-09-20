@@ -178,9 +178,19 @@ def main():
         f"- 代码改动：见 `paper_contents/v4.1.0_changelog.md`（"
         f"ppo_mask/ppo_lagrangian/ppo_opt/dqn/ddqn 接入此前从未生效的逐步违规惩罚；"
         f"`ppo`(P3) 未改动，作为不变基线）\n"
-        f"- **⚠️ 与冻结的 v4.0.0（results/add_states，5M步/5种子）不是同一预算，"
-        f"下表『v4.0.0参考』列仅供方向性对比，不是严格消融实验**\n"
     )
+    if steps == 5_000_000:
+        lines.append(
+            f"- 训练步数与冻结的 v4.0.0（5M步/5种子）**一致**，唯一差异是种子数"
+            f"（{len(seeds)} vs 5）——已排除步数预算这个混杂因素，是比之前2M步版本"
+            f"更干净的『修复前后』对比，但仍不是逐种子严格消融（种子数更少）。\n"
+        )
+    else:
+        lines.append(
+            f"- **⚠️ 与冻结的 v4.0.0（results/add_states，5M步/5种子）不是同一预算"
+            f"（本次{steps:,}步/{len(seeds)}种子），下表『v4.0.0参考』列仅供方向性对比，"
+            f"不是严格消融实验**\n"
+        )
     lines.append("---\n")
 
     missing = []
@@ -249,8 +259,8 @@ def main():
         lines.append("全部 run 数据完整，无缺失。\n")
 
     lines.append(
-        "\n🔧 = 本次修复了死代码惩罚(v4.1.0)的算法；`ppo`(P3) 未标记，"
-        "代码与v4.0.0完全一致，只是重跑在了2M步/3种子预算下作为同一批次的参照。\n"
+        f"\n🔧 = 本次修复了死代码惩罚(v4.1.0)的算法；`ppo`(P3) 未标记，"
+        f"代码与v4.0.0完全一致，只是重跑在了{steps:,}步/{len(seeds)}种子预算下作为同一批次的参照。\n"
     )
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
