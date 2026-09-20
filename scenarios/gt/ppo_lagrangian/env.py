@@ -11,18 +11,35 @@ v4.1.0 changelog. action_masks() is still defined below but is dead code,
 same as in lt/eq, kept only as an unused interface.)
 
 Design:
-    - Capacity violation → fixed penalty (-2.0 per step); episode continues,
-      remaining_vms may go negative.
+    - Capacity violation → fixed penalty (-2.0 per step, conceptually -- see
+      per-step reward history below); episode continues, remaining_vms may go
+      negative. NOTE: unlike v4.0.0's gt, capacity is no longer redirected to
+      a feasible ECU via action_masks() (that redirect was removed in v4.1.0
+      for consistency with lt/eq, which never had one) -- this IS a real
+      environment-dynamics change versus v4.0.0's gt, independent of the
+      reward-formula ablation below.
     - Conflict violation → adaptive Lagrangian penalty (λ + base_penalty) * c_t;
       λ is updated externally by the training callback via dual ascent.
-    - v4.1.0: the per-step penalties (cap_penalty, lagrange_penalty) are now
-      actually wired into the returned reward (was dead code in v4.0.0).
-    - v4.1.0.1: a first wiring attempt also added match_gain (dense per-step
-      utilisation reward) per the original docstring formula; a 5M-step
-      ablation showed it made lt worse (success_rate 0.81->0.52, conflict_viol
-      0.18->0.47) because it double-counts utilisation already covered by the
-      terminal AR term. Dropped -- the wired formula is now just
-      r_t = -cap_penalty - (lambda_val+base_penalty)*c_t.
+
+Per-step reward history (v4.1.0 -> v4.1.0.2 ablation, all at 5M steps/3 seeds,
+see v4.1.0_changelog.md for the full lt/eq/gt numbers):
+    - v4.0.0: non-terminal reward hardcoded 0.0 (cap_penalty/lagrange_penalty
+      computed but never wired in -- dead code); capacity redirect (above) was
+      also still present, so v4.0.0 gt isn't directly comparable to any
+      version below on capacity handling alone.
+    - v4.1.0: removed the capacity redirect AND wired in the full docstring
+      reward formula (match_gain included). lt regressed hard: success_rate
+      0.81->0.52, conflict_viol 0.18->0.47 (gt/eq themselves were roughly
+      unaffected either way).
+    - v4.1.0.1: dropped match_gain (kept cap_penalty + lagrange_penalty only),
+      hypothesising it double-counted utilisation already in the terminal AR
+      term. Did NOT recover lt (0.54/0.45 -- statistically indistinguishable
+      from v4.1.0). Hypothesis falsified.
+    - v4.1.0.2 (current): reward reverted to 0.0 (v4.0.0-style), but the
+      capacity redirect stays removed (a separate, deliberate correctness fix
+      for cross-scenario consistency, not part of this reward ablation).
+      cap_penalty/lagrange_penalty are computed below but intentionally
+      unused, same as v4.0.0 -- a data-backed decision, not an oversight.
 """
 
 import sys
@@ -51,9 +68,10 @@ class LagrangeEnv(gym.Env):
         [6+4N:6+4N+M] remaining service demands (sorted descending)
         [6+4N+M]     current λ value, normalised by λ_max
 
-    Reward per step (v4.1.0.1, see module docstring for why match_gain was dropped):
-        r_t = -cap_penalty - (lambda_val + base_penalty) * c_t
-        (terminal step instead uses the graded terminal formula, not r_t + terminal_bonus)
+    Reward per step (v4.1.0.2, see module docstring for the full ablation history):
+        r_t = 0.0  (reverted to v4.0.0 behaviour -- data-backed, see above;
+        capacity redirect removal is kept, independent of this reward change)
+        (terminal step instead uses the graded terminal formula)
     """
 
     metadata = {"render_modes": []}
@@ -246,15 +264,15 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0.1: dropped match_gain from this sum -- the 5M-step ablation showed
-            # lt success_rate falling 0.81->0.52 and conflict_viol rising 0.18->0.47 when
-            # it was included (see v4.1.0_changelog.md). It double-counts utilisation
-            # already covered by the terminal AR term; keeping only the penalties is the
-            # "wire in the missing constraint signal" fix without also injecting an
-            # untested dense positive reward. (Also removed the step()-internal capacity
-            # redirect that used to make gt inconsistent with lt/eq -- capacity is now a
-            # fixed penalty in all 3 scenarios, not a structural guarantee.)
-            reward = cap_penalty + lagrange_penalty
+            # v4.1.0.2: reverted to v4.0.0-style reward=0.0 (see module docstring for
+            # the full v4.1.0/v4.1.0.1/v4.1.0.2 ablation history -- match_gain wasn't
+            # the cause of lt's regression; any non-zero per-step reward here
+            # destabilises this env's PPO training on lt). NOTE: unlike lt/eq, this is
+            # NOT identical to gt's original v4.0.0 behaviour -- the step()-internal
+            # capacity redirect (using action_masks()) that made gt inconsistent with
+            # lt/eq is still removed (kept from v4.1.0), so gt's capacity handling is
+            # now the same fixed-penalty-only design as lt/eq, just with reward=0.0.
+            reward = 0.0
 
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,

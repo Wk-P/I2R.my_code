@@ -11,18 +11,29 @@ collapse that distinction. action_masks() is defined below but is dead code
 plain PrunedPPO), kept only as an unused interface.
 
 Design:
-    - Capacity violation → fixed penalty (-2.0 per step); episode continues,
-      remaining_vms may go negative.
+    - Capacity violation → fixed penalty (-2.0 per step, conceptually -- see
+      below); episode continues, remaining_vms may go negative.
     - Conflict violation → adaptive Lagrangian penalty (λ + base_penalty) * c_t;
       λ is updated externally by the training callback via dual ascent.
-    - v4.1.0: the per-step penalties (lagrange_penalty, forced_overflow_penalty)
-      are now actually wired into the returned reward (was dead code in v4.0.0).
-    - v4.1.0.1: a first wiring attempt also added match_gain (dense per-step
-      utilisation reward) per the original docstring formula; a 5M-step
-      ablation showed it made lt worse (success_rate 0.81->0.52, conflict_viol
-      0.18->0.47) because it double-counts utilisation already covered by the
-      terminal AR term. Dropped -- the wired formula is now just
-      r_t = -(lambda_val+base_penalty)*c_t - forced_overflow_penalty.
+
+Per-step reward history (v4.1.0 -> v4.1.0.2 ablation, all at 5M steps/3 seeds,
+see v4.1.0_changelog.md for the full lt/eq/gt numbers):
+    - v4.0.0: non-terminal reward hardcoded 0.0 (lagrange_penalty/
+      forced_overflow_penalty computed but never wired in -- dead code).
+    - v4.1.0: wired in the full docstring formula (match_gain included). lt
+      regressed hard: success_rate 0.81->0.52, conflict_viol 0.18->0.47.
+    - v4.1.0.1: dropped match_gain (kept lagrange_penalty + forced_overflow_
+      penalty only), hypothesising match_gain double-counted utilisation
+      already in the terminal AR term. Did NOT recover lt (0.54/0.45 --
+      statistically indistinguishable from v4.1.0). Hypothesis falsified.
+    - v4.1.0.2 (current): reverted to v4.0.0 behaviour (reward=0.0). The
+      regression isn't about match_gain -- it's that ANY non-zero per-step
+      reward destabilises this env's PPO training on lt specifically (unlike
+      ppo_opt, which has no structural violation guard here either, but whose
+      repair_penalty is a much smaller -0.1 vs this env's -2.0/adaptive-λ
+      penalties that can rival the terminal reward's scale). lagrange_penalty
+      and forced_overflow_penalty are computed below but intentionally unused,
+      same as v4.0.0 -- this is a data-backed decision, not an oversight.
 """
 
 import sys
@@ -55,8 +66,8 @@ class LagrangeEnv(gym.Env):
         [6+5N+M:6+5N+2M] valid ECU count per remaining service (normalised by N; 0 for placed)
         [6+5N+2M]    current λ value, normalised by λ_max
 
-    Reward per step (v4.1.0.1, see module docstring for why match_gain was dropped):
-        r_t = -(lambda_val + base_penalty) * c_t - forced_overflow_penalty
+    Reward per step (v4.1.0.2, see module docstring for the full ablation history):
+        r_t = 0.0  (reverted to v4.0.0 behaviour -- data-backed, see above)
         (terminal step instead uses the graded terminal formula)
     """
 
@@ -273,14 +284,22 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0.1: dropped match_gain/step_reward from this sum -- the 5M-step
-            # ablation showed lt success_rate falling 0.81->0.52 and conflict_viol
-            # rising 0.18->0.47 when match_gain was included (see v4.1.0_changelog.md).
-            # match_gain double-counts utilisation that's already the terminal AR
-            # term's whole job; keeping only the penalties is the "wire in the
-            # missing constraint signal" fix without also injecting an untested,
-            # unrequested dense positive reward.
-            reward = lagrange_penalty + forced_overflow_penalty
+            # v4.1.0.2: reverted to v4.0.0 behaviour (reward=0.0 for non-terminal
+            # steps). v4.1.0.1's penalty-only formula (reward = lagrange_penalty +
+            # forced_overflow_penalty, no match_gain) was ALSO tested at 5M steps/
+            # 3 seeds and did NOT recover lt (success_rate 0.54, conflict_viol 0.45
+            # -- statistically indistinguishable from v4.1.0's 0.52/0.47 with
+            # match_gain included). So the lt regression isn't about match_gain
+            # double-counting; it's that ANY non-zero per-step reward here
+            # destabilises this PPO variant's training on lt specifically (eq/gt
+            # were roughly unaffected in all 3 variants) -- likely because, unlike
+            # ppo_opt's small -0.1 repair_penalty in a repair-guarded environment,
+            # this env has no structural violation guard at all and the penalty
+            # magnitudes (-2.0, and an adaptively-growing lambda term) can rival
+            # the terminal reward's scale, destabilising GAE/advantage estimation.
+            # See v4.1.0_changelog.md for the full lt/eq/gt comparison across all
+            # 3 variants. Kept as reward=0.0 -- data-backed, not an oversight.
+            reward = 0.0
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "violated":            violated,
