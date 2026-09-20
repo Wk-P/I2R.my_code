@@ -15,9 +15,14 @@ Design:
       remaining_vms may go negative.
     - Conflict violation → adaptive Lagrangian penalty (λ + base_penalty) * c_t;
       λ is updated externally by the training callback via dual ascent.
-    - v4.1.0: the per-step reward r_t = match_gain - forced_overflow_penalty -
-      (lambda_val+base_penalty)*c_t is now actually wired into the returned
-      reward (was dead code in v4.0.0).
+    - v4.1.0: the per-step penalties (lagrange_penalty, forced_overflow_penalty)
+      are now actually wired into the returned reward (was dead code in v4.0.0).
+    - v4.1.0.1: a first wiring attempt also added match_gain (dense per-step
+      utilisation reward) per the original docstring formula; a 5M-step
+      ablation showed it made lt worse (success_rate 0.81->0.52, conflict_viol
+      0.18->0.47) because it double-counts utilisation already covered by the
+      terminal AR term. Dropped -- the wired formula is now just
+      r_t = -(lambda_val+base_penalty)*c_t - forced_overflow_penalty.
 """
 
 import sys
@@ -50,9 +55,9 @@ class LagrangeEnv(gym.Env):
         [6+5N+M:6+5N+2M] valid ECU count per remaining service (normalised by N; 0 for placed)
         [6+5N+2M]    current λ value, normalised by λ_max
 
-    Reward per step:
-        r_t = match_gain - (lambda_val + base_penalty) * c_t - forced_overflow_penalty
-        terminal_bonus: +ar (zero violations) or -ar (some violations)
+    Reward per step (v4.1.0.1, see module docstring for why match_gain was dropped):
+        r_t = -(lambda_val + base_penalty) * c_t - forced_overflow_penalty
+        (terminal step instead uses the graded terminal formula)
     """
 
     metadata = {"render_modes": []}
@@ -258,7 +263,6 @@ class LagrangeEnv(gym.Env):
         self._step += 1
 
         done = self._step >= self.M
-        step_reward = match_gain / max(_active, 1)
         violated = cap_violated or conflict_violated
         if done:
             # Ported from scenarios/lt/ppo_mask/env.py (v2.6.0): graded
@@ -269,9 +273,14 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0: wire in full per-step formula (was dead code in v4.0.0; docstring's
-            # r_t = match_gain - (lambda+base_penalty)*c_t - forced_overflow_penalty)
-            reward = step_reward + lagrange_penalty + forced_overflow_penalty
+            # v4.1.0.1: dropped match_gain/step_reward from this sum -- the 5M-step
+            # ablation showed lt success_rate falling 0.81->0.52 and conflict_viol
+            # rising 0.18->0.47 when match_gain was included (see v4.1.0_changelog.md).
+            # match_gain double-counts utilisation that's already the terminal AR
+            # term's whole job; keeping only the penalties is the "wire in the
+            # missing constraint signal" fix without also injecting an untested,
+            # unrequested dense positive reward.
+            reward = lagrange_penalty + forced_overflow_penalty
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "violated":            violated,

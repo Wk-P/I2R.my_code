@@ -15,9 +15,14 @@ Design:
       remaining_vms may go negative.
     - Conflict violation → adaptive Lagrangian penalty (λ + base_penalty) * c_t;
       λ is updated externally by the training callback via dual ascent.
-    - v4.1.0: the per-step reward r_t = match_gain - cap_penalty -
-      (lambda_val+base_penalty)*c_t is now actually wired into the returned
-      reward (was dead code in v4.0.0).
+    - v4.1.0: the per-step penalties (cap_penalty, lagrange_penalty) are now
+      actually wired into the returned reward (was dead code in v4.0.0).
+    - v4.1.0.1: a first wiring attempt also added match_gain (dense per-step
+      utilisation reward) per the original docstring formula; a 5M-step
+      ablation showed it made lt worse (success_rate 0.81->0.52, conflict_viol
+      0.18->0.47) because it double-counts utilisation already covered by the
+      terminal AR term. Dropped -- the wired formula is now just
+      r_t = -cap_penalty - (lambda_val+base_penalty)*c_t.
 """
 
 import sys
@@ -46,8 +51,9 @@ class LagrangeEnv(gym.Env):
         [6+4N:6+4N+M] remaining service demands (sorted descending)
         [6+4N+M]     current λ value, normalised by λ_max
 
-    Reward per step:
-        r_t = match_gain - (lambda_val + base_penalty) * c_t + terminal_bonus
+    Reward per step (v4.1.0.1, see module docstring for why match_gain was dropped):
+        r_t = -cap_penalty - (lambda_val + base_penalty) * c_t
+        (terminal step instead uses the graded terminal formula, not r_t + terminal_bonus)
     """
 
     metadata = {"render_modes": []}
@@ -231,7 +237,6 @@ class LagrangeEnv(gym.Env):
             self.valid_placed += 1
 
         done = self._step >= self.M
-        match_gain       = float(ru)
         cap_penalty      = -2.0 if cap_violated else 0.0
         base_penalty     = 0.2
         lagrange_penalty = -(self.lambda_val + base_penalty) * c_t
@@ -241,12 +246,15 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0: wire in full per-step formula (was dead code in v4.0.0; docstring's
-            # r_t = match_gain - cap_penalty - (lambda+base_penalty)*c_t). Also removed the
-            # step()-internal capacity redirect that used to make gt inconsistent with lt/eq
-            # (see v4.1.0 changelog) -- capacity is now handled the same way in all 3 scenarios:
-            # a fixed penalty, not a structural guarantee.
-            reward = match_gain + cap_penalty + lagrange_penalty
+            # v4.1.0.1: dropped match_gain from this sum -- the 5M-step ablation showed
+            # lt success_rate falling 0.81->0.52 and conflict_viol rising 0.18->0.47 when
+            # it was included (see v4.1.0_changelog.md). It double-counts utilisation
+            # already covered by the terminal AR term; keeping only the penalties is the
+            # "wire in the missing constraint signal" fix without also injecting an
+            # untested dense positive reward. (Also removed the step()-internal capacity
+            # redirect that used to make gt inconsistent with lt/eq -- capacity is now a
+            # fixed penalty in all 3 scenarios, not a structural guarantee.)
+            reward = cap_penalty + lagrange_penalty
 
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,

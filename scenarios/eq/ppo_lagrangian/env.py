@@ -16,10 +16,13 @@ Design:
 
 Reward (per-step, v4.1.0: actually wired into the returned reward, was dead
 code in v4.0.0):
-    ru / n_active                      (dense utilisation signal; always ≥ 0)
     - cap_penalty                      (-2.0 if capacity violated, else 0)
     - (λ + base_penalty) * c_t        (Lagrangian conflict penalty)
     + ar_final  (terminal, no-violation episodes only)
+v4.1.0.1: dropped the `ru / n_active` (match_gain) dense utilisation term that
+was here in v4.1.0 -- a 5M-step ablation showed it made lt worse
+(success_rate 0.81->0.52, conflict_viol 0.18->0.47) because it double-counts
+utilisation already covered by the terminal AR term.
 
 Services are sorted descending by requirement at each reset (FFD order).
 """
@@ -50,8 +53,9 @@ class LagrangeEnv(gym.Env):
         [6+4N:6+4N+M] remaining service demands (sorted descending)
         [6+4N+M]     current λ value, normalised by λ_max
 
-    Reward per step:
-        r_t = match_gain - (lambda_val + base_penalty) * c_t + terminal_bonus
+    Reward per step (v4.1.0.1, see module docstring for why match_gain was dropped):
+        r_t = -cap_penalty - (lambda_val + base_penalty) * c_t
+        (terminal step instead uses the graded terminal formula)
     """
 
     metadata = {"render_modes": []}
@@ -248,11 +252,9 @@ class LagrangeEnv(gym.Env):
         done = self._step >= self.M
 
         # Reward:
-        #   step_reward       — Δar > 0 iff AR improved (packing rewarded, spreading penalized)
         #   cap_penalty    — fixed -2.0 for capacity overflow (explicit, consistent gradient)
         #   Lagrangian     — adaptive conflict penalty via dual ascent
         #   terminal_bonus — +ar_final for clean episodes; 0 otherwise (avoid -ar instability)
-        step_reward = ru / max(_active, 1)
         cap_penalty    = -2.0 if cap_violated else 0.0
         base_penalty   = 0.2
         lagrange_penalty = -(self.lambda_val + base_penalty) * c_t
@@ -262,9 +264,14 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0: wire in full per-step formula (was dead code in v4.0.0; docstring's
-            # r_t = match_gain - (lambda+base_penalty)*c_t - cap_penalty)
-            reward = step_reward + cap_penalty + lagrange_penalty
+            # v4.1.0.1: dropped step_reward (=ru/n_active, i.e. match_gain) from this
+            # sum -- the 5M-step ablation showed lt success_rate falling 0.81->0.52 and
+            # conflict_viol rising 0.18->0.47 when it was included (see
+            # v4.1.0_changelog.md). It double-counts utilisation already covered by the
+            # terminal AR term; keeping only the penalties is the "wire in the missing
+            # constraint signal" fix without also injecting an untested dense positive
+            # reward.
+            reward = cap_penalty + lagrange_penalty
 
         return self._obs(), reward, done, False, {
             "ar":                             self.ar,
