@@ -1,0 +1,39 @@
+{
+  "description": "v4.1.0.2 最终定案数据集：每个(场景,算法)单元格标明实际数据来源(provenance)，因为不同算法的最终决策不同(有的保留v4.1.0修复用3种子重跑数据，有的回退到v4.0.0用原5种子冻结数据)。详见 paper_contents/v4.1.0_changelog.md。",
+  "generated_at": "2026-09-21",
+  "scenarios": {
+    "lt": {
+      "ilp_ar": 0.741239,
+      "algos": {
+        "ppo_mask":       {"ar_mean": 0.6240, "ar_std": 0.0030, "success_mean": 0.6133, "success_std": 0.0247, "cap_viol_mean": 0.0000, "conflict_viol_mean": 0.0000, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "ppo_lagrangian": {"ar_mean": 0.6402, "ar_std": 0.0017, "success_mean": 0.8100, "success_std": 0.0211, "cap_viol_mean": 0.0155, "conflict_viol_mean": 0.1810, "source": "v4.0.0 frozen (5M/5seed, reward reverted to 0 in v4.1.0.2 == identical to v4.0.0)", "n_seeds": 5},
+        "ppo":            {"ar_mean": 0.6781, "ar_std": 0.0039, "success_mean": 0.3505, "success_std": 0.0198, "cap_viol_mean": 0.2655, "conflict_viol_mean": 0.5535, "source": "v4.0.0 frozen (5M/5seed, code never changed)", "n_seeds": 5},
+        "ppo_opt":        {"ar_mean": 0.6347, "ar_std": 0.0026, "success_mean": 0.5408, "success_std": 0.0146, "cap_viol_mean": 0.0500, "conflict_viol_mean": 0.1450, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "dqn":            {"ar_mean": 0.6408, "ar_std": 0.0036, "success_mean": 0.5333, "success_std": 0.0138, "cap_viol_mean": 0.1200, "conflict_viol_mean": 0.4267, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "ddqn":           {"ar_mean": 0.6464, "ar_std": 0.0076, "success_mean": 0.4650, "success_std": 0.0325, "cap_viol_mean": 0.1125, "conflict_viol_mean": 0.4892, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3}
+      }
+    },
+    "eq": {
+      "ilp_ar": 0.546116,
+      "algos": {
+        "ppo_mask":       {"ar_mean": 0.5408, "ar_std": 0.0023, "success_mean": 1.0000, "success_std": 0.0000, "cap_viol_mean": 0.0000, "conflict_viol_mean": 0.0000, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "ppo_lagrangian": {"ar_mean": 0.5461, "ar_std": 0.0044, "success_mean": 0.9510, "success_std": 0.0022, "cap_viol_mean": 0.0035, "conflict_viol_mean": 0.0475, "source": "v4.0.0 frozen (5M/5seed, reward reverted to 0 in v4.1.0.2 == identical to v4.0.0)", "n_seeds": 5},
+        "ppo":            {"ar_mean": 0.5296, "ar_std": 0.0041, "success_mean": 0.8045, "success_std": 0.0227, "cap_viol_mean": 0.0485, "conflict_viol_mean": 0.1525, "source": "v4.0.0 frozen (5M/5seed, code never changed)", "n_seeds": 5},
+        "ppo_opt":        {"ar_mean": 0.5388, "ar_std": 0.0023, "success_mean": 1.0000, "success_std": 0.0000, "cap_viol_mean": 0.3792, "conflict_viol_mean": 0.7208, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "dqn":            {"ar_mean": 0.5056, "ar_std": 0.0018, "success_mean": 0.7625, "success_std": 0.0246, "cap_viol_mean": 0.0592, "conflict_viol_mean": 0.2300, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "ddqn":           {"ar_mean": 0.5041, "ar_std": 0.0006, "success_mean": 0.7400, "success_std": 0.0434, "cap_viol_mean": 0.0658, "conflict_viol_mean": 0.2550, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3}
+      }
+    },
+    "gt": {
+      "ilp_ar": 0.623696,
+      "algos": {
+        "ppo_mask":       {"ar_mean": 0.5856, "ar_std": 0.0007, "success_mean": 1.0000, "success_std": 0.0000, "cap_viol_mean": 0.0000, "conflict_viol_mean": 0.0000, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "ppo_lagrangian": {"ar_mean": 0.5803, "ar_std": 0.0012, "success_mean": 0.9967, "success_std": 0.0038, "cap_viol_mean": 0.0017, "conflict_viol_mean": 0.0017, "source": "v4.1.0.2 gt-only verification run (5M/3seed, reward=0 + redirect removed, NOT identical to v4.0.0's gt)", "n_seeds": 3},
+        "ppo":            {"ar_mean": 0.5863, "ar_std": 0.0014, "success_mean": 0.9350, "success_std": 0.0138, "cap_viol_mean": 0.0430, "conflict_viol_mean": 0.0225, "source": "v4.0.0 frozen (5M/5seed, code never changed)", "n_seeds": 5},
+        "ppo_opt":        {"ar_mean": 0.5764, "ar_std": 0.0012, "success_mean": 1.0000, "success_std": 0.0000, "cap_viol_mean": 0.8892, "conflict_viol_mean": 0.7692, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "dqn":            {"ar_mean": 0.5684, "ar_std": 0.0020, "success_mean": 0.9075, "success_std": 0.0373, "cap_viol_mean": 0.0167, "conflict_viol_mean": 0.0758, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3},
+        "ddqn":           {"ar_mean": 0.5659, "ar_std": 0.0021, "success_mean": 0.9250, "success_std": 0.0338, "cap_viol_mean": 0.0167, "conflict_viol_mean": 0.0592, "source": "v4.1.0 (5M/3seed, fix kept)", "n_seeds": 3}
+      }
+    }
+  }
+}
