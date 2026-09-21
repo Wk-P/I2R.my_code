@@ -1,6 +1,6 @@
 # 核心公式汇总 / Core Formula Reference
 
-**说明 / Note**：本文档只记录公式本身及其在代码中的实际实现状态，不涉及论文的论证方式或叙事框架。所有公式均已与代码逐行核对（截至 commit `82513ac` / tag `v4.0.0_final_1`），若发现文档描述与实际运行代码不符，会在对应小节以"⚠️ 实现说明"标出。
+**说明 / Note**：本文档记录**最终定案**（`final_paper_experiments` 分支，tag `v4.1.0.2`）的公式与代码实现状态，不涉及论文的论证方式或叙事框架。所有公式均已与代码逐行核对。完整的排查/消融过程（谁改了、为什么改、数据支撑）见 `paper_contents/v4.1.0_changelog.md`，本文档只给最终结论。
 
 符号统一约定见文末《符号表 / Notation Table》。
 
@@ -20,8 +20,15 @@
 | $y_j \in \{0,1\}$ | ECU $j$ 是否被启用（至少承载一个服务） | indicator: ECU $j$ is activated (hosts ≥1 service) |
 | $\mathcal{J}^*$ | 被启用的 ECU 集合 | set of activated ECUs |
 
-三场景（lt/eq/gt）区别仅在于 $N$ 与 $M$ 的相对大小关系（资源紧缺/均衡/充裕），核心公式结构不变。
-*The three scenarios (lt/eq/gt) differ only in the relative size of $N$ vs. $M$ (scarce / balanced / abundant resources); the core formulas below are identical across all three.*
+三场景（lt/eq/gt）区别仅在于 $N$ 与 $M$ 的相对大小关系，核心公式结构不变：
+
+| 场景 | $N$（ECU） | $M$（服务） | 难度定位 |
+|---|---|---|---|
+| lt | 10 | 15 | 资源紧缺（$N<M$），**论文核心困难场景** |
+| eq | 10 | 10 | 供需均衡 |
+| gt | 15 | 10 | 资源充裕（$N>M$） |
+
+*The three scenarios (lt/eq/gt) differ only in the relative size of $N$ vs. $M$; the core formulas below are identical across all three. lt is deliberately the hardest (more services than ECUs), which is why most algorithms show the widest spread and lowest success_rate there — see the per-scenario numbers in Section 4.*
 
 ### 1.2 资源利用率 AR / Allocation Ratio (AR)
 
@@ -95,8 +102,7 @@ $$
 
 ### 3.2 统一分级终端奖励 / Unified Graded Terminal Reward
 
-这是全部 6 个算法共享的**终端奖励**公式，在 `add_states`（v4.0.0冻结）和 `final_paper_experiments`（v4.1.0）两个分支上都不变。**非终端步奖励是否为 0，两个分支不同**：v4.0.0 上全部 6 算法非终端步恒为 0；v4.1.0 上 `ppo_mask`/`ppo_lagrangian`/`ppo_opt`/`dqn`/`ddqn` 五个算法的非终端步奖励已接入各自的逐步惩罚项（见第4节及 `v4.1.0_changelog.md`），只有 `ppo`(P3) 仍保持非终端步恒为 0。
-*Shared by all 6 algorithms on both the `add_states` (v4.0.0, frozen) and `final_paper_experiments` (v4.1.0) branches. Whether the non-terminal step reward is 0 differs by branch: on v4.0.0 all 6 algorithms have it hardcoded to 0; on v4.1.0, `ppo_mask`/`ppo_lagrangian`/`ppo_opt`/`dqn`/`ddqn` now wire in their respective per-step penalty terms (Section 4, and the changelog) — only `ppo`(P3) still returns 0 for non-terminal steps.*
+这是全部 6 个算法**始终共享**的终端奖励公式（唯一在所有历史版本、所有算法间都不变的部分）：
 
 $$
 R_{\text{terminal}} =
@@ -110,10 +116,10 @@ $$
 *where $\text{valid\_placed}$ is the count of services placed without triggering any violation.*
 
 **中文解读**：
-- 判定分支是**二元**的（成功 / 失败两支），但每支内部的奖励幅度是**连续分级**的，不是固定 $\pm1$：成功支随 AR 质量线性变化（值域 $(-M, M]$），失败支随"完成进度" $\text{valid\_placed}/M$ 线性变化（值域 $[-2M, -M)$，恒劣于任意成功支，二者只在不可达的 $AR \to 0$ 处取等）。
-- 该公式最早在 `ppo_mask`（v2.6.0/v2.7.0）中提出，后被移植（"Ported from ppo_mask v2.6.0"）到其余 5 个算法。
+- 判定分支是**二元**的（成功 / 失败两支），但每支内部的奖励幅度是**连续分级**的，不是固定 $\pm1$：成功支随 AR 质量线性变化（值域 $(-M, M]$），失败支随"完成进度" $\text{valid\_placed}/M$ 线性变化（值域 $[-2M, -M)$，恒劣于任意成功支）。
+- 该公式最早在 `ppo_mask`（v2.6.0/v2.7.0）中提出，后被移植到其余 5 个算法。
 
-**English**: The branch condition is binary (success vs. failure), but the reward *magnitude* within each branch is continuously graded — not a fixed ±1. This formula originated in `ppo_mask` (v2.6.0/v2.7.0) and was subsequently ported verbatim into the other five algorithms.
+**English**: The branch condition is binary (success vs. failure), but the reward *magnitude* within each branch is continuously graded. Originated in `ppo_mask` (v2.6.0/v2.7.0), later ported verbatim to the other five algorithms.
 
 ### 3.3 ppo_mask 退火权重变体 / ppo_mask Annealed-Weight Variant
 
@@ -123,7 +129,18 @@ $$
 R_{\text{terminal}}^{\text{success}} = M \cdot \big[(1-w)\cdot 1.0 + w\cdot(2\,AR-1)\big]
 $$
 
-**中文**：训练初期 $w \to 0$，只奖励"是否完整放完"（不含 AR 质量噪声）；随训练推进 $w \to 1$，退化为 3.2 节的标准公式。这是一种课程学习（curriculum）设计，不影响其余 5 个算法。
+**中文**：训练初期 $w \to 0$，只奖励"是否完整放完"；随训练推进 $w \to 1$，退化为 3.2 节的标准公式。课程学习设计，不影响其余 5 个算法。
+
+### 3.4 非终端步奖励：最终定案一览 / Non-Terminal Reward: Final Status
+
+| 算法 | 非终端步 $r_t$（最终，v4.1.0.2） | 是否曾修改后又回退 |
+|---|---|---|
+| `ppo`（P3） | $0$（设计如此，从未变过） | 否 |
+| `ppo_mask`（P4） | $\text{violation\_penalty} + \text{shaping}$（详见4.2节） | 否（v4.1.0接入后保留） |
+| `ppo_lagrangian`（P5） | $0$（**回退到v4.0.0行为**，详见4.3节） | **是**——v4.1.0接入过完整公式，v4.1.0.1试过去掉match_gain，两版在lt场景都明显更差，最终撤回 |
+| `ppo_opt`（P6） | $\text{repair\_penalty}$（详见4.4节） | 否（v4.1.0接入后保留） |
+| `dqn` | $\text{cap\_penalty} + \text{conflict\_penalty}$（详见4.5节） | 否（v4.1.0接入后保留） |
+| `ddqn` | 同`dqn` | 否（v4.1.0接入后保留） |
 
 ---
 
@@ -134,92 +151,80 @@ $$
 违反只记录不惩罚，非终端步奖励恒为 0：
 
 $$
-R_t = 0 \;\; (t < M), \qquad R_{\text{terminal}} \text{ 同第 3.2 节公式（zero shaping/penalty）}
+R_t = 0 \;\; (t < M), \qquad R_{\text{terminal}} \text{ 同第 3.2 节公式}
 $$
 
-**中文**：这是刻意设计的"什么都不管"下限对照组，唯一奖励信号就是终端的分级公式本身，不含任何针对约束的塑形。
+**中文**：刻意设计的"什么都不管"下限对照组，唯一奖励信号就是终端的分级公式，不含任何针对约束的塑形。全程未改动，是6算法里唯一从v4.0.0到v4.1.0.2代码零变化的一个。
 
-### 4.2 `ppo_mask`（P4，硬掩码 / hard action masking）
+### 4.2 `ppo_mask`（P4，硬掩码 / hard action masking）—— **唯一真正使用动作掩码的算法**
+
+用 `sb3_contrib.MaskablePPO` + `ActionMasker` 训练（已验证真实生效，非死代码接口）：
 
 $$
 \text{mask}[j] = \mathbf{1}\!\left[\text{remaining\_vms}[j] \ge n_t \;\wedge\; \neg\,\text{conflict}(j, t)\right]
 $$
 
-若 $\forall j: \text{mask}[j] = 0$（无合法 ECU），触发强制溢出兜底（fallback，选剩余容量最大的 ECU），处以 $-2.0$ 惩罚：
+若 $\forall j: \text{mask}[j] = 0$（无合法 ECU，极罕见），触发强制溢出兜底（选剩余容量最大的 ECU）：
 
 $$
-R_t^{\text{violation-penalty}} = -2.0 \;\; \text{（仅当强制溢出触发时 / only on forced-overflow fallback）}
+r_t = \text{violation\_penalty} + F(s,a,s'), \qquad \text{violation\_penalty} = -2.0 \cdot \mathbf{1}[\text{forced-overflow triggered}]
 $$
 
 外加基于势函数的塑形项（默认关闭）：
 
 $$
-F(s,a,s') = \gamma\,\Phi(s') - \Phi(s), \qquad \Phi(s) = -\beta \cdot \big(1 - \text{FFD\_feasibility}(s)\big)
+F(s,a,s') = \gamma\,\Phi(s') - \Phi(s), \qquad \Phi(s) = -\beta \cdot \big(1 - \text{FFD\_feasibility}(s)\big), \qquad \beta = 0 \text{（默认，no-op）}
 $$
 
-**中文**：$\beta$（`bottleneck_shaping_weight`）默认为 $0.0$，此时塑形项恒为 0（no-op），依据 Ng-Harada-Russell (1999) 的势函数塑形理论，该项在任意 $\beta \ge 0$ 下都不改变最优策略。
+**中文**：依据 Ng-Harada-Russell (1999) 势函数塑形理论，$\beta \ge 0$ 时该项不改变最优策略。`violation_penalty` 在 v4.1.0 前是死代码（算了没接线，非终端步恒为0），v4.1.0接入后保留至今——因为掩码已结构性防住了99%以上的情况，这项修复本身影响很小，符合预期。**例外**：`eq` 场景没有强制溢出兜底分支（代码结构上不存在这种情况），非终端步恒为 $0$，无需任何改动。
 
-**版本差异**：v4.0.0 上 $R_t^{\text{violation-penalty}}$ 虽已计算但未组装进非终端步 `reward`（恒为 $0$，只有 shaping 项生效）；v4.1.0 上 `reward = violation_penalty`（lt/gt两场景；eq场景本身没有强制溢出兜底分支，不适用此项，未改动）。由于掩码已结构性防住了绝大多数情况，该修复预期影响很小。
-
-### 4.3 `ppo_lagrangian`（P5，无动作掩码，容量固定惩罚 + 冲突拉格朗日软约束 / no action masking; fixed-penalty capacity + Lagrangian-soft conflict）
-
-**⚠️ v4.0.0 阶段的表述订正 / correction to the v4.0.0-era description**：此前（包括本文档更早版本）曾把 P5 描述为"容量硬掩码 + 冲突拉格朗日"，这是**错误的**。核实 `run_all.py` 发现三场景（lt/eq/gt）训练用的都是普通 `PrunedPPO`（`stable_baselines3.PPO` 子类），从未用 `ActionMasker`/`MaskablePPO` 包装环境——`env.py` 里定义的 `action_masks()` 是**死代码，从未被调用**。这不是bug，是设计意图：硬掩码是 `ppo_mask`(P4) 专属机制，P5 的方法论意义就是"用惩罚/对偶变量代替掩码"，若P5也硬掩码就与P4没有区别。**准确描述是：P5 对容量和冲突都不做任何结构性阻止，两者都只是惩罚。**
-
-（另外，`gt` 场景的 `env.py` 历史上有一段 `step()` 内部的容量重定向逻辑，会把违规动作事后纠正到可行ECU，与 lt/eq 不一致——v4.1.0 已删除该逻辑，三场景现已完全对齐。）
-
-**逐步奖励公式 / per-step formula**（v4.1.0 已真正接入 `step()` 返回值；v4.0.0 阶段这几项虽已计算但从未组装进 reward，非终端步 `reward` 恒为 `0.0`，见下方"版本差异"）：
+### 4.3 `ppo_lagrangian`（P5，无动作掩码，纯惩罚约束 / no action masking, pure-penalty constraints）—— **最终回退到 v4.0.0 行为**
 
 $$
-r_t = \text{match\_gain}_t \;-\; \text{cap\_penalty}_t \;-\; (\lambda + \text{base\_penalty}) \cdot c_t
+r_t = 0 \quad (t < M), \qquad R_{\text{terminal}} \text{ 同第 3.2 节公式}
 $$
 
-$$
-\text{cap\_penalty}_t = -2.0 \cdot \mathbf{1}[\text{cap\_violated}_t], \qquad c_t = \mathbf{1}[\text{conflict\_violated}_t], \qquad \text{base\_penalty} = 0.2
-$$
+**关键说明（务必准确表述）**：
+1. **不使用任何动作掩码**——硬掩码是 `ppo_mask` 专属机制。`env.py` 里定义的 `action_masks()` 是死代码（`run_all.py` 训练的是普通 `PrunedPPO`，从未用 `ActionMasker`/`MaskablePPO` 包装），这是**设计意图**，不是bug：P5 的方法论意义就是"用惩罚/对偶变量代替掩码"，若也硬掩码就和P4没区别了。
+2. **概念设计**上，容量违规该给固定惩罚、冲突违规该给拉格朗日自适应惩罚：
+   $$
+   r_t^{\text{concept}} = -\text{cap\_penalty}_t - (\lambda + \text{base\_penalty}) \cdot c_t, \qquad \text{cap\_penalty}_t = -2.0\cdot\mathbf{1}[\text{cap\_violated}_t], \quad c_t=\mathbf{1}[\text{conflict\_violated}_t],\ \text{base\_penalty}=0.2
+   $$
+   但**这个公式最终没有被接入训练**（`cap_penalty`/`lagrange_penalty` 在代码里仍然计算，但显式未使用，`reward` 硬编码为 `0.0`）——这是v4.1.0→v4.1.0.1→v4.1.0.2三轮消融实验后的**数据支撑的主动决策**，不是遗漏。
+3. **对偶上升机制本身照常运行**，不受上述reward决策影响（$\lambda$ 更新依据episode级违反率统计，不依赖per-step reward）：
+   $$
+   \lambda \leftarrow \text{clip}\big(\lambda + \eta \cdot \bar{v},\; 0,\; \lambda_{\max}\big), \qquad \eta = 3\times10^{-4}
+   $$
 
-**对偶上升 / dual ascent**（在训练回调中，每 `LAMBDA_UPDATE_WINDOW` 个 episode 更新一次，只针对冲突，不针对容量）：
+**为什么回退**（详见 `v4.1.0_changelog.md`，此处只摘结论）：
+- v4.1.0接入完整公式（含正向 $\text{match\_gain}=n_t/e_{a_t}$ 项）：lt场景 success_rate $0.81\to0.52$，conflict_viol $0.18\to0.47$，明显变差。
+- v4.1.0.1假设是match_gain重复计入AR信号，去掉它只留惩罚项重测：lt场景 $0.52\to0.54$，$0.47\to0.45$，**几乎没变化**，假设被推翻。
+- 结论：不是公式细节问题，是"任何非零逐步奖励在这个环境结构下都会破坏PPO训练"——环境本身无结构性约束保护（不像`ppo_mask`有掩码、`ppo_opt`有修复），逐步惩罚量级（$-2.0$ 及自适应增长的 $\lambda$ 项）可能与终局奖励同量级，扰乱了GAE优势估计。eq/gt场景约束压力小，未观察到同等程度的负面影响。
+- **gt场景额外说明**：v4.1.0期间同时删除了gt独有的一段"容量事后重定向"逻辑（历史遗留，与lt/eq不一致），这个删除**予以保留**（独立的正确性修正，与reward消融无关），经专项验证对gt结果无实质影响。
 
-$$
-\lambda \leftarrow \text{clip}\big(\lambda + \eta \cdot \bar{v},\; 0,\; \lambda_{\max}\big), \qquad \eta = \text{LAMBDA\_LR} = 3\times10^{-4}
-$$
-
-$\bar{v}$ 为窗口内的平均冲突违反率，$\lambda_{\max}$ 为配置中的 `LAMBDA_MAX`。
-
-**版本差异 / version history**：
-- **v4.0.0（`add_states`分支，冻结）**：`match_gain` 累加进 `self._total_ru`（影响 AR），但 `cap_penalty`/`lagrange_penalty` 从未组装进 `reward`——非终端步 `reward` 恒为 `0.0`。唯一真正生效的信号是第 3.2 节的终端分级公式。
-- **v4.1.0（`final_paper_experiments`分支）**：上述公式已真正接入 `reward`，见 `paper_contents/v4.1.0_changelog.md`。
-
-**English**: Prior descriptions of P5 as "hard-masked capacity" were incorrect — verified that `run_all.py` trains a plain `PrunedPPO` (a `PPO` subclass) with no `ActionMasker`/`MaskablePPO` wrapping in any of the 3 scenarios; `action_masks()` is dead code by design (masking is P4-exclusive). P5 correctly has no structural constraint enforcement at all — both capacity and conflict are pure penalties. In v4.0.0 these penalty terms were computed but never assembled into the returned reward (non-terminal `reward` was hardcoded `0.0`); v4.1.0 wires them in (see changelog).
+**English**: No action masking anywhere (masking is P4-exclusive by design). The conceptual penalty formula is computed but was ultimately **not** wired into training — confirmed via three rounds of ablation (v4.1.0 full formula, v4.1.0.1 penalty-only) that ANY non-zero per-step reward here regresses lt hard (success_rate 0.81→~0.52-0.54) without a clear cause tied to the match_gain term specifically. Reverted to v4.0.0's reward=0.0 behaviour as a data-backed final decision. The dual-ascent λ update is unaffected (driven by episode-level stats, not per-step reward).
 
 ### 4.4 `ppo_opt`（P6，最佳适应修复启发式 / best-fit repair heuristic）
 
-修复目标（当选中的 ECU 违反容量或冲突约束时触发）：
+策略在无约束动作空间采样；违规时环境**主动修复**（redirect），不是纯靠惩罚劝阻：
 
 $$
 j^* = \arg\max_{j \,\in\, \mathcal{V}(t)} \frac{n_t}{e_j}, \qquad \mathcal{V}(t) = \{\, j : \text{remaining\_vms}[j] \ge n_t \;\wedge\; \neg\text{conflict}(j,t) \,\}
 $$
 
-若 $\mathcal{V}(t) = \varnothing$（无可修复目标），episode 立即终止并处以：
+若 $\mathcal{V}(t) = \varnothing$（无可修复目标），episode 立即终止：$R_{\text{terminate-unrepairable}} = -M$。
+
+**非终端步奖励（v4.1.0起接入，保留至今）**：
 
 $$
-R_{\text{terminate-unrepairable}} = -M
+r_t = \text{repair\_penalty}_t = -0.1 \cdot \mathbf{1}[\text{was\_repaired}_t]
 $$
 
-修复动作的 docstring 惩罚 / documented repair penalty：
-
-$$
-\text{repair\_penalty} = -0.1 \;\; \text{（每次触发修复 / per repair event）}
-$$
-
-**版本差异 / version history**：
-- **v4.0.0（冻结）**：`repair_penalty`/`step_reward` 计算后未使用，非终端步 `reward` 恒为 $0$（仅"无法修复"分支立即返回 $-M$ 并终止）。docstring 里"Terminal bonus: $+AR\cdot(1-\text{repair\_rate})$"是过时描述，实际终端奖励一直是第 3.2 节统一分级公式，未按修复率加权。
-- **v4.1.0**：非终端步 `reward = repair_penalty`，见 `v4.1.0_changelog.md`。
-
-**English**: In v4.0.0, `repair_penalty`/`step_reward` were computed but unused (non-terminal reward hardcoded `0`, except the unrepairable-fallback branch returning `-M` immediately). The docstring's "$+AR\cdot(1-\text{repair\_rate})$" terminal formula was likewise stale. v4.1.0 wires `repair_penalty` into the non-terminal reward.
+**中文**：v4.0.0阶段这行是死代码（算了没接线，非终端步恒为0，仅"无法修复"分支例外）。v4.1.0接入后，三场景**一致改善**（success_rate升、违规率降，lt场景尤其明显：conflict_viol $0.54\to0.15$），且实质缓解了此前发现的"策略靠环境修复钻空子（reward hacking）"问题——这是v4.1.0系列里效果最确定、最值得写进论文的一项修复。
 
 ### 4.5 `dqn` / `ddqn`（Q-learning 族 / Q-learning family）
 
-环境（`env.py`）与状态/动作/终端奖励定义同 4.1 节的无约束基线一致，仅训练算法（价值迭代 vs 策略梯度）不同。标准 Bellman 目标：
+环境结构与 4.1 节基本一致，无掩码无修复，唯一区别是引入了逐步惩罚。标准 Bellman 目标：
 
 $$
 y_t = r_t + \gamma \max_{a'} Q_{\theta^-}(s_{t+1}, a') \qquad \text{(DQN)}
@@ -229,13 +234,32 @@ $$
 y_t = r_t + \gamma \, Q_{\theta^-}\!\big(s_{t+1},\; \arg\max_{a'} Q_\theta(s_{t+1}, a')\big) \qquad \text{(Double DQN, 消除过高估计 / de-biases overestimation)}
 $$
 
-**中文**：DDQN 与 DQN 唯一区别在于目标 Q 值的动作选择与评估解耦（动作选择用在线网络 $\theta$，评估用目标网络 $\theta^-$）。环境侧：v4.0.0 上两者非终端步 `reward` 都恒为 $0$（`cap_penalty`/`conflict_penalty` 计算后未使用）；v4.1.0 已接入 `reward = cap_penalty + conflict_penalty`（gt场景无独立cap_penalty，容量违规是硬终止），见 `v4.1.0_changelog.md`。
+**非终端步奖励（v4.1.0起接入，保留至今）**：
 
-**English**: The only DQN/DDQN difference is decoupling target-Q action-selection (online network) from evaluation (target network). Environment-wise: on v4.0.0 both had non-terminal reward hardcoded to `0`; v4.1.0 wires in `reward = cap_penalty + conflict_penalty` (gt has no separate cap_penalty — capacity violation there is an immediate hard termination).
+$$
+r_t = \text{cap\_penalty}_t + \text{conflict\_penalty}_t, \qquad \text{cap\_penalty}_t=\text{conflict\_penalty}_t=-2.0\cdot\mathbf{1}[\text{对应违规}]
+$$
+
+（`gt` 场景无独立 `cap_penalty`：容量违规在gt里是立即硬终止，故 $r_t = \text{conflict\_penalty}_t$）
+
+**中文**：DDQN 与 DQN 唯一区别在于目标 Q 值的动作选择（在线网络 $\theta$）与评估（目标网络 $\theta^-$）解耦。v4.0.0阶段两者非终端步 `reward` 都恒为0（惩罚变量算了没接线）。v4.1.0接入后**三场景一致改善**（success_rate升、违规率降），是这套死代码bug里受益最直接的两个算法——因为它们既无掩码也无修复兜底，此前完全没有任何逐步反馈，密集惩罚信号补上后，Q-learning的Bellman bootstrap能相对有效地把这个信号传导回早期决策。
 
 ---
 
-## 5. 符号表 / Notation Table
+## 5. 六算法 v4.1.0 死代码修复：最终去留一览 / Final Disposition Table
+
+| 算法 | v4.0.0非终端reward | v4.1.0是否接入修复 | 最终（v4.1.0.2）状态 | 效果 |
+|---|---|---|---|---|
+| ppo (P3) | 0（设计如此） | 不适用 | 0（未改动） | 不适用，对照基线 |
+| ppo_mask (P4) | 0（死代码） | 是 | **保留** | 影响极小（掩码已结构性保证），无害 |
+| ppo_lagrangian (P5) | 0（死代码） | 是→又撤回 | **回退为0** | 曾接入两版公式，lt场景均明显变差，数据支撑回退 |
+| ppo_opt (P6) | 0（死代码） | 是 | **保留** | 三场景一致改善，lt尤其显著，缓解repair依赖问题 |
+| dqn | 0（死代码） | 是 | **保留** | 三场景一致改善 |
+| ddqn | 0（死代码） | 是 | **保留** | 三场景一致改善 |
+
+---
+
+## 6. 符号表 / Notation Table
 
 | 符号 | 中文 | English |
 |------|------|---------|
@@ -262,4 +286,4 @@ $$
 
 ---
 
-*本文档由代码逐行核对生成，涉及 `scenarios/{lt,eq,gt}/{ppo,ppo_mask,ppo_lagrangian,ppo_opt,dqn,ddqn}/env.py`，以 lt 场景为准（eq/gt 同构）。若代码后续更新，请重新核对本文档。*
+*本文档反映 `final_paper_experiments` 分支 tag `v4.1.0.2` 的最终代码状态，涉及 `scenarios/{lt,eq,gt}/{ppo,ppo_mask,ppo_lagrangian,ppo_opt,dqn,ddqn}/env.py`。完整的修复/消融/回退过程见 `paper_contents/v4.1.0_changelog.md`。若代码后续更新，请重新核对本文档。*
