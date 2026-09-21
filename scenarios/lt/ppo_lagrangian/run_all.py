@@ -46,6 +46,7 @@ import torch
 import yaml
 import pulp
 from stable_baselines3 import PPO
+from shared.adaptive_ppo import entropy_at, PrunedPPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -77,35 +78,60 @@ def _make_lagrange_env(seed: int) -> Monitor:
 #  Step 3 & 5 — Episode runner
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_episodes(ecus, services, policy_fn, lambda_eval: float = 0.0):
-    """policy_fn(obs) -> int. Evaluation uses a fixed λ value in the observation."""
+def run_episodes(ecus, services, policy_fn, lambda_eval: float = 0.0, n_samples: int = 1):
+    """policy_fn(obs) -> int. Evaluation uses a fixed λ value in the observation.
+
+    n_samples > 1: re-roll a stochastic policy n_samples independent times
+    per test scenario and keep the best attempt (success first, then most
+    services validly placed, then highest AR) — sidesteps the online/
+    no-backtrack ceiling of a single irrevocable pass without touching
+    training. See ppo_mask/run_all.py::run_episodes() for the same pattern.
+    """
     ars, viol_rates, viols, placed_list, cap_viols, conflict_viols = [], [], [], [], [], []
-    valid_placed_list, ecus_used_list, success_list = [], [], []
+    valid_placed_list, ecus_used_list, success_list, attempts_list = [], [], [], []
     for scenario in C.TEST_SCENARIOS:
         caps, reqs, cs = scenario
         M_sc = len(reqs)
         _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
         _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
-        env = LagrangeEnv(_ecus, _svcs, scenarios=[scenario],
-                          lambda_init=lambda_eval, lambda_max=C.LAMBDA_MAX)
-        obs, _ = env.reset()
-        done = False
-        info = {}
-        while not done:
-            obs, _, done, _, info = env.step(policy_fn(obs))
-        ars.append(info.get("ar", 0.0))
-        viol_rates.append(info.get("viol_rate_ep", 0.0))
-        viols.append(int(info.get("violations_ep", 0)))
-        placed = info.get("services_placed", 0)
-        valid_placed = int(info.get("valid_placed", placed))
+
+        best = None  # (success, valid_placed, ar, viol_rate, viol, placed, ecus_used, cap_v, conflict_v)
+        used_attempts = 0
+        for attempt in range(max(1, n_samples)):
+            env = LagrangeEnv(_ecus, _svcs, scenarios=[scenario],
+                              lambda_init=lambda_eval, lambda_max=C.LAMBDA_MAX)
+            obs, _ = env.reset()
+            done = False
+            info = {}
+            while not done:
+                obs, _, done, _, info = env.step(policy_fn(obs))
+            ar = info.get("ar", 0.0)
+            viol_rate = info.get("viol_rate_ep", 0.0)
+            viol = int(info.get("violations_ep", 0))
+            placed = info.get("services_placed", 0)
+            valid_placed = int(info.get("valid_placed", placed))
+            ecus_used = int(info.get("ecus_used", 0))
+            cap_v = int(info.get("cap_violations", 0))
+            conflict_v = int(info.get("conflict_violations", 0))
+            success = bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0)
+            used_attempts = attempt + 1
+            candidate = (success, valid_placed, ar, viol_rate, viol, placed, ecus_used, cap_v, conflict_v)
+            if best is None or candidate[:3] > best[:3]:
+                best = candidate
+            if success:
+                break  # found a fully valid placement -- no need to re-roll further
+
+        success, valid_placed, ar, viol_rate, viol, placed, ecus_used, cap_v, conflict_v = best
+        ars.append(ar)
+        viol_rates.append(viol_rate)
+        viols.append(viol)
         placed_list.append(placed)
         valid_placed_list.append(valid_placed)
-        ecus_used_list.append(int(info.get("ecus_used", 0)))
-        cap_v = int(info.get("cap_violations", 0))
-        conflict_v = int(info.get("conflict_violations", 0))
+        ecus_used_list.append(ecus_used)
         cap_viols.append(cap_v)
         conflict_viols.append(conflict_v)
-        success_list.append(bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0))
+        success_list.append(success)
+        attempts_list.append(used_attempts)
     return {
         "ars":           np.array(ars),
         "viol_rates":    np.array(viol_rates),
@@ -116,6 +142,7 @@ def run_episodes(ecus, services, policy_fn, lambda_eval: float = 0.0):
         "valid_placed": np.array(valid_placed_list),
         "ecus_used":    np.array(ecus_used_list),
         "success":      np.array(success_list),
+        "attempts":     np.array(attempts_list),
     }
 
 
@@ -134,11 +161,14 @@ class LagrangeCallback(BaseCallback):
         self._viol_window        = deque(maxlen=C.LAMBDA_UPDATE_WINDOW)
         self._episode_count      = 0
         self._episodes_since_lambda_update = 0
+        self.episode_rewards:         list[float] = []
         self.episode_ars:             list[float] = []
         self.episode_viol_rates:      list[float] = []
         self.episode_cap_viol_rates:  list[float] = []
         self.episode_conf_viol_rates: list[float] = []
         self.episode_placed:          list[int]   = []
+        self.episode_valid_placed:    list[int]   = []
+        self.episode_success:         list[bool]  = []
         self.episode_lambdas:         list[float] = []
         self.timesteps_at_ep:         list[int]   = []
         self._next_progress_step = C.PROGRESS_LOG_EVERY_STEPS
@@ -148,17 +178,28 @@ class LagrangeCallback(BaseCallback):
         self._t_start = time.time()
 
     def _on_step(self) -> bool:
+        self.model.ent_coef = entropy_at(
+            self.num_timesteps, C.TOTAL_STEPS, C.PPO_ENT_COEF_INIT, C.PPO_ENT_COEF_FINAL
+        )
         for info in self.locals.get("infos", []):
             if "episode" not in info:
                 continue
             self._episode_count += 1
             ar        = float(info.get("ar", 0.0))
             viol_rate = float(info.get("viol_rate_ep", 0.0))
+            self.episode_rewards.append(float(info["episode"]["r"]))
             self.episode_ars.append(ar)
             self.episode_viol_rates.append(viol_rate)
             self.episode_cap_viol_rates.append(info.get("cap_violations", 0) / C.M)
             self.episode_conf_viol_rates.append(info.get("conflict_violations", 0) / C.M)
             self.episode_placed.append(int(info.get("services_placed", 0)))
+            valid_placed = int(info.get("valid_placed", 0))
+            self.episode_valid_placed.append(valid_placed)
+            self.episode_success.append(bool(
+                valid_placed == C.M
+                and int(info.get("cap_violations", 0)) == 0
+                and int(info.get("conflict_violations", 0)) == 0
+            ))
             self.episode_lambdas.append(self.lambda_val)
             self.timesteps_at_ep.append(self.num_timesteps)
 
@@ -204,7 +245,7 @@ def train_lagrange(device: str, n_envs: int = 1):
     print(f"  Using DummyVecEnv: n_envs={n_envs}")
     cb  = LagrangeCallback()
 
-    model = PPO(
+    model = PrunedPPO(
         policy        = "MlpPolicy",
         env           = env,
         learning_rate = C.PPO_LR,
@@ -214,6 +255,8 @@ def train_lagrange(device: str, n_envs: int = 1):
         gamma         = C.PPO_GAMMA,
         gae_lambda    = C.PPO_GAE_LAMBDA,
         clip_range    = C.PPO_CLIP_RANGE,
+        ent_coef      = C.PPO_ENT_COEF_INIT,
+        adv_prune_weight = C.ADV_PRUNE_WEIGHT,
         policy_kwargs = dict(net_arch=C.PPO_NET_ARCH),
         device        = device,
         verbose       = 0,
@@ -238,54 +281,79 @@ def train_lagrange(device: str, n_envs: int = 1):
 #  Plotting helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
+def save_training_curve_csv(cb: LagrangeCallback, outdir: Path):
+    """Dump the raw per-episode training trajectory (not just the PNG) so the
+    curve's SHAPE can be checked quantitatively later."""
+    path = outdir / "training_curve.csv"
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestep", "episode_ar", "episode_success", "episode_valid_placed", "episode_placed"])
+        for i in range(len(cb.timesteps_at_ep)):
+            writer.writerow([
+                cb.timesteps_at_ep[i],
+                round(cb.episode_ars[i], 6),
+                int(cb.episode_success[i]),
+                cb.episode_valid_placed[i],
+                cb.episode_placed[i],
+            ])
+    print(f"  Saved -> {path}")
+
+
 def plot_training_curve(cb: LagrangeCallback, ilp_ar: float,
                         outdir: Path, scenario_name: str):
+    # 2026-09-11: 4-panel layout (reward / AR / CapViolation / PrivacyViolation)
+    # standardized across all 6 algorithms -- see ppo_mask/run_all.py's
+    # plot_training_curve() comment for rationale.
     ts  = np.array(cb.timesteps_at_ep)
+    rewards = np.array(cb.episode_rewards)
     ars = np.array(cb.episode_ars)
-    vrs = np.array(cb.episode_viol_rates)
-    pls = np.array(cb.episode_placed)
+    cap_rates  = np.array(cb.episode_cap_viol_rates)
+    conf_rates = np.array(cb.episode_conf_viol_rates)
 
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
 
-    # ── AR ──
-    sm, off = moving_avg(ars, C.SMOOTH_W)
-    ax1.plot(ts, ars, color="seagreen", alpha=0.2, linewidth=0.8)
-    ax1.plot(ts[off:off+len(sm)], sm, color="seagreen", linewidth=2,
-             label=f"AR (smoothed w={C.SMOOTH_W})")
-    ax1.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
-                label=f"ILP Optimal  AR={ilp_ar:.4f}")
-    ax1.set_ylabel("Episode AR", fontsize=11)
-    ax1.set_ylim(0, 1.05)
-    ax1.legend(fontsize=9, loc="lower right")
+    sm_r, off_r = moving_avg(rewards, C.SMOOTH_W)
+    ax1.plot(ts, rewards, color="steelblue", alpha=0.2, linewidth=0.8)
+    ax1.plot(ts[off_r:off_r+len(sm_r)], sm_r, color="steelblue", linewidth=2,
+             label=f"episode reward (smoothed w={C.SMOOTH_W})")
+    ax1.axhline(0.0, color="black", linewidth=0.8, alpha=0.4)
+    ax1.set_ylabel("Episode Reward", fontsize=11)
+    ax1.legend(fontsize=9)
     ax1.set_title(
         f"Training Metrics — {scenario_name}  ({C.TOTAL_STEPS:,} steps)",
         fontsize=12,
     )
     ax1.grid(alpha=0.3)
 
-    cap_rates  = np.array(cb.episode_cap_viol_rates)
-    conf_rates = np.array(cb.episode_conf_viol_rates)
-    sm_cap,  off_cap  = moving_avg(cap_rates,  C.SMOOTH_W)
-    sm_conf, off_conf = moving_avg(conf_rates, C.SMOOTH_W)
-    ax2.plot(ts, cap_rates,  color="tomato",    alpha=0.15, linewidth=0.6)
-    ax2.plot(ts, conf_rates, color="darkorange", alpha=0.15, linewidth=0.6)
-    ax2.plot(ts[off_cap:off_cap+len(sm_cap)],   sm_cap,  color="tomato",    linewidth=2, label="Cap viol rate (smoothed)")
-    ax2.plot(ts[off_conf:off_conf+len(sm_conf)], sm_conf, color="darkorange", linewidth=2, label="Conflict viol rate (smoothed)")
-    ax2.set_ylabel("Violation Rate", fontsize=11)
-    ax2.set_ylim(-0.05, 1.1)
-    ax2.legend(fontsize=9, loc="upper right")
+    sm, off = moving_avg(ars, C.SMOOTH_W)
+    ax2.plot(ts, ars, color="seagreen", alpha=0.2, linewidth=0.8)
+    ax2.plot(ts[off:off+len(sm)], sm, color="seagreen", linewidth=2,
+             label=f"AR (smoothed w={C.SMOOTH_W})")
+    ax2.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
+                label=f"ILP Optimal  AR={ilp_ar:.4f}")
+    ax2.set_ylabel("Episode AR", fontsize=11)
+    ax2.set_ylim(0, 1.05)
+    ax2.legend(fontsize=9, loc="lower right")
     ax2.grid(alpha=0.3)
 
-    sm_p, off_p = moving_avg(pls, C.SMOOTH_W)
-    ax3.plot(ts, pls, color="royalblue", alpha=0.2, linewidth=0.8)
-    ax3.plot(ts[off_p:off_p+len(sm_p)], sm_p, color="royalblue", linewidth=2,
-             label="Services placed (smoothed)")
-    ax3.axhline(C.M, color="gray", linestyle=":", alpha=0.6, label=f"M={C.M}")
-    ax3.set_ylabel("Services Placed", fontsize=11)
-    ax3.set_xlabel("Training steps", fontsize=11)
-    ax3.set_ylim(0, C.M + 1)
-    ax3.legend(fontsize=9, loc="lower right")
+    sm_cap, off_cap = moving_avg(cap_rates, C.SMOOTH_W)
+    ax3.plot(ts, cap_rates, color="tomato", alpha=0.2, linewidth=0.8)
+    ax3.plot(ts[off_cap:off_cap+len(sm_cap)], sm_cap, color="tomato", linewidth=2,
+             label=f"cap violation rate (smoothed w={C.SMOOTH_W})")
+    ax3.set_ylabel("Cap Violation Rate", fontsize=11)
+    ax3.set_ylim(-0.02, 1.02)
+    ax3.legend(fontsize=9)
     ax3.grid(alpha=0.3)
+
+    sm_conf, off_conf = moving_avg(conf_rates, C.SMOOTH_W)
+    ax4.plot(ts, conf_rates, color="darkorange", alpha=0.2, linewidth=0.8)
+    ax4.plot(ts[off_conf:off_conf+len(sm_conf)], sm_conf, color="darkorange", linewidth=2,
+             label=f"privacy (conflict) violation rate (smoothed w={C.SMOOTH_W})")
+    ax4.set_ylabel("Privacy Violation Rate", fontsize=11)
+    ax4.set_xlabel("Training steps", fontsize=11)
+    ax4.set_ylim(-0.02, 1.02)
+    ax4.legend(fontsize=9)
+    ax4.grid(alpha=0.3)
 
     plt.tight_layout()
     path = outdir / "training_curve.png"
@@ -294,64 +362,43 @@ def plot_training_curve(cb: LagrangeCallback, ilp_ar: float,
     print(f"  Saved -> {path}")
 
 
-def plot_comparison(ilp_ar, ppo_res, ppo_train_viol_mean, ppo_train_viol_std, outdir: Path, scenario_name: str):
-    colors = ["#e74c3c", "#e67e22"]
-    labels = ["ILP\n(Optimal)", "Lagrange\nPPO"]
+def plot_comparison(ilp_ar, ppo_res, cap_viol_rate, conflict_viol_rate, outdir: Path, scenario_name: str):
+    # 2026-09-11: 2-panel layout (AR vs ILP bar chart / success+viol-rate bar
+    # chart) standardized across all 6 algorithms -- see ppo_mask/run_all.py's
+    # plot_comparison() comment for rationale.
+    algo_label = "Lagrange\nPPO"
+    success_rate = float(np.mean(ppo_res["success"]))
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(16, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 5))
     fig.suptitle(
         f"P2(ILP) vs P5(Lagrange PPO) - {scenario_name}",
         fontsize=13, fontweight="bold",
     )
 
-    # ── AR ──
-    bp = ax1.boxplot(
-        [ppo_res["ars"]],
-        positions=[2], widths=0.5, patch_artist=True,
-        medianprops=dict(color="black", linewidth=2),
-    )
-    for patch, color in zip(bp["boxes"], colors[1:]):
-        patch.set_facecolor(color); patch.set_alpha(0.7)
-
-    ax1.axhline(ilp_ar, color=colors[0], linestyle="--", linewidth=2, alpha=0.9,
-                label=f"ILP  AR={ilp_ar:.4f}")
-    ax1.plot(1, ilp_ar, marker="D", color=colors[0], markersize=10, zorder=5)
-
-    for pos, data, color in zip([2], [ppo_res["ars"]], colors[1:]):
-        mv = np.mean(data)
-        ax1.text(pos, mv + 0.02, f"mu={mv:.3f}", ha="center", fontsize=9,
-                 fontweight="bold", color="black")
-
-    ax1.set_xticks([1, 2]); ax1.set_xticklabels(labels, fontsize=10)
+    labels1 = ["ILP\n(Optimal)", algo_label]
+    ar_means = [ilp_ar, float(np.mean(ppo_res["ars"]))]
+    ar_stds  = [0.0, float(np.std(ppo_res["ars"]))]
+    colors = ["#e74c3c", "#e67e22"]
+    bars = ax1.bar(labels1, ar_means, yerr=ar_stds, capsize=5, color=colors, alpha=0.8, ecolor="black")
+    for bar, v in zip(bars, ar_means):
+        ax1.text(bar.get_x() + bar.get_width()/2, v + 0.02,
+                  f"{v:.4f}", ha="center", fontsize=10, fontweight="bold", color="black")
     ax1.set_ylim(0, 1.1)
     ax1.set_ylabel("Average Resource Utilisation (AR)", fontsize=11)
-    ax1.set_title("AR Distribution", fontsize=11)
-    ax1.legend(fontsize=9, loc="lower right")
+    ax1.set_title("Test AR: Algorithm vs ILP", fontsize=11)
     ax1.grid(axis="y", alpha=0.3)
 
-    vr_means = [0.0, ppo_train_viol_mean]
-    vr_stds  = [0.0, ppo_train_viol_std]
-    bars = ax2.bar(labels, vr_means, color=colors, alpha=0.75,
-                   yerr=vr_stds, capsize=6, ecolor="black")
-    for bar, v in zip(bars, vr_means):
-        ax2.text(bar.get_x()+bar.get_width()/2, v+0.01,
-                 f"{v:.2f}", ha="center", fontsize=10, fontweight="bold", color="black")
-    ax2.set_ylim(0, 1.1)
-    ax2.set_ylabel("Violation Rate", fontsize=11)
-    ax2.set_title("Violation Rate (eval)", fontsize=11)
+    labels2 = ["Success\nRate", "Cap Viol\nRate", "Privacy Viol\nRate"]
+    vals2 = [success_rate, cap_viol_rate, conflict_viol_rate]
+    colors2 = ["#2ecc71", "#e67e22", "#c0392b"]
+    bars2 = ax2.bar(labels2, vals2, color=colors2, alpha=0.8)
+    for bar, v in zip(bars2, vals2):
+        ax2.text(bar.get_x() + bar.get_width()/2, v + 0.02,
+                  f"{v:.2%}", ha="center", fontsize=10, fontweight="bold", color="black")
+    ax2.set_ylim(0, 1.05)
+    ax2.set_ylabel("Rate", fontsize=11)
+    ax2.set_title("Test Success Rate & Violation Rates", fontsize=11)
     ax2.grid(axis="y", alpha=0.3)
-
-    pl_means = [C.M, np.mean(ppo_res["placed"])]
-    pl_stds  = [0.0, np.std(ppo_res["placed"])]
-    bars = ax3.bar(labels, pl_means, color=colors, alpha=0.75,
-                   yerr=pl_stds, capsize=6, ecolor="black")
-    for bar, v in zip(bars, pl_means):
-        ax3.text(bar.get_x()+bar.get_width()/2, v+0.05,
-                 f"{v:.1f}", ha="center", fontsize=10, fontweight="bold", color="black")
-    ax3.set_ylim(0, C.M + 1)
-    ax3.set_ylabel("Services Placed", fontsize=11)
-    ax3.set_title("Placement Completeness", fontsize=11)
-    ax3.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
     path = outdir / "comparison.png"
@@ -402,10 +449,24 @@ def main():
 
     # 5. Lagrangian PPO evaluation
     print(f"\n[4/4] Lagrangian PPO evaluation ({len(C.TEST_SCENARIOS)} episodes, deterministic) ...")
+    # 2026-09-11: EVAL_BEST_OF_N reverted from 8 to 1 (see lt/ppo/run_all.py's
+    # comment) -- deterministic=True so the reported number is the model's
+    # actual greedy policy, not one noisy stochastic sample.
     def ppo_policy(obs):
         action, _ = model.predict(obs, deterministic=True)
         return int(action)
-    ppo_res = run_episodes(ecus, services, ppo_policy, lambda_eval=cb.lambda_val)
+    ppo_res = run_episodes(ecus, services, ppo_policy, lambda_eval=cb.lambda_val,
+                           n_samples=C.EVAL_BEST_OF_N)
+    # AR is only meaningful as "solution quality" for episodes that actually
+    # placed everything legally — a partial/broken episode's AR isn't a
+    # comparable data point against ILP's (always-successful) AR, so it's
+    # excluded from ar_mean/ar_std/box-plot rather than averaged in.
+    success_mask = ppo_res["success"]
+    if success_mask.any():
+        ppo_res["ars"] = ppo_res["ars"][success_mask]
+    else:
+        print("  [warn] no successful episodes -- ar_mean/ar_std computed over 0 samples (NaN)")
+        ppo_res["ars"] = ppo_res["ars"][:0]
     print(f"  PPO  AR mean={np.mean(ppo_res['ars']):.4f}  "
           f"Eval viol={np.mean(ppo_res['viol_rates']):.2%}")
 
@@ -447,6 +508,7 @@ def main():
             "ar_std":             round(float(np.std(ppo_res["ars"])), 6),
             "viol_rate_mean":     round(float(ppo_train_viol), 6),
             "success_rate":       round(success_rate, 6),
+            "attempts_mean":      round(float(np.mean(ppo_res["attempts"])), 3),
             "cap_viol_rate":      round(cap_viol_rate, 6),
             "conflict_viol_rate": round(conflict_viol_rate, 6),
             "cap_viol_total":     int(np.sum(ppo_res["cap_viols"])),
@@ -489,8 +551,9 @@ def main():
     print(f"  CSV  saved -> {csv_path}")
 
     # Plots
+    save_training_curve_csv(cb, run_dir)
     plot_training_curve(cb, ilp_ar, run_dir, sc_name)
-    plot_comparison(ilp_ar, ppo_res, ppo_train_viol, ppo_train_viol_std, run_dir, sc_name)
+    plot_comparison(ilp_ar, ppo_res, cap_viol_rate, conflict_viol_rate, run_dir, sc_name)
 
     print("\nAll done! Output files:")
     print(f"  {run_dir}/training_curve.png")

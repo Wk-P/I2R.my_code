@@ -248,13 +248,18 @@ class LagrangeEnv(gym.Env):
         self._step += 1
 
         done = self._step >= self.M
-        terminal_bonus = 0.0
-        if done:
-            terminal_bonus = self.ar if self.episode_violations == 0 else -self.ar
-
         step_reward = match_gain / max(_active, 1)
         violated = cap_violated or conflict_violated
-        reward = float(step_reward + lagrange_penalty + forced_overflow_penalty + terminal_bonus)
+        if done:
+            # Ported from scenarios/lt/ppo_mask/env.py (v2.6.0): graded
+            # AR-quality success reward + graded-by-completion failure
+            # penalty, instead of flat +M/-M.
+            if self.episode_violations == 0:
+                reward = float(self.M) * (2.0 * self.ar - 1.0)
+            else:
+                reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
+        else:
+            reward = 0.0
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "violated":            violated,

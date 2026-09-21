@@ -226,11 +226,18 @@ class DQNEnv(gym.Env):
 
         done = self._step >= self.M
         total_viol = self.capacity_violations + self.conflict_violations
-        terminal_bonus = 0.0
-        if done:
-            terminal_bonus = self.ar if total_viol == 0 else -self.ar
         step_reward = ru / max(_active, 1)
-        return self._obs(), float(step_reward + cap_penalty + conflict_penalty + terminal_bonus), done, False, {
+        if done:
+            # Ported from scenarios/lt/ppo_mask/env.py (v2.6.0): graded
+            # AR-quality success reward + graded-by-completion failure
+            # penalty, instead of flat +M/-M.
+            if total_viol == 0:
+                reward = float(self.M) * (2.0 * self.ar - 1.0)
+            else:
+                reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
+        else:
+            reward = 0.0
+        return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "step":                self._step,
             "services_placed":     self._step,

@@ -48,6 +48,39 @@ body {
 }
 
 h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 var(--space-1); letter-spacing: -0.01em; }
+.branch-badge {
+  display: inline-flex; align-items: center; margin-left: var(--space-2);
+  font-size: 0.68rem; font-weight: 700; font-family: var(--font-mono);
+  color: var(--accent-link); background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px; vertical-align: middle; letter-spacing: 0;
+}
+a.branch-badge--link { text-decoration: none; cursor: pointer; }
+a.branch-badge--link:hover { background: var(--bg-card-hover); border-color: var(--accent-link); }
+
+
+.back-btn {
+  display: inline-flex; align-items: center; gap: 6px; margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-dim); font-size: 0.82rem; font-weight: 600;
+  text-decoration: none; cursor: pointer;
+}
+.back-btn:hover { background: var(--bg-card-hover); color: var(--text); border-color: var(--accent-link); }
+
+.intro-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: var(--space-4); margin-bottom: var(--space-4); box-shadow: var(--shadow-card);
+}
+.intro-card h3 { margin: 0 0 var(--space-2); font-size: 0.95rem; color: var(--text); }
+.intro-card p { margin: 0 0 var(--space-2); font-size: 0.85rem; color: var(--text-dim); line-height: 1.6; }
+.intro-card p:last-child { margin-bottom: 0; }
+.intro-nav { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.intro-nav a {
+  display: inline-flex; align-items: center; gap: 5px; padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-elevated);
+  color: var(--text); text-decoration: none; font-size: 0.8rem; font-weight: 600;
+}
+.intro-nav a:hover { border-color: var(--accent-link); color: var(--accent-link); }
 h2 {
   font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-dim); margin: var(--space-5) 0 var(--space-3);
@@ -105,16 +138,134 @@ a.run-id { text-decoration: none; }
   font-weight: normal; font-size: 0.85em; line-height: 1.4; text-align: left; white-space: normal;
 }
 
+/* ── Paper draft ──────────────────────────────────────────────────────── */
+.paper {
+  --paper-bg: #f7f4ec;
+  --paper-ink: #2a2620;
+  --paper-ink-dim: #6b6558;
+  --paper-rule: #d8d2c0;
+  --paper-accent: #8a3324;
+  max-width: 780px;
+  margin: var(--space-4) auto var(--space-5);
+  padding: var(--space-5) calc(var(--space-5) + var(--space-2));
+  background: var(--paper-bg);
+  color: var(--paper-ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  font-family: "Georgia", "Songti SC", "STSong", serif;
+  line-height: 1.7;
+}
+.paper-header { text-align: center; border-bottom: 2px solid var(--paper-ink); padding-bottom: var(--space-4); margin-bottom: var(--space-4); }
+.paper-kicker { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper-accent); margin-bottom: var(--space-2); }
+.paper-title { font-size: 1.5rem; line-height: 1.4; font-weight: 700; color: var(--paper-ink); margin: 0 0 var(--space-2); letter-spacing: 0; }
+.paper-meta { font-size: 0.85rem; color: var(--paper-ink-dim); font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; }
+.paper-abstract { background: rgba(138, 51, 36, 0.05); border-left: 3px solid var(--paper-accent); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.paper-abstract-label { font-size: 0.8rem !important; text-transform: uppercase; letter-spacing: 0.08em; color: var(--paper-accent) !important; margin: 0 0 var(--space-2) !important; border: none !important; padding: 0 !important; }
+.paper-abstract p { margin: 0; font-size: 0.92rem; }
+.paper-toc { font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; font-size: 0.85rem; background: rgba(0,0,0,0.03); border: 1px solid var(--paper-rule); border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-5); }
+.paper-toc ol { margin: var(--space-2) 0 0; padding-left: 1.2em; }
+.paper-toc a, .paper-footer a { color: var(--paper-accent); }
+.paper h2 { font-size: 1.05rem !important; text-transform: none !important; letter-spacing: 0 !important; color: var(--paper-ink) !important; border-bottom: 1px solid var(--paper-rule) !important; margin: var(--space-5) 0 var(--space-3) !important; padding-bottom: var(--space-2) !important; font-weight: 700; }
+.paper h3 { font-size: 0.95rem; color: var(--paper-ink); margin: var(--space-4) 0 var(--space-2); font-weight: 700; }
+.paper p { margin: 0 0 var(--space-3); text-align: justify; }
+.paper code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; font-size: 0.88em; }
+.paper-note { font-size: 0.85rem; color: var(--paper-ink-dim); font-style: italic; }
+.paper-table { margin: var(--space-3) 0; font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; font-size: 0.82rem; }
+.paper-table th, .paper-table td { border: 1px solid var(--paper-rule); color: var(--paper-ink); }
+.paper-table th { background: rgba(0,0,0,0.04); color: var(--paper-ink-dim); }
+.paper-table tr:nth-child(even) td { background: rgba(0,0,0,0.02); }
+.paper-table tr:hover td { background: rgba(138, 51, 36, 0.06); }
+.paper-footer { margin-top: var(--space-5); padding-top: var(--space-3); border-top: 1px solid var(--paper-rule); font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; font-size: 0.82rem; color: var(--paper-ink-dim); }
+
 /* ── Live progress panel ─────────────────────────────────────────────── */
+.progress-branch-banner {
+  margin-bottom: var(--space-3); font-size: 0.85rem; color: var(--text-primary);
+}
+.progress-branch-hint { color: var(--text-faint); font-size: 0.78em; margin-left: var(--space-2); }
+.branch-tag {
+  font-family: var(--font-mono); background: var(--bg-elevated); color: #fbbf24;
+  padding: 2px 7px; border-radius: var(--radius-sm); letter-spacing: 0.04em; font-size: 0.82em;
+  margin-left: var(--space-2);
+}
 .progress-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
 .progress-card { padding: var(--space-4); }
 .progress-card .title { font-weight: 700; font-size: 0.95rem; margin-bottom: var(--space-2); }
 .progress-card .meta { color: var(--text-dim); font-size: 0.78rem; margin-bottom: var(--space-2); }
+.status-badge {
+  display: inline-block; margin-left: var(--space-2); padding: 1px 8px;
+  border-radius: 999px; font-size: 0.7rem; font-weight: 600; vertical-align: middle;
+}
+.status-badge--stuck { background: #5c1f1f; color: #ff9a9a; }
+.status-badge--unknown { background: var(--bg-elevated); color: var(--text-faint); }
 .bar-bg { background: var(--bg-elevated); border-radius: 4px; height: 8px; overflow: hidden; margin: var(--space-1) 0; }
 .bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
 .bar-fill.eq { background: var(--accent-eq); }
 .bar-fill.gt { background: var(--accent-gt); }
 .bar-fill.lt { background: var(--accent-lt); }
+.bar-fill.batch { background: #8b5cf6; }
+
+/* ── Batch progress panel (ad-hoc parallel multi-seed launches, e.g.
+   scripts/eq_gt_migration_5seed.sh) — distinct from progress-card above,
+   which assumes one sequential process per scenario. This shows run-level
+   (scenario, algo, seed) completion instead, since many runs are alive
+   at once and only "results.json written" is an unambiguous done signal. */
+.batch-panel { padding: var(--space-4); margin-bottom: var(--space-4); }
+.batch-panel .title { font-weight: 700; font-size: 0.95rem; margin-bottom: var(--space-2); }
+.batch-elapsed {
+  font-family: var(--font-mono); font-weight: 600; font-size: 0.82rem; color: var(--text-dim);
+  margin-left: var(--space-2);
+}
+.batch-scenario-block { margin-top: var(--space-3); }
+.batch-scenario-label {
+  font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-dim); margin-bottom: var(--space-1);
+}
+.batch-algo-name { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
+.batch-seed-dot {
+  width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--border-soft);
+  font-size: 0; flex-shrink: 0; display: inline-block;
+}
+.batch-seed-dot--done { background: #22c55e; border-color: #22c55e; }
+.batch-seed-dot--running { background: #f59e0b; border-color: #f59e0b; animation: batch-pulse 1.4s ease-in-out infinite; }
+.batch-seed-dot--queued { background: var(--bg-elevated); }
+@keyframes batch-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.batch-legend { display: flex; gap: var(--space-3); font-size: 0.72rem; color: var(--text-faint); margin-top: var(--space-2); flex-wrap: wrap; }
+.batch-legend-item { display: flex; align-items: center; gap: 4px; }
+
+.batch-table { width: 100%; border-collapse: collapse; margin-bottom: var(--space-3); font-size: 0.78rem; }
+.batch-table th {
+  text-align: left; padding: 4px 8px; color: var(--text-faint); font-weight: 600;
+  border-bottom: 1px solid var(--border-soft); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.batch-table td { padding: 4px 8px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+.batch-cell { white-space: nowrap; }
+.batch-cell-status {
+  display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 0.68rem;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; margin-right: 6px;
+}
+.batch-cell-status--done { background: #14532d; color: #4ade80; }
+.batch-cell-status--running { background: #78350f; color: #fbbf24; }
+.batch-cell-status--queued { background: var(--bg-elevated); color: var(--text-faint); }
+.batch-cell-metric { color: var(--text-dim); margin-right: 8px; font-family: var(--font-mono); }
+.batch-partial-tag { color: #fbbf24; font-size: 0.7rem; margin-left: 4px; }
+.batch-seed-dots { display: flex; gap: 4px; }
+
+/* SystemPanel.vue — generic live process list, independent of the
+   run_all.py/batch-log conventions the two panels above assume. */
+.system-panel { padding: var(--space-4); margin-bottom: var(--space-4); }
+.system-panel .title { font-weight: 700; font-size: 0.95rem; margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2); }
+.sys-load { font-family: var(--font-mono); font-weight: 600; font-size: 0.78rem; color: var(--text-dim); }
+.sys-load--mid { color: #fbbf24; }
+.sys-load--high { color: #f87171; }
+.system-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.system-table th {
+  text-align: left; padding: 4px 8px; color: var(--text-faint); font-weight: 600;
+  border-bottom: 1px solid var(--border-soft); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.system-table td { padding: 4px 8px; border-bottom: 1px solid var(--border-soft); }
+.system-label { font-family: var(--font-mono); }
+.system-dim { color: var(--text-dim); font-family: var(--font-mono); }
+.system-empty { color: var(--text-faint); font-size: 0.82rem; }
 .log-tail {
   background: var(--bg); border-radius: var(--radius-md); margin-top: var(--space-3);
   border: 1px solid var(--border-soft); overflow: hidden;
@@ -142,6 +293,19 @@ a.run-id { text-decoration: none; }
 .log-line--blank { height: var(--space-1); }
 
 /* ── Experiment tree ─────────────────────────────────────────────────── */
+.tab-bar { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.tab-btn {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-dim);
+  font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: var(--font-mono);
+}
+.tab-btn:hover { background: var(--bg-card-hover); color: var(--text); }
+.tab-btn.active { border-color: var(--accent-link); color: var(--text); background: var(--bg-card-hover); }
+.tab-count {
+  font-size: 0.72em; font-weight: 700; color: var(--accent-lt);
+}
+
 .exp-tree { display: flex; flex-direction: column; gap: var(--space-3); }
 .exp-group { padding: var(--space-4); }
 .exp-group > summary {
@@ -158,6 +322,25 @@ a.run-id { text-decoration: none; }
   border-bottom: 1px solid var(--border-soft);
 }
 .scenario-group:last-child { border-bottom: none; padding-bottom: 0; }
+
+/* Baseline (run_all.py) vs BC-pretrain (run_all_bc.py) rows within the same
+   exp_id card — same experiment batch, two different training pipelines.
+   A colored dot + text badge makes the split visible at a glance instead of
+   relying on the algo name alone. */
+.variant-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-right: var(--space-2); vertical-align: middle;
+}
+.variant-dot.variant-baseline { background: var(--text-faint); }
+.variant-dot.variant-bc { background: var(--accent-link); }
+.variant-badge {
+  display: inline-block; margin-left: var(--space-2); font-size: 0.68rem;
+  font-weight: 700; padding: 1px 8px; border-radius: 999px; letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+.variant-badge--baseline { color: var(--text-faint); background: var(--bg-elevated); border: 1px solid var(--border); }
+.variant-badge--bc { color: var(--accent-link); background: rgba(96, 165, 250, 0.12); border: 1px solid var(--accent-link); }
+tr.row-bc { background: rgba(96, 165, 250, 0.04); }
 .scenario-group > summary {
   display: flex; align-items: center; gap: var(--space-3); cursor: pointer;
   list-style: none; font-weight: 600; padding: var(--space-2) 0;
@@ -168,6 +351,34 @@ a.run-id { text-decoration: none; }
 .scenario-group table { margin-top: var(--space-2); }
 
 .summary-meta { color: var(--text-faint); font-size: 0.78rem; font-weight: 400; margin-left: auto; }
+
+/* ── Version history ──────────────────────────────────────────────────── */
+.version-history { padding: var(--space-2) var(--space-4); }
+.version-row { border-bottom: 1px solid var(--border-soft); }
+.version-row:last-child { border-bottom: none; }
+.version-row--link { display: block; text-decoration: none; color: inherit; }
+.version-row-head {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) 0; cursor: pointer; font-size: 0.85rem;
+}
+.version-summary-full { margin: var(--space-3) 0; }
+.version-row-head:hover .version-summary { color: var(--text); }
+.version-date { color: var(--text-faint); font-family: var(--font-mono); font-size: 0.78rem; flex-shrink: 0; }
+.version-summary { color: var(--text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.version-doc-badge {
+  font-size: 0.65rem; font-weight: 700; color: var(--accent-link);
+  background: rgba(96, 165, 250, 0.12); border: 1px solid var(--accent-link);
+  border-radius: 999px; padding: 1px 8px; flex-shrink: 0;
+}
+.version-toggle { color: var(--text-faint); flex-shrink: 0; width: 1em; text-align: center; }
+.version-detail { padding: 0 0 var(--space-3) 0; }
+.version-doc-body {
+  background: var(--bg); border: 1px solid var(--border-soft); border-radius: var(--radius-md);
+  padding: var(--space-3); font-size: 0.82rem; line-height: 1.6; color: var(--text-dim);
+  white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto;
+  font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif;
+}
+.version-doc-body--none { font-style: italic; color: var(--text-faint); }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
 @media (max-width: 900px) {

@@ -41,7 +41,7 @@ with open(YAML_CONFIG) as f:
     REQ_POOL = SCENARIOS[SCENARIO_IDX][1]
 
 # ── Training ──────────────────────────────────────────────────────────────────
-TOTAL_STEPS = get_total_steps("ddqn")
+TOTAL_STEPS = get_total_steps("ddqn", scenario=ROOT.parent.name)
 SEED        = int(os.environ.get("TRAIN_SEED", "42"))
 # ── Train / Test split (80/20 of feasible scenarios, deterministic) ──────────
 import random as _random
@@ -71,9 +71,25 @@ DDQN_EXPLORATION_FRACTION  = 0.5
 DDQN_EXPLORATION_FINAL_EPS = 0.0
 DDQN_NET_ARCH              = [128, 128]
 
+# ── Behavior-cloning pretraining (ILP expert warm-start, margin-classification) ──
+BC_EPOCHS     = 20
+BC_BATCH_SIZE = 256
+BC_LR         = 1e-3
+BC_MARGIN     = 0.8
+
 # ── Evaluation ──────────────────────────────────────────────────────────────────
 EVAL_EPS  = len(TEST_SCENARIOS)
 SMOOTH_W  = 1000
+
+# 2026-09-11: added for evaluation-protocol parity with ppo_mask/ppo_lagrangian,
+# which already re-roll a stochastic policy up to EVAL_BEST_OF_N times per test
+# scenario and keep the best attempt. DDQN_EXPLORATION_FINAL_EPS anneals to 0.0
+# by the end of training, so EVAL_EPSILON overrides model.exploration_rate at
+# eval time only -- without it, deterministic=False would still be bit-for-bit
+# deterministic (0% chance of injecting a random action) and every retry would
+# reproduce the same greedy trajectory.
+EVAL_BEST_OF_N = 1
+EVAL_EPSILON   = 0.1
 
 # ── Paths ───────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir

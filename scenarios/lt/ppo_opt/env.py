@@ -216,9 +216,7 @@ class P6Env(gym.Env):
         if cap_violated or conflict_violated:
             repaired = self._best_fit_repair(self._step)
             if repaired is None:
-                unplaced_demand = sum(self.services[i].requirement for i in range(self._step, self.M))
-                penalty = -float(unplaced_demand) / (float(np.sum(self.initial_vms)) + 1e-8)
-                return self._obs(), penalty, True, False, {
+                return self._obs(), -float(self.M), True, False, {
                     "ar":                  self.ar,
                     "step":                self._step,
                     "services_placed":     self._step,
@@ -259,12 +257,18 @@ class P6Env(gym.Env):
         self.valid_placed += 1
 
         done = self._step >= self.M
-        terminal_bonus = 0.0
-        if done:
-            repair_rate = self.repairs / max(self.M, 1)
-            terminal_bonus = self.ar * max(0.0, 1.0 - repair_rate)
-
         step_reward = ru / max(_active, 1)
+        if done:
+            success = not (self.episode_has_cap_violation or self.episode_has_conflict_violation)
+            # Ported from scenarios/lt/ppo_mask/env.py (v2.6.0): graded
+            # AR-quality success reward + graded-by-completion failure
+            # penalty, instead of flat +M/-M.
+            if success:
+                reward = float(self.M) * (2.0 * self.ar - 1.0)
+            else:
+                reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
+        else:
+            reward = 0.0
         info = {
             "ar":                  self.ar,
             "step":                self._step,
@@ -280,7 +284,7 @@ class P6Env(gym.Env):
             "episode_has_cap_violation":      self.episode_has_cap_violation,
             "episode_has_conflict_violation": self.episode_has_conflict_violation,
         }
-        return self._obs(), float(step_reward + repair_penalty + terminal_bonus), done, False, info
+        return self._obs(), reward, done, False, info
 
     # ── render ────────────────────────────────────────────────────────────────
     def render(self):

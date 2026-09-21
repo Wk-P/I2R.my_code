@@ -38,7 +38,7 @@ with open(YAML_CONFIG) as f:
     REQ_POOL = SCENARIOS[SCENARIO_IDX][1]
 
 # ── Training ──────────────────────────────────────────────────────────────────
-TOTAL_STEPS = get_total_steps("ppo_opt")
+TOTAL_STEPS = get_total_steps("ppo_opt", scenario=ROOT.parent.name)
 SEED        = int(os.environ.get("TRAIN_SEED", "42"))
 # ── Train / Test split (80/20, deterministic) ────────────────────────────────
 import random as _random
@@ -55,15 +55,28 @@ TORCH_NUM_THREADS = 10       # shared host: keep total concurrent demand ~30 cor
 PROGRESS_LOG_EVERY_STEPS = 200_000
 
 # ── PPO hyperparameters ───────────────────────────────────────────────────────
-PPO_LR          = 3e-4
-PPO_N_STEPS     = 512    # collect multiple episodes per rollout to amortise SB3 overhead
-PPO_BATCH_SIZE  = 256
-PPO_N_EPOCHS    = 10
+# 2026-09-07: replaced with the config found by full_hparam_sweep.py's
+# hyperparameter search + net-depth probe (see paper_contents/) and
+# confirmed across 200k/1M/5M budgets and all three scenarios (lt/eq/gt),
+# including a periodic-checkpoint convergence check at 5M. PPO_ENT_COEF was
+# eq's own pre-existing value (0.005) -- lt/gt had never set one at all
+# (defaulting to SB3's 0.0); now all three scenarios share the same
+# uniform, actually-tuned value instead of that inconsistency.
+PPO_LR          = 1e-4
+PPO_N_STEPS     = 1024   # collect multiple episodes per rollout to amortise SB3 overhead
+PPO_BATCH_SIZE  = 64
+PPO_N_EPOCHS    = 20
 PPO_GAMMA       = 0.99
 PPO_GAE_LAMBDA  = 0.95
-PPO_CLIP_RANGE  = 0.2
-PPO_ENT_COEF    = 0.005
-PPO_NET_ARCH    = dict(pi=[256, 256], vf=[512, 512])
+PPO_CLIP_RANGE  = 0.3
+PPO_ENT_COEF    = 0.001
+PPO_NET_ARCH    = [256, 256, 256]
+
+
+# ── Behavior-cloning pretraining (ILP expert warm-start) ──────────────────────
+BC_EPOCHS     = 20
+BC_BATCH_SIZE = 256
+BC_LR         = 1e-3
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 EVAL_EPS  = len(TEST_SCENARIOS)
