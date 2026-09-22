@@ -98,6 +98,12 @@ LAMBDA_WARMUP_EPISODES = 20000 # longer unconstrained phase to learn high-AR str
 # nonstationary-reward-scale rationale. Comparable in spirit to ppo_opt's
 # fixed -0.1 repair_penalty (a fixed, non-drifting per-step deterrent).
 LAGRANGE_PENALTY_CEILING = 0.5
+# v4.1.0.4: potential-based AR shaping weight (Phi(s) = AR_SHAPING_WEIGHT *
+# AR(s)) -- gives a dense, policy-invariant positive signal for improving AR
+# without violating, on top of the (0-or-negative-only) penalty terms above.
+# See env.py's module docstring for why this differs from the raw match_gain
+# bonus already ruled out in v4.1.0.1.
+AR_SHAPING_WEIGHT = 1.0
 
 # ── Behavior-cloning pretraining (ILP expert warm-start) ──────────────────────
 BC_EPOCHS     = 20

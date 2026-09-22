@@ -287,3 +287,4 @@ $$
 ---
 
 *本文档反映 `final_paper_experiments` 分支 tag `v4.1.0.2` 的最终代码状态，涉及 `scenarios/{lt,eq,gt}/{ppo,ppo_mask,ppo_lagrangian,ppo_opt,dqn,ddqn}/env.py`。完整的修复/消融/回退过程见 `paper_contents/v4.1.0_changelog.md`。若代码后续更新，请重新核对本文档。*
+

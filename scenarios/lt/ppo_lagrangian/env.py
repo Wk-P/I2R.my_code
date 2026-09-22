@@ -39,8 +39,21 @@ numbers across every variant):
       repair_penalty, which never drifts). Fix: rescale into a FIXED
       [0, penalty_ceiling] range regardless of lambda's absolute value --
       lambda's dual-ascent *trajectory* is unchanged, only the magnitude
-      actually handed to the policy as reward is normalised. See __init__'s
-      `penalty_ceiling` parameter and the reward assembly in step() below.
+      actually handed to the policy as reward is normalised. Did NOT recover
+      lt either (success_rate 0.527, conflict_viol 0.463 -- statistically
+      indistinguishable from v4.1.0/v4.1.0.1).
+    - v4.1.0.4 (current): with three different penalty formulas all
+      converging to the same failure, the common factor became suspect: every
+      wired-in variant gave the policy 0-or-negative per-step feedback ONLY
+      (no violation -> 0, violation -> penalty) with no positive signal for
+      good placements until the terminal step. Added potential-based AR
+      shaping, F(s,a,s')=gamma*Phi(s')-Phi(s), Phi(s)=ar_shaping_weight*AR(s)
+      -- NOT the raw match_gain bonus ruled out in v4.1.0.1 (that sums to ~M
+      in magnitude over an episode, rivalling the terminal reward's own
+      scale; this telescopes to ~AR_final-AR_initial, bounded ~1, and is
+      provably policy-invariant per Ng-Harada-Russell 1999 regardless of
+      weight). Same shaping pattern already used in ppo_mask/env.py (there
+      with an FFD-feasibility potential instead of AR).
 """
 
 import sys
@@ -73,9 +86,10 @@ class LagrangeEnv(gym.Env):
         [6+5N+M:6+5N+2M] valid ECU count per remaining service (normalised by N; 0 for placed)
         [6+5N+2M]    current λ value, normalised by λ_max
 
-    Reward per step (v4.1.0.3, see module docstring for the full ablation history):
+    Reward per step (v4.1.0.4, see module docstring for the full ablation history):
         r_t = -forced_overflow_penalty_indicator*2.0
               - penalty_ceiling * (lambda_val+base_penalty)/(lambda_max+base_penalty) * c_t
+              + [gamma*Phi(s') - Phi(s)], Phi(s) = ar_shaping_weight * AR(s)
         (terminal step instead uses the graded terminal formula)
     """
 
@@ -83,7 +97,8 @@ class LagrangeEnv(gym.Env):
 
     def __init__(self, ecus: list[ECU], services: list[SVC],
                  scenarios=None, lambda_init: float = 0.0,
-                 lambda_max: float = 10.0, penalty_ceiling: float = 0.5):
+                 lambda_max: float = 10.0, penalty_ceiling: float = 0.5,
+                 ar_shaping_weight: float = 1.0, gamma: float = 0.99):
         super().__init__()
         self._scenarios = scenarios
         self.ecus       = ecus
@@ -99,6 +114,20 @@ class LagrangeEnv(gym.Env):
         # module docstring for why a drifting penalty scale broke v4.1.0/
         # v4.1.0.1's PPO training).
         self.penalty_ceiling = float(penalty_ceiling)
+        # v4.1.0.4: potential-based reward shaping using AR itself as the
+        # potential, F(s,a,s') = gamma*Phi(s')-Phi(s), Phi(s)=ar_shaping_weight
+        # * self.ar. Per Ng-Harada-Russell (1999) this provably does not
+        # change the optimal policy for ANY ar_shaping_weight -- unlike a raw
+        # per-step match_gain bonus (tested and dropped in v4.1.0.1), which
+        # sums to up to ~M in magnitude over an episode (comparable to or
+        # exceeding the terminal reward's own scale) because it has no
+        # discount/telescoping baseline. The potential-based version telescopes
+        # to roughly AR_final - AR_initial over the episode (bounded ~1), a
+        # much smaller and theoretically safe way to give a dense, real-time
+        # "AR is improving" signal without violation. Same pattern already
+        # used in ppo_mask/env.py (there with an FFD-feasibility potential).
+        self.ar_shaping_weight = float(ar_shaping_weight)
+        self.shaping_gamma     = float(gamma)
 
         self.action_space = gym.spaces.Discrete(self.N)
         self.observation_space = gym.spaces.Box(
@@ -253,6 +282,7 @@ class LagrangeEnv(gym.Env):
     # ── step ──────────────────────────────────────────────────────────────────
     def step(self, action: int):
         svc = self.services[self._step]
+        phi_s = self.ar_shaping_weight * self.ar  # Phi(s), BEFORE this step's AR update
 
         cap_violated      = bool(self.remaining_vms[action] < svc.requirement)
         conflict_violated = self._has_conflict(action, self._step)
@@ -298,6 +328,14 @@ class LagrangeEnv(gym.Env):
         self.ar = self._total_ru / _active if _active > 0 else 0.0
         self._step += 1
 
+        # v4.1.0.4: potential-based AR shaping, F(s,a,s') = gamma*Phi(s')-Phi(s).
+        # Phi(s')-Phi(s) alone telescopes to ~AR_final-AR_initial over the whole
+        # episode (bounded, small); the (gamma-1)*Phi(s) term keeps it an exact
+        # policy-invariant potential-based shaping per Ng-Harada-Russell (1999),
+        # not just an ad hoc AR-delta bonus.
+        phi_s_next = self.ar_shaping_weight * self.ar
+        ar_shaping = self.shaping_gamma * phi_s_next - phi_s
+
         done = self._step >= self.M
         violated = cap_violated or conflict_violated
         if done:
@@ -309,23 +347,26 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0.3: re-wire the penalty, this time with a scale-stationary
-            # lagrange_penalty (see above) instead of a raw, drifting one.
-            # History: v4.1.0 (full formula incl. match_gain) and v4.1.0.1
-            # (penalty-only, no match_gain) both regressed lt hard (success_rate
-            # ~0.52-0.54 vs v4.0.0's 0.81) and were statistically indistinguishable
-            # from each other -- ruling out match_gain double-counting as the
-            # cause. v4.1.0.2 reverted to reward=0.0. Root-caused afterwards: the
-            # raw lagrange_penalty's magnitude tracks lambda directly, and lambda
-            # is *monotonically driven toward lambda_max* by dual ascent under a
-            # zero-violation target (LAMBDA_TARGET=0 means the update term is
-            # never negative) -- so the same conflict event is worth ~0.2 early
-            # in training and ~(lambda_max+0.2) late in training, a nonstationary
-            # reward target that PPO's GAE/value function can't track. Still not
-            # including match_gain (already ruled out as helpful, and it
-            # duplicates the terminal AR term regardless). See
-            # v4.1.0_changelog.md for the full before/after ablation numbers.
-            reward = forced_overflow_penalty + lagrange_penalty
+            # v4.1.0.4: v4.1.0.3's scale-stationary penalty alone (no positive
+            # per-step term at all) did NOT recover lt either (success_rate
+            # 0.527, conflict_viol 0.463 -- statistically indistinguishable from
+            # v4.1.0/v4.1.0.1's ~0.52-0.54/~0.45-0.47). With three different
+            # penalty formulas converging to the same failure mode, the common
+            # factor became suspect: every wired-in variant so far gives the
+            # policy ONLY 0-or-negative per-step feedback (no violation -> 0,
+            # violation -> penalty), with zero positive signal for placing well
+            # until the terminal step, M steps later. Added back a per-step
+            # positive-feedback term -- but as potential-based AR shaping
+            # (ar_shaping, computed above), NOT the raw match_gain bonus ruled
+            # out in v4.1.0.1. The two are NOT equivalent: raw match_gain sums
+            # to ~M in magnitude over an episode with no discount baseline
+            # (rivalling the terminal reward's own scale -- the likely reason
+            # it looked risky before); potential-based shaping telescopes to
+            # roughly AR_final-AR_initial (bounded ~1) and is provably
+            # policy-invariant regardless of ar_shaping_weight (Ng-Harada-
+            # Russell 1999). See v4.1.0_changelog.md for the full ablation
+            # history and v4.1.0.3 vs v4.1.0.4 comparison once run.
+            reward = forced_overflow_penalty + lagrange_penalty + ar_shaping
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "violated":            violated,
