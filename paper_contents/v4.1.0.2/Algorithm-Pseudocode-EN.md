@@ -85,7 +85,7 @@ lambda <- clip(lambda + LAMBDA_LR * (avg_viol - LAMBDA_TARGET), 0, LAMBDA_MAX)
 env.set_lambda(lambda)
 ```
 
-**⚠️ This is not "left unfinished" — it's a deliberate decision after three rounds of ablation** (full story in `v4.1.0_changelog.md`):
+**⚠️ This is not "left unfinished" — it's a deliberate decision after three rounds of ablation** (full story in `paper_contents/v4.1.0_changelog.md`):
 
 1. **v4.1.0**: wired `reward_t` to the full formula `match_gain + cap_penalty + lagrange_penalty` (including the positive utilisation term). Result: on lt, success_rate fell 0.81->0.52 and conflict_viol rose 0.18->0.47 — a clear regression; eq actually improved slightly, gt was roughly flat.
 2. **v4.1.0.1**: hypothesised `match_gain` double-counted utilisation against the terminal AR term, so it was dropped, leaving `reward_t <- cap_penalty + lagrange_penalty`. Retested at 5M steps/3 seeds: lt moved to 0.52->0.54 and 0.47->0.45 — **essentially no change**. Hypothesis falsified.

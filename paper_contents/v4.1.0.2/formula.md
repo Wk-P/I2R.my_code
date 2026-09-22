@@ -196,7 +196,7 @@ $$
    \lambda \leftarrow \text{clip}\big(\lambda + \eta \cdot \bar{v},\; 0,\; \lambda_{\max}\big), \qquad \eta = 3\times10^{-4}
    $$
 
-**为什么回退**（详见 `v4.1.0_changelog.md`，此处只摘结论）：
+**为什么回退**（详见 `paper_contents/v4.1.0_changelog.md`，此处只摘结论）：
 - v4.1.0接入完整公式（含正向 $\text{match\_gain}=n_t/e_{a_t}$ 项）：lt场景 success_rate $0.81\to0.52$，conflict_viol $0.18\to0.47$，明显变差。
 - v4.1.0.1假设是match_gain重复计入AR信号，去掉它只留惩罚项重测：lt场景 $0.52\to0.54$，$0.47\to0.45$，**几乎没变化**，假设被推翻。
 - 结论：不是公式细节问题，是"任何非零逐步奖励在这个环境结构下都会破坏PPO训练"——环境本身无结构性约束保护（不像`ppo_mask`有掩码、`ppo_opt`有修复），逐步惩罚量级（$-2.0$ 及自适应增长的 $\lambda$ 项）可能与终局奖励同量级，扰乱了GAE优势估计。eq/gt场景约束压力小，未观察到同等程度的负面影响。

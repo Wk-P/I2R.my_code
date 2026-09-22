@@ -107,7 +107,7 @@
 
 每张图左侧为 episode reward、右侧为 episode AR，横轴为训练步数（0~5M），阴影为 5 个种子间的标准差范围。数据按训练步数分 60 个 bin，对每个 bin 内所有 episode 取均值后再跨种子平均。
 
-**reward 曲线是从 `training_curve.csv` 已记录的 `episode_ar`/`episode_success`/`episode_valid_placed` 精确重建的**（核对源码确认成功分支 `M*(2·AR-1)`、失败分支 `-M*(1-valid_placed/M)` 是全部 6 个算法实际生效的唯一奖励项，`step_reward`/`repair_penalty`/`terminal_bonus` 均为算了但从未接入最终 `reward` 的死代码，详见 `各算法伪代码.md` 订正说明），plain PPO(P3) 因未记录 `valid_placed`，失败分支用 AR 做近似替代。
+**reward 曲线是从 `training_curve.csv` 已记录的 `episode_ar`/`episode_success`/`episode_valid_placed` 精确重建的**（核对源码确认成功分支 `M*(2·AR-1)`、失败分支 `-M*(1-valid_placed/M)` 是全部 6 个算法实际生效的唯一奖励项，`step_reward`/`repair_penalty`/`terminal_bonus` 均为算了但从未接入最终 `reward` 的死代码，详见 `v4.1.0.2/各算法伪代码.md` 订正说明），plain PPO(P3) 因未记录 `valid_placed`，失败分支用 AR 做近似替代。
 
 **统一使用 `w=1` 的最终版公式，不还原 lt/Maskable PPO 训练时实际用过的 AR 权重课程 `w`（0→1 线性退火）**：还原课程后的真实 reward 会在训练早期虚高（`w≈0` 时只要不违规就给满分 `M`，与 AR 质量无关），中后期随 `w→1` 逐渐回落到按 AR 打分，导致该算法单独出现"先冲高再下降"的非单调曲线——这不是训练退化（同期 success_rate/AR 都在稳定上升），而是评分标准本身在训练中途变严了，跟其余 5 个算法（reward 定义全程不变）放在一起比较会造成误导。因此图中统一用 `M*(2·AR-1)` 这把不随训练变化的尺子重算，牺牲了"忠实还原 lt/Maskable PPO 实际训练信号"的精确性，换来 6 个算法之间、以及同一算法训练全程内部的可比性。
 

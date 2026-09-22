@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate the final (v4.1.0.2) result figures from
-paper_contents/v4.1.0_final_figs/final_summary_data.json.
+paper_contents/v4.1.0.2/figs/final_summary_data.json.
 
 Each (scenario, algo) cell in that JSON has mixed provenance (some algos keep
 the v4.1.0 reward fix and were rerun at 5M/3seed; ppo_lagrangian was reverted
@@ -26,8 +26,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_PATH = PROJECT_ROOT / "paper_contents" / "v4.1.0_final_figs" / "final_summary_data.json"
-OUT_DIR = PROJECT_ROOT / "paper_contents" / "v4.1.0_final_figs"
+DATA_PATH = PROJECT_ROOT / "paper_contents" / "v4.1.0.2" / "figs" / "final_summary_data.json"
+OUT_DIR = PROJECT_ROOT / "paper_contents" / "v4.1.0.2" / "figs"
 
 # dataviz skill validated categorical order (light mode), slots 1-6 for the
 # 6 algorithms -- fixed order, never cycled/reassigned per chart.
