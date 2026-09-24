@@ -46,9 +46,11 @@ class P4Env(gym.Env):
         [6+5N:6+5N+M] remaining service demands (sorted descending)
 
     Reward:
-        +ru            valid assignment
-        -2.0           forced-overflow penalty (capacity or conflict violated via fallback)
-        terminal_bonus: +ar (zero violations) or +0.1*ar (some violations)
+        M*ar    zero-violation episode (quality-proportional, v2.2.0-style)
+        -M      any capacity/conflict violation
+        -2.0    per-step forced-overflow penalty when no valid ECU exists
+                (v4.1.0: wired in, was dead code in v4.0.0; step reward is
+                otherwise 0 since violations should not occur under masking)
     """
 
     metadata = {"render_modes": []}
@@ -63,7 +65,7 @@ class P4Env(gym.Env):
 
         self.action_space = gym.spaces.Discrete(self.N)
         self.observation_space = gym.spaces.Box(
-            low=-1.0, high=1.0, shape=(5 * self.N + 6 + 2 * self.M,), dtype=np.float32,
+            low=-1.0, high=1.0, shape=(5 * self.N + 7 + 2 * self.M,), dtype=np.float32,
         )
 
         self.initial_vms = np.array([e.capacity for e in ecus], dtype=np.float32)
@@ -174,12 +176,20 @@ class P4Env(gym.Env):
         )
 
         svc_valid_ecus = np.zeros(self.M, dtype=np.float32)
+        n_remaining = max(self.M - self._step, 1)
+        risk_sum = 0.0
         for i in range(self._step, self.M):
-            svc_valid_ecus[i] = sum(
+            n_valid = sum(
                 1 for j in range(self.N)
                 if self.remaining_vms[j] >= self.services[i].requirement
                 and not self._has_conflict(j, i)
-            ) / self.N
+            )
+            svc_valid_ecus[i] = n_valid / self.N
+            risk_sum += 1.0 / (n_valid + 1)
+        # Continuous dead-end-proximity signal (mean of 1/(valid_ecu_count+1)
+        # over remaining services) -- see lt/ppo_mask/env.py::_bottleneck_risk
+        # for why this replaced the earlier discrete "<=1 valid ECU" count.
+        bottleneck_risk = np.float32(risk_sum / n_remaining if self._step < self.M else 0.0)
 
         return np.concatenate([
             [service_demand_norm],
@@ -188,6 +198,7 @@ class P4Env(gym.Env):
             np.array([remaining_service_demand_sum], dtype=np.float32),
             np.array([remaining_usable_ecu_count], dtype=np.float32),
             np.array([remaining_services_count], dtype=np.float32),
+            np.array([bottleneck_risk], dtype=np.float32),
             initial_cap_pct,
             remaining_abs_norm,
             conflict_flag,
@@ -233,9 +244,36 @@ class P4Env(gym.Env):
 
         done = self._step >= self.M
         total_viol = self.capacity_violations + self.conflict_violations
-        terminal_bonus = 0.0
         if done:
-            terminal_bonus = self.ar if total_viol == 0 else 0.1 * self.ar
+            # v2.2.0 (ported from lt): AR is the optimization target, not just
+            # an observed metric. A zero-violation episode used to score a
+            # flat +M regardless of AR (0.3 and 0.9 both scored the same),
+            # so PPO had no gradient telling it to prefer higher-AR
+            # placements once completion itself was already easy (N>=M here
+            # means valid_placed hits M from the very first episodes).
+            # M*AR <= M for AR in (0,1], so "any success beats any
+            # violation" still holds unconditionally.
+            # v2.4.0: rescaled from M*ar to M*(2*ar-1) -- gives AR the
+            # full [-M,M] reward budget (same magnitude as the
+            # success/violation gap) instead of just (0,M], doubling the
+            # AR-quality gradient. See lt/ppo_mask/env.py::step() for the
+            # full rationale. "Any success beats any violation" still holds
+            # (M*(2*ar-1) > -M for any ar>0).
+            # Graded failure penalty (see lt/ppo_mask/env.py::step() for
+            # full rationale): flat -M regardless of how far the episode got
+            # gives PPO zero gradient about "how close" a failing trajectory
+            # was. valid_placed/M grades it -- still strictly worse than any
+            # success since valid_placed < M whenever total_viol > 0.
+            if total_viol == 0:
+                reward = float(self.M) * (2.0 * self.ar - 1.0)
+            else:
+                # v2.6.0: failure rescaled from [-2M,-M) to (-M,0] so it
+                # shares the same M-scale budget as success (-M,M] instead
+                # of dominating it 2x -- see scenarios/lt/ppo_mask/env.py's
+                # step() for the full rationale.
+                reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
+        else:
+            reward = violation_penalty  # v4.1.0: wire in forced-overflow penalty (was dead code in v4.0.0)
 
         info = {
             "ar":                  self.ar,
@@ -250,7 +288,7 @@ class P4Env(gym.Env):
             "episode_has_cap_violation":      self.episode_has_cap_violation,
             "episode_has_conflict_violation": self.episode_has_conflict_violation,
         }
-        return self._obs(), float(ru + violation_penalty + terminal_bonus), done, False, info
+        return self._obs(), reward, done, False, info
 
     # ── render ────────────────────────────────────────────────────────────────
     def render(self):

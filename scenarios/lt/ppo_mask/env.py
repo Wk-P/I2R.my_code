@@ -31,40 +31,68 @@ class P4Env(gym.Env):
     and conflict constraints.  If no such ECU exists, the fallback ECU
     with maximum remaining capacity is used (heavy penalty applied).
 
-    Observation (shape: 5N+6+2M):
+    Observation (shape: 5N+7+2M):
         [0]          current service demand (normalised)
         [1]          current cumulative AR
         [2]          sum of remaining ECU capacity (normalised, clipped ≥ 0)
         [3]          sum of remaining service demand (normalised)
         [4]          fraction of ECUs with sufficient capacity for current service
         [5]          fraction of services remaining
-        [6:6+N]      initial capacity fraction per ECU
-        [6+N:6+2N]   remaining capacity fraction per ECU
-        [6+2N:6+3N]  conflict flag per ECU (1 = placing current svc here violates a conflict set)
-        [6+3N:6+4N]  ECU allowed fraction (fraction of SVCs still placeable without conflict)
-        [6+4N:6+5N]  valid-action flags (1 = capacity OK AND no conflict)
-        [6+5N:6+5N+M] remaining service demands (sorted descending)
-        [6+5N+M:6+5N+2M] valid ECU count per remaining service (normalised by N; 0 for placed)
+        [6]          bottleneck risk: mean of 1/(valid_ecu_count+1) over remaining
+                     services (incl. current) -- a continuous aggregate dead-end-
+                     proximity signal (see P4Env._bottleneck_risk()) the policy
+                     previously had to infer itself from the raw per-service
+                     valid-ECU counts below.
+        [7:7+N]      initial capacity fraction per ECU
+        [7+N:7+2N]   remaining capacity fraction per ECU
+        [7+2N:7+3N]  conflict flag per ECU (1 = placing current svc here violates a conflict set)
+        [7+3N:7+4N]  ECU allowed fraction (fraction of SVCs still placeable without conflict)
+        [7+4N:7+5N]  valid-action flags (1 = capacity OK AND no conflict)
+        [7+5N:7+5N+M] remaining service demands (sorted descending)
+        [7+5N+M:7+5N+2M] valid ECU count per remaining service (normalised by N; 0 for placed)
 
     Reward:
-        +ru            valid assignment
-        -2.0           forced-overflow penalty (capacity or conflict violated via fallback)
-        terminal_bonus: +ar (zero violations) or +0.1*ar (some violations)
+        terminal: M*ar (zero violations) or -M (any violation), v2.2.0-style
+        + potential-based shaping F(s,a,s') = gamma*Phi(s') - Phi(s) every
+          step (incl. terminal), Phi(s) = -bottleneck_shaping_weight *
+          bottleneck_risk(s). Provably does not change the optimal policy
+          for any bottleneck_shaping_weight >= 0 (Ng, Harada & Russell 1999);
+          weight=0.0 (the default) makes shaping an exact no-op.
     """
 
     metadata = {"render_modes": []}
 
-    def __init__(self, ecus: list[ECU], services: list[SVC], scenarios=None):
+    def __init__(
+        self, ecus: list[ECU], services: list[SVC], scenarios=None,
+        bottleneck_shaping_weight: float = 0.0, gamma: float = 0.99,
+    ):
         super().__init__()
         self._scenarios = scenarios
         self.ecus     = ecus
         self.services = services
         self.N = len(ecus)
         self.M = len(services)
+        # Potential-based reward shaping (Ng, Harada & Russell 1999):
+        # F(s,a,s') = gamma*Phi(s') - Phi(s), Phi(s) = -beta*bottleneck_risk(s).
+        # Guaranteed not to change the optimal policy for ANY beta>=0 (unlike
+        # ad-hoc dense shaping, which is why v1.1.0 dropped dense reward in
+        # favour of pure sparse) -- it only redistributes the terminal -M/M*ar
+        # signal earlier, giving PPO a per-step hint about whether the action
+        # just taken made a future dead-end more or less likely, instead of
+        # only finding out M-minus-however-many steps later. beta=0.0 is a
+        # strict no-op (F=0 identically), so existing callers are unaffected.
+        self._shaping_beta = float(bottleneck_shaping_weight)
+        self._shaping_gamma = float(gamma)
+        # v2.7.0: how much of the success-branch reward depends on AR quality
+        # vs. a flat completion bonus, annealed by the training callback via
+        # shared.adaptive_ppo.ar_weight_at() (see step()'s success branch).
+        # Defaults to 1.0 (= the plain M*(2*ar-1) formula) so any caller that
+        # doesn't touch this attribute (eval, older scripts) is unaffected.
+        self._ar_weight = 1.0
 
         self.action_space = gym.spaces.Discrete(self.N)
         self.observation_space = gym.spaces.Box(
-            low=-1.0, high=1.0, shape=(5 * self.N + 6 + 2 * self.M,), dtype=np.float32,
+            low=-1.0, high=1.0, shape=(5 * self.N + 7 + 2 * self.M,), dtype=np.float32,
         )
 
         self.initial_vms = np.array([e.capacity for e in ecus], dtype=np.float32)
@@ -93,6 +121,80 @@ class P4Env(gym.Env):
         for subset in self.conflict_sets:
             if svc_idx in subset:
                 self.ecu_allowed[ecu_idx] -= (subset - {svc_idx})
+
+    def _bottleneck_risk(self) -> float:
+        """Aggregate dead-end-proximity signal over not-yet-placed services
+        (self._step onward): mean of 1/(valid_ecu_count+1) across them.
+
+        v2.4.0 originally used "fraction of remaining services with <=1
+        valid ECU" -- a hard threshold that jumps discontinuously the moment
+        a service's valid_ecu_count crosses from 2 to 1, which likely
+        contributed to the noisy/negative potential-shaping ablation results
+        (fixed beta=2.0 and annealed both underperformed beta=0.0). This
+        continuous version changes smoothly as any remaining service's
+        option count changes by 1 (1/(n+1) term shrinks smoothly as n grows:
+        1.0 at n=0 "dead", 0.5 at n=1, ~0.09 at n=10), instead of only
+        registering something once a service is already down to its last
+        option. Still 0.0 exactly at/after termination (self._step>=self.M),
+        preserving Ng et al. 1999's "absorbing-state potential = 0"
+        requirement for the shaping's policy-invariance guarantee."""
+        if self._step >= self.M:
+            return 0.0
+        n_remaining = max(self.M - self._step, 1)
+        risk_sum = 0.0
+        for i in range(self._step, self.M):
+            n_valid = sum(
+                1 for j in range(self.N)
+                if self.remaining_vms[j] >= self.services[i].requirement
+                and not self._has_conflict(j, i)
+            )
+            risk_sum += 1.0 / (n_valid + 1)
+        return risk_sum / n_remaining
+
+    def _ffd_feasibility(self) -> float:
+        """Greedy First-Fit-Decreasing simulation over not-yet-placed
+        services (self._step onward; already sorted descending by
+        requirement since reset()) on a COPY of remaining_vms/ecu_allowed --
+        greedily place each into whichever legal ECU currently has the most
+        spare capacity, and report the fraction FFD manages to place before
+        getting stuck. 1.0 = FFD found a complete packing (the remaining
+        problem IS feasible, by construction); <1.0 = FFD failed partway.
+
+        Unlike _bottleneck_risk()/_lethal_after(), which only ever look at
+        ONE service in isolation, this simulates the WHOLE remaining
+        sub-problem jointly, so it catches "each service individually still
+        has options, but they collectively contend for the same scarce
+        capacity" cases that a per-service check can't see. It's a
+        SUFFICIENT, not exact, feasibility signal (a real solver -- e.g.
+        shared/ilp_utils.py::solve_ilp -- would be exact but is far too
+        expensive to call every step of every parallel env during PPO
+        training): FFD success proves feasibility; FFD failure doesn't
+        prove infeasibility (a different placement order might still work),
+        it's only a heuristic risk signal. Still O(M*N) per call, same
+        order as _bottleneck_risk(), so safe to call every step during
+        training. Used only for reward shaping (see step()), never to mask
+        actions -- RL still has to learn how to respond to this signal
+        itself, nothing is structurally guaranteed by it."""
+        if self._step >= self.M:
+            return 1.0
+        sim_vms = self.remaining_vms.copy()
+        sim_allowed = [s.copy() for s in self.ecu_allowed]
+        placed = 0
+        n_remaining = self.M - self._step
+        for i in range(self._step, self.M):
+            req = self.services[i].requirement
+            best_j, best_cap = -1, -1.0
+            for j in range(self.N):
+                if sim_vms[j] >= req and i in sim_allowed[j] and sim_vms[j] > best_cap:
+                    best_j, best_cap = j, sim_vms[j]
+            if best_j == -1:
+                break
+            sim_vms[best_j] -= req
+            for subset in self.conflict_sets:
+                if i in subset:
+                    sim_allowed[best_j] -= (subset - {i})
+            placed += 1
+        return placed / n_remaining
 
     # ── reset ────────────────────────────────────────────────────────────────
     def reset(self, seed=None, options=None):
@@ -128,16 +230,63 @@ class P4Env(gym.Env):
         return self._obs(), {}
 
     # ── action mask (capacity AND conflict) ──────────────────────────────────
+    def _lethal_after(self, action: int) -> bool:
+        """True iff hypothetically placing the current service on ECU
+        `action` would leave some future (not-yet-placed) service with ZERO
+        legal ECUs -- a guaranteed future failure, not a soft risk estimate
+        like _bottleneck_risk(). Pure lookahead probe, does not mutate
+        state. Only catches the single-service-starvation failure mode (a
+        remaining service left with no valid ECU at all); it does NOT
+        detect subtler joint infeasibility where multiple remaining
+        services individually still have >=1 option but collectively
+        contend for the same one -- that would need a real matching/Hall's-
+        theorem check, not this O(N*M) necessary-condition probe."""
+        svc = self.services[self._step]
+        hyp_remaining_action = self.remaining_vms[action] - svc.requirement
+        hyp_allowed_action = self.ecu_allowed[action].copy()
+        for subset in self.conflict_sets:
+            if self._step in subset:
+                hyp_allowed_action -= (subset - {self._step})
+
+        for i in range(self._step + 1, self.M):
+            req = self.services[i].requirement
+            has_valid = False
+            for j in range(self.N):
+                if j == action:
+                    cap_ok, conflict_ok = hyp_remaining_action >= req, i in hyp_allowed_action
+                else:
+                    cap_ok, conflict_ok = self.remaining_vms[j] >= req, not self._has_conflict(j, i)
+                if cap_ok and conflict_ok:
+                    has_valid = True
+                    break
+            if not has_valid:
+                return True
+        return False
+
     def action_masks(self) -> np.ndarray:
         if self._step >= self.M:
             return np.zeros(self.N, dtype=bool)
         svc = self.services[self._step]
-        mask = np.array(
+        base_mask = np.array(
             [(self.remaining_vms[j] >= svc.requirement) and (not self._has_conflict(j, self._step))
              for j in range(self.N)],
             dtype=bool,
         )
-        return mask
+        # One-step feasibility lookahead: among the currently-legal ECUs,
+        # additionally exclude any that are PROVABLY lethal (guarantee some
+        # future service gets stranded) -- same hard-constraint principle as
+        # the capacity/conflict masking above, just extended one step
+        # further. Falls back to base_mask (not to all-False) if every
+        # currently-legal option turns out lethal, since presenting an
+        # empty mask right now would force an immediate violation that's
+        # strictly worse than keeping a "maybe still recoverable" option
+        # this narrow lookahead can't see past.
+        if not np.any(base_mask):
+            return base_mask
+        refined_mask = np.array(
+            [base_mask[j] and not self._lethal_after(j) for j in range(self.N)], dtype=bool
+        )
+        return refined_mask if np.any(refined_mask) else base_mask
 
     # ── observation ──────────────────────────────────────────────────────────
     def _obs(self) -> np.ndarray:
@@ -183,11 +332,16 @@ class P4Env(gym.Env):
 
         svc_valid_ecus = np.zeros(self.M, dtype=np.float32)
         for i in range(self._step, self.M):
-            svc_valid_ecus[i] = sum(
+            n_valid = sum(
                 1 for j in range(self.N)
                 if self.remaining_vms[j] >= self.services[i].requirement
                 and not self._has_conflict(j, i)
-            ) / self.N
+            )
+            svc_valid_ecus[i] = n_valid / self.N
+        # Delegates to _bottleneck_risk() rather than re-deriving inline, so
+        # the observation feature and step()'s shaping potential can never
+        # drift apart (they did briefly during v2.4.0 development).
+        bottleneck_risk = np.float32(self._bottleneck_risk())
 
         return np.concatenate([
             [service_demand_norm],
@@ -196,6 +350,7 @@ class P4Env(gym.Env):
             np.array([remaining_service_demand_sum], dtype=np.float32),
             np.array([remaining_usable_ecu_count], dtype=np.float32),
             np.array([remaining_services_count], dtype=np.float32),
+            np.array([bottleneck_risk], dtype=np.float32),
             initial_cap_pct,
             remaining_abs_norm,
             conflict_flag,
@@ -227,6 +382,15 @@ class P4Env(gym.Env):
         violation_penalty = -2.0 if violated else 0.0
         ru = 0.0 if violated else svc.requirement / (self.initial_vms[action] + 1e-8)
 
+        # Phi(s) BEFORE this transition's mutations -- see step()'s tail for
+        # Phi(s') and the shaping term itself. v2.4.0 (2nd attempt): Phi
+        # swapped from _bottleneck_risk() (myopic, per-service, found to be
+        # a null-effect shaping signal across a 10-seed ablation) to
+        # 1-_ffd_feasibility() -- a joint, whole-remaining-subproblem risk
+        # estimate that catches cases the per-service check structurally
+        # cannot (see _ffd_feasibility()'s docstring).
+        phi_s = -self._shaping_beta * (1.0 - self._ffd_feasibility())
+
         self.remaining_vms[action] -= svc.requirement
         _was_empty = not self.ecu_placements[action]
         self.ecu_placements[action].add(self._step)
@@ -241,9 +405,68 @@ class P4Env(gym.Env):
 
         done = self._step >= self.M
         total_viol = self.capacity_violations + self.conflict_violations
-        terminal_bonus = 0.0
         if done:
-            terminal_bonus = self.ar if total_viol == 0 else 0.1 * self.ar
+            # v2.4.0: rescaled from M*ar (range (0,M]) to M*(2*ar-1) (range
+            # (-M,M]) so the AR-quality signal spans the SAME magnitude as
+            # the success/violation gap instead of being ~6x weaker. Under
+            # the old M*ar scheme, "success vs violation" spans ~M*(1+ar)
+            # (~2M), while "AR=0.55 success vs AR=0.90 success" only spans
+            # M*0.35 -- a sharp, easy-to-learn signal next to a soft, diluted
+            # one, which is the likely reason training curves showed
+            # valid_placed creeping up while episode AR stayed flat (PPO
+            # learns the strong signal first and the weak one barely moves
+            # in a finite step budget). M*(2*ar-1) doubles the AR gradient
+            # and gives it the full [-M,M] budget, on par with the
+            # violation contrast. "Any success beats any violation" still
+            # holds: M*(2*ar-1) > -M for any ar>0, with equality only at
+            # the unreachable ar=0 (any successful placement has ru>0).
+            #
+            # Graded failure penalty: previously every violated episode
+            # scored a flat -M regardless of whether it failed on step 2 or
+            # step 14 -- like a 0/1 loss, giving PPO zero gradient about
+            # "how close" a failing trajectory got. valid_placed/M (fraction
+            # of steps placed without violation before/around the failure)
+            # grades it instead: failing almost-complete costs close to -M,
+            # failing immediately costs close to -2M. Still strictly worse
+            # than any success -- valid_placed < M whenever total_viol > 0
+            # (a violated step never increments valid_placed), so this
+            # branch tops out at -M*(1+1/M) < -M, below any ar>0 success.
+            if total_viol == 0:
+                # v2.7.0: blend a flat completion bonus (+M regardless of ar)
+                # with the AR-quality bonus M*(2*ar-1), weighted by
+                # self._ar_weight (0=pure completion signal, 1=original
+                # formula). Early training (w near 0) rewards "did you
+                # finish" with zero AR-quality noise; once the policy
+                # reliably completes placements the callback anneals w -> 1
+                # and the AR gradient reactivates. w=1.0 always reduces to
+                # the pre-v2.7.0 formula exactly.
+                w = self._ar_weight
+                reward = float(self.M) * ((1.0 - w) * 1.0 + w * (2.0 * self.ar - 1.0))
+            else:
+                # v2.6.0 (untried in v2.5.0's 5-round ablation): failure used
+                # to span [-2M,-M) -- TWICE the magnitude of success's (-M,M]
+                # -- structurally teaching the policy that avoiding failure
+                # matters more than AR quality once "safely" above the
+                # success threshold. Rescaled to (-M,0] so failure and
+                # success share the same M-scale budget instead of failure
+                # dominating by 2x. Still strictly worse than any success:
+                # worst-case failure (valid_placed=0) bottoms out at -M,
+                # matched only in the limit by success's unreachable ar->0.
+                reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
+        else:
+            reward = violation_penalty  # v4.1.0: wire in forced-overflow penalty (was dead code in v4.0.0)
+
+        # Potential-based shaping F(s,a,s') = gamma*Phi(s') - Phi(s), added on
+        # top of the terminal/zero reward above. beta=0.0 makes phi_s and
+        # phi_s_next both identically 0.0, so shaping is an exact no-op --
+        # this line is always safe to leave in regardless of _shaping_beta.
+        # Phi(terminal) = -beta*(1-_ffd_feasibility()) = -beta*(1-1.0) = 0.0
+        # (the self._step >= self.M branch), satisfying the Ng et al. 1999
+        # requirement that the absorbing state's potential be zero, so the
+        # optimal-policy-invariance guarantee holds exactly at any beta>=0.
+        phi_s_next = -self._shaping_beta * (1.0 - self._ffd_feasibility())
+        shaping = self._shaping_gamma * phi_s_next - phi_s
+        reward += shaping
 
         step_reward = ru / max(_active, 1)
         info = {
@@ -259,7 +482,7 @@ class P4Env(gym.Env):
             "episode_has_cap_violation":      self.episode_has_cap_violation,
             "episode_has_conflict_violation": self.episode_has_conflict_violation,
         }
-        return self._obs(), float(step_reward + violation_penalty + terminal_bonus), done, False, info
+        return self._obs(), reward, done, False, info
 
     # ── render ────────────────────────────────────────────────────────────────
     def render(self):
@@ -288,7 +511,7 @@ if __name__ == "__main__":
 
     env = P4Env(ecus, services)
     obs, _ = env.reset()
-    print(f"\nObs shape : {obs.shape}  (expected {5 * N + 6 + 2 * M})")
+    print(f"\nObs shape : {obs.shape}  (expected {5 * N + 7 + 2 * M})")
 
     print("\n── Valid action policy run ──")
     done = False

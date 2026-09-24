@@ -41,7 +41,7 @@ with open(YAML_CONFIG) as f:
     REQ_POOL = SCENARIOS[SCENARIO_IDX][1]
 
 # ── Training ──────────────────────────────────────────────────────────────────
-TOTAL_STEPS = get_total_steps("ppo_lagrangian")
+TOTAL_STEPS = get_total_steps("ppo_lagrangian", scenario=ROOT.parent.name)
 SEED        = int(os.environ.get("TRAIN_SEED", "42"))
 # ── Train / Test split (80/20, deterministic) ────────────────────────────────
 import random as _random
@@ -65,7 +65,9 @@ PPO_N_EPOCHS   = 10
 PPO_GAMMA      = 0.99
 PPO_GAE_LAMBDA = 0.95
 PPO_CLIP_RANGE = 0.2
-PPO_ENT_COEF   = 0.005   # entropy regularisation prevents premature convergence
+PPO_ENT_COEF_INIT  = float(os.environ.get("ENT_COEF_INIT", "0.005"))
+PPO_ENT_COEF_FINAL = float(os.environ.get("ENT_COEF_FINAL", "0.005"))
+ADV_PRUNE_WEIGHT   = float(os.environ.get("ADV_PRUNE_WEIGHT", "1.0"))
 PPO_NET_ARCH   = dict(pi=[256, 256], vf=[512, 512])
 
 # ── Lagrangian multiplier (dual variable) ─────────────────────────────────────
@@ -76,9 +78,21 @@ LAMBDA_MAX           = 5.0
 LAMBDA_UPDATE_WINDOW = 200    # update λ every 200 episodes (≈5 eps/env with 40 envs)
 LAMBDA_WARMUP_EPISODES = 0
 
+
+# ── Behavior-cloning pretraining (ILP expert warm-start) ──────────────────────
+BC_EPOCHS     = 20
+BC_BATCH_SIZE = 256
+BC_LR         = 1e-3
+
 # ── Evaluation ────────────────────────────────────────────────────────────────
 EVAL_EPS = len(TEST_SCENARIOS)
 SMOOTH_W = 1000
+# best-of-N stochastic re-rolls at eval time: an online/no-backtrack
+# policy commits to one irrevocable pass per attempt, so re-sampling N
+# independent stochastic rollouts per test scenario and keeping the best
+# (success first, then most services validly placed, then highest AR)
+# sidesteps that ceiling without touching training.
+EVAL_BEST_OF_N = 8
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir

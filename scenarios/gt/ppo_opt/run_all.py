@@ -6,7 +6,7 @@ run_all.py — One-shot P6 full pipeline:
   3. Train PPO + repair heuristic        -> training curve
   4. Evaluate the trained PPO agent      -> ppo_ars + repair_rates
   5. Produce two plots:
-       - comparison.png      — AR box plot + repair rate bar (2-way: ILP vs PPO+Repair)
+       - comparison.png      — AR box plot + repair rate bar (2-way: ILP vs Repair PPO)
        - training_curve.png  — AR & repair rate during training
 
 P6 Design: standard PPO + best-fit repair heuristic.
@@ -92,7 +92,20 @@ def run_episodes(ecus, services, policy_fn):
         conflict_v = int(info.get("conflict_violations", 0))
         cap_viol_list.append(cap_v)
         conflict_viol_list.append(conflict_v)
-        success_list.append(bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0))
+        # v2.8.1: success == "did this episode finish with all M_sc services
+        # placed" only -- NOT "cap_v==0 and conflict_v==0" as well. For P6
+        # (best-fit repair), cap_v/conflict_v count REPAIR TRIGGERS, not
+        # unrepaired violations left in the final delivered placement -- a
+        # repair, by construction, always yields a constraint-compliant
+        # placement (or the episode terminates early with valid_placed <
+        # M_sc if no repair is possible). Requiring zero repairs on top of
+        # full completion made "success" mean "the raw policy never once
+        # picked wrong", a much stricter bar than every other algorithm's
+        # success definition (which only checks the delivered result, not
+        # the process) -- that mismatch made P6 look like it had ~0% success
+        # in eq/gt (near-100% repair-trigger rate there) even though its
+        # final AR was competitive with the masked/Lagrangian methods.
+        success_list.append(bool(valid_placed == M_sc))
 
     return {
         "ars":              np.array(ars),
@@ -118,6 +131,7 @@ class P6Callback(BaseCallback):
         self.episode_placed           : list[int]   = []
         self.episode_cap_violations      : list[int]   = []
         self.episode_conflict_violations : list[int]   = []
+        self.episode_success           : list[bool]  = []
         self.timesteps_at_ep          : list[int]   = []
         self._next_progress_step = C.PROGRESS_LOG_EVERY_STEPS
         self._t_start = 0.0
@@ -133,6 +147,11 @@ class P6Callback(BaseCallback):
                 self.episode_placed.append(int(info.get("services_placed", 0)))
                 self.episode_cap_violations.append(int(info.get("cap_violations", 0)))
                 self.episode_conflict_violations.append(int(info.get("conflict_violations", 0)))
+                # v2.8.1: matches run_episodes' eval-time success formula --
+                # see that function's comment for why cap_v/conflict_v
+                # (repair-trigger counts, not unrepaired final violations)
+                # don't belong in this check.
+                self.episode_success.append(bool(int(info.get("valid_placed", 0)) == C.M))
                 self.timesteps_at_ep.append(self.num_timesteps)
 
         if self.num_timesteps >= self._next_progress_step:
@@ -173,6 +192,7 @@ def train_ppo(ecus, services, device: str) -> tuple[PPO, P6Callback]:
         gamma         = C.PPO_GAMMA,
         gae_lambda    = C.PPO_GAE_LAMBDA,
         clip_range    = C.PPO_CLIP_RANGE,
+        ent_coef      = C.PPO_ENT_COEF,
         policy_kwargs = dict(net_arch=C.PPO_NET_ARCH),
         device        = device,
         verbose       = 0,
@@ -193,6 +213,24 @@ def train_ppo(ecus, services, device: str) -> tuple[PPO, P6Callback]:
 #  Plotting
 # ══════════════════════════════════════════════════════════════════════════════
 
+def save_training_curve_csv(cb: P6Callback, outdir: Path):
+    """Dump the raw per-episode training trajectory (not just the PNG) so the
+    curve's SHAPE can be checked quantitatively later."""
+    path = outdir / "training_curve.csv"
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestep", "episode_ar", "episode_success", "episode_placed", "episode_repair_rate"])
+        for i in range(len(cb.timesteps_at_ep)):
+            writer.writerow([
+                cb.timesteps_at_ep[i],
+                round(cb.episode_ars[i], 6),
+                int(cb.episode_success[i]),
+                cb.episode_placed[i],
+                round(cb.episode_repair_rates[i], 6),
+            ])
+    print(f"  Saved → {path}")
+
+
 def plot_training_curve(cb: P6Callback, ilp_ar: float, outdir: Path, scenario_name: str):
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
     ts = np.array(cb.timesteps_at_ep)
@@ -200,7 +238,7 @@ def plot_training_curve(cb: P6Callback, ilp_ar: float, outdir: Path, scenario_na
     sm, off = moving_avg(cb.episode_ars, C.SMOOTH_W)
     ax1.plot(ts, cb.episode_ars, color="steelblue", alpha=0.2, linewidth=0.8)
     ax1.plot(ts[off:off+len(sm)], sm, color="steelblue", linewidth=2,
-             label=f"PPO+Repair AR (smoothed w={C.SMOOTH_W})")
+             label=f"Repair PPO AR (smoothed w={C.SMOOTH_W})")
     ax1.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
                 label=f"ILP Optimal  AR={ilp_ar:.4f}")
     ax1.set_ylabel("Episode AR", fontsize=11)
@@ -209,11 +247,14 @@ def plot_training_curve(cb: P6Callback, ilp_ar: float, outdir: Path, scenario_na
     ax1.set_title(f"Training Metrics — {scenario_name}  ({C.TOTAL_STEPS:,} steps)", fontsize=12)
     ax1.grid(alpha=0.3)
 
-    sm_r, off_r = moving_avg(cb.episode_repair_rates, C.SMOOTH_W)
-    ax2.plot(ts, cb.episode_repair_rates, color="darkorange", alpha=0.15, linewidth=0.6)
-    ax2.plot(ts[off_r:off_r+len(sm_r)], sm_r, color="darkorange", linewidth=2,
-             label="Repair rate (smoothed)")
-    ax2.set_ylabel("Repair Rate", fontsize=11)
+    # v2.8.1: repair rate curve dropped from this panel per user request --
+    # episode_repair_rates is still recorded (CSV + episode_repair_rates
+    # list) for anyone who wants it, just not plotted here anymore, so this
+    # panel reads as a plain success-rate curve like every other algorithm's.
+    sm_s, off_s = moving_avg([float(s) for s in cb.episode_success], C.SMOOTH_W)
+    ax2.plot(ts[off_s:off_s+len(sm_s)], sm_s, color="mediumseagreen", linewidth=2,
+             label=f"episode success rate (smoothed w={C.SMOOTH_W})")
+    ax2.set_ylabel("Success Rate", fontsize=11)
     ax2.set_ylim(-0.05, 1.05)
     ax2.legend(fontsize=9)
     ax2.grid(alpha=0.3)
@@ -239,10 +280,10 @@ def plot_training_curve(cb: P6Callback, ilp_ar: float, outdir: Path, scenario_na
 def plot_comparison(ilp_ar, ppo_res, ppo_train_repair_mean, ppo_train_repair_std,
                     outdir: Path, scenario_name: str):
     fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-    fig.suptitle(f"ILP vs PPO+Repair (P6) — {scenario_name}", fontsize=13, fontweight="bold")
+    fig.suptitle(f"ILP vs Repair PPO (P6) — {scenario_name}", fontsize=13, fontweight="bold")
 
     colors = ["#e74c3c", "#2ecc71"]
-    labels = ["ILP\n(Optimal)", "PPO+Repair\n(P6)"]
+    labels = ["ILP\n(Optimal)", "Repair PPO\n(P6)"]
 
     ax = axes[0]
     ppo_ars = ppo_res["ars"]
@@ -374,7 +415,7 @@ def main():
     print(f"  {'Method':<24} {'AR (mean±std)':<22} {'RepairRate':<10}")
     print(f"  {'-'*24} {'-'*22} {'-'*10}")
     print(f"  {'ILP (Optimal)':<24} {ilp_ar:.4f} ± 0.0000       {'0':<10}  cap=0   conf=0")
-    print(f"  {'PPO+Repair (P6)':<24} "
+    print(f"  {'Repair PPO (P6)':<24} "
           f"{np.mean(ppo_res['ars']):.4f} ± {np.std(ppo_res['ars']):.4f}   "
           f"  {p_rr:<10.2%}  cap={p_cap_viol:.0f}  conf={p_con_viol:.0f}")
     print(f"{'='*62}\n")
@@ -438,7 +479,7 @@ def main():
         writer.writerow(["method", "ar_mean", "ar_std", "placed_mean", "valid_placed_mean", "ecus_used_mean", "success_rate", "cap_viol_rate", "conflict_viol_rate", "cap_viol_total", "conflict_viol_total"])
         writer.writerow(["ILP (Optimal)", round(ilp_ar, 6), 0.0, M, M, C.N, 1.0, 0.0, 0.0, 0, 0])
         writer.writerow([
-            "PPO+Repair (P6)",
+            "Repair PPO (P6)",
             round(float(np.mean(ppo_res["ars"])), 6),
             round(float(np.std(ppo_res["ars"])), 6),
             round(float(np.mean(ppo_res["placed"])), 2),
@@ -452,6 +493,7 @@ def main():
         ])
     print(f"  CSV  saved → {csv_path}")
 
+    save_training_curve_csv(cb, run_dir)
     plot_training_curve(cb, ilp_ar, run_dir, sc_name)
     plot_comparison(ilp_ar, ppo_res, p_rr, p_rr_std, run_dir, sc_name)
 

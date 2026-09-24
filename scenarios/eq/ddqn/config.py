@@ -37,7 +37,7 @@ with open(YAML_CONFIG) as f:
     REQ_POOL = SCENARIOS[SCENARIO_IDX][1]
 
 # ── Training ──────────────────────────────────────────────────────────────────
-TOTAL_STEPS = get_total_steps("ddqn")
+TOTAL_STEPS = get_total_steps("ddqn", scenario=ROOT.parent.name)
 SEED        = int(os.environ.get("TRAIN_SEED", "42"))
 # ── Train / Test split (80/20, deterministic) ────────────────────────────────
 import random as _random
@@ -66,6 +66,13 @@ DDQN_TARGET_UPDATE         = 500
 DDQN_EXPLORATION_FRACTION  = 0.1  # epsilon decays to final value in first 10% of training
 DDQN_EXPLORATION_FINAL_EPS = 0.0
 DDQN_NET_ARCH              = [128, 128]
+
+
+# ── Behavior-cloning pretraining (ILP expert warm-start, margin-classification) ──
+BC_EPOCHS     = 20
+BC_BATCH_SIZE = 256
+BC_LR         = 1e-3
+BC_MARGIN     = 0.8
 
 # ── Evaluation ──────────────────────────────────────────────────────────────────
 EVAL_EPS  = len(TEST_SCENARIOS)

@@ -66,40 +66,61 @@ def _make_p3_env(seed: int) -> Monitor:
 #  Step 3 & 5 — Evaluation (PPO)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_episodes(ecus, services, policy_fn):
+def run_episodes(ecus, services, policy_fn, n_samples: int = 1):
     """
-    Run one episode per scenario in C.TEST_SCENARIOS (deterministic traversal).
-    Episodes always complete (M steps, no early termination in P3).
+    Run up to n_samples independent episodes per scenario in C.TEST_SCENARIOS
+    and keep the best attempt (success first, then most services validly
+    placed, then highest AR) -- same best-of-N re-roll pattern as
+    ppo_mask/run_all.py::run_episodes(), added here for evaluation-protocol
+    parity across all 6 algorithms. Requires policy_fn to be stochastic
+    (deterministic=False at the call site) -- re-rolling a deterministic
+    policy against a deterministic env reproduces the same trajectory every
+    time and wastes the extra samples.
     policy_fn(obs) -> int
     """
     ars, cap_viols, conflict_viols, viol_rates, placed_list = [], [], [], [], []
-    valid_placed_list, ecus_used_list, success_list = [], [], []
+    valid_placed_list, ecus_used_list, success_list, attempts_list = [], [], [], []
 
     for scenario in C.TEST_SCENARIOS:
         caps, reqs, cs = scenario
         M_sc = len(reqs)
         _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
         _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
-        env = P3Env(_ecus, _svcs, scenarios=[scenario])
-        obs, _ = env.reset()
-        done   = False
-        info   = {}
-        while not done:
-            obs, _, done, _, info = env.step(policy_fn(obs))
-        ars.append(info["ar"])
-        cap_viols.append(info["capacity_violations"])
-        conflict_viols.append(info["conflict_violations"])
-        viol_rates.append(float(info.get("violation_rate", 0.0)))
-        placed = int(info.get("services_placed", 0))
-        valid_placed = int(info.get("valid_placed", placed))
+
+        best = None  # (success, valid_placed, ar, cap_v, conflict_v, viol_rate, placed, ecus_used)
+        used_attempts = 0
+        for attempt in range(max(1, n_samples)):
+            env = P3Env(_ecus, _svcs, scenarios=[scenario])
+            obs, _ = env.reset()
+            done   = False
+            info   = {}
+            while not done:
+                obs, _, done, _, info = env.step(policy_fn(obs))
+            ar = info["ar"]
+            cap_v = info["capacity_violations"]
+            conflict_v = info["conflict_violations"]
+            viol_rate = float(info.get("violation_rate", 0.0))
+            placed = int(info.get("services_placed", 0))
+            valid_placed = int(info.get("valid_placed", placed))
+            ecus_used = int(info.get("ecus_used", 0))
+            success = bool(valid_placed == M_sc and cap_v == 0 and conflict_v == 0)
+            used_attempts = attempt + 1
+            candidate = (success, valid_placed, ar, cap_v, conflict_v, viol_rate, placed, ecus_used)
+            if best is None or candidate[:3] > best[:3]:
+                best = candidate
+            if success:
+                break  # found a fully valid placement -- no need to re-roll further
+
+        success, valid_placed, ar, cap_v, conflict_v, viol_rate, placed, ecus_used = best
+        ars.append(ar)
+        cap_viols.append(cap_v)
+        conflict_viols.append(conflict_v)
+        viol_rates.append(viol_rate)
         placed_list.append(placed)
         valid_placed_list.append(valid_placed)
-        ecus_used_list.append(int(info.get("ecus_used", 0)))
-        success_list.append(bool(
-            valid_placed == M_sc
-            and info["capacity_violations"] == 0
-            and info["conflict_violations"] == 0
-        ))
+        ecus_used_list.append(ecus_used)
+        success_list.append(success)
+        attempts_list.append(used_attempts)
 
     return {
         "ars":            np.array(ars),
@@ -111,6 +132,7 @@ def run_episodes(ecus, services, policy_fn):
         "valid_placed": np.array(valid_placed_list),
         "ecus_used":    np.array(ecus_used_list),
         "success":      np.array(success_list),
+        "attempts":     np.array(attempts_list),
     }
 
 
@@ -121,11 +143,13 @@ def run_episodes(ecus, services, policy_fn):
 class P3Callback(BaseCallback):
     def __init__(self):
         super().__init__()
+        self.episode_rewards         : list[float] = []
         self.episode_ars             : list[float] = []
         self.episode_viol_rates      : list[float] = []
         self.episode_cap_viol_rates  : list[float] = []
         self.episode_conf_viol_rates : list[float] = []
         self.episode_placed          : list[int]   = []
+        self.episode_success         : list[bool]  = []
         self.timesteps_at_ep         : list[int]   = []
         self._next_progress_step = C.PROGRESS_LOG_EVERY_STEPS
         self._t_start = 0.0
@@ -136,11 +160,17 @@ class P3Callback(BaseCallback):
     def _on_step(self) -> bool:
         for info in self.locals.get("infos", []):
             if "episode" in info:
+                self.episode_rewards.append(float(info["episode"]["r"]))
                 self.episode_ars.append(float(info.get("ar", 0.0)))
                 self.episode_viol_rates.append(float(info.get("violation_rate", 0.0)))
                 self.episode_cap_viol_rates.append(info.get("capacity_violations", 0) / C.M)
                 self.episode_conf_viol_rates.append(info.get("conflict_violations", 0) / C.M)
                 self.episode_placed.append(int(info.get("services_placed", 0)))
+                self.episode_success.append(bool(
+                    int(info.get("valid_placed", 0)) == C.M
+                    and int(info.get("capacity_violations", 0)) == 0
+                    and int(info.get("conflict_violations", 0)) == 0
+                ))
                 self.timesteps_at_ep.append(self.num_timesteps)
 
         if self.num_timesteps >= self._next_progress_step:
@@ -201,43 +231,69 @@ def train_ppo(ecus, services, device: str) -> tuple[PPO, P3Callback]:
 #  Plotting
 # ══════════════════════════════════════════════════════════════════════════════
 
+def save_training_curve_csv(cb: P3Callback, outdir: Path):
+    """Dump the raw per-episode training trajectory (not just the PNG) so the
+    curve's SHAPE can be checked quantitatively later."""
+    path = outdir / "training_curve.csv"
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestep", "episode_ar", "episode_success", "episode_placed"])
+        for i in range(len(cb.timesteps_at_ep)):
+            writer.writerow([
+                cb.timesteps_at_ep[i],
+                round(cb.episode_ars[i], 6),
+                int(cb.episode_success[i]),
+                cb.episode_placed[i],
+            ])
+    print(f"  Saved -> {path}")
+
+
 def plot_training_curve(cb: P3Callback, ilp_ar: float, outdir: Path, scenario_name: str):
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+    # 2026-09-11: 4-panel layout (reward / AR / CapViolation / PrivacyViolation)
+    # standardized across all 6 algorithms -- see ppo_mask/run_all.py's
+    # plot_training_curve() comment for rationale.
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
     ts = np.array(cb.timesteps_at_ep)
 
-    sm, off = moving_avg(cb.episode_ars, C.SMOOTH_W)
-    ax1.plot(ts, cb.episode_ars, color="steelblue", alpha=0.2, linewidth=0.8)
-    ax1.plot(ts[off:off+len(sm)], sm, color="steelblue", linewidth=2,
-             label=f"Method AR (smoothed w={C.SMOOTH_W})")
-    ax1.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
-                label=f"ILP Optimal  AR={ilp_ar:.4f}")
-    ax1.set_ylabel("Episode AR", fontsize=11)
-    ax1.set_ylim(0, 1.05)
+    sm_r, off_r = moving_avg(cb.episode_rewards, C.SMOOTH_W)
+    ax1.plot(ts, cb.episode_rewards, color="steelblue", alpha=0.2, linewidth=0.8)
+    ax1.plot(ts[off_r:off_r+len(sm_r)], sm_r, color="steelblue", linewidth=2,
+             label=f"episode reward (smoothed w={C.SMOOTH_W})")
+    ax1.axhline(0.0, color="black", linewidth=0.8, alpha=0.4)
+    ax1.set_ylabel("Episode Reward", fontsize=11)
     ax1.legend(fontsize=9)
     ax1.set_title(f"Training Metrics — {scenario_name}  ({C.TOTAL_STEPS:,} steps)", fontsize=12)
     ax1.grid(alpha=0.3)
 
-    sm_cap,  off_cap  = moving_avg(cb.episode_cap_viol_rates,  C.SMOOTH_W)
-    sm_conf, off_conf = moving_avg(cb.episode_conf_viol_rates, C.SMOOTH_W)
-    ax2.plot(ts, cb.episode_cap_viol_rates,  color="tomato",    alpha=0.15, linewidth=0.6)
-    ax2.plot(ts, cb.episode_conf_viol_rates, color="darkorange", alpha=0.15, linewidth=0.6)
-    ax2.plot(ts[off_cap:off_cap+len(sm_cap)],   sm_cap,  color="tomato",    linewidth=2, label="Cap viol rate (smoothed)")
-    ax2.plot(ts[off_conf:off_conf+len(sm_conf)], sm_conf, color="darkorange", linewidth=2, label="Conflict viol rate (smoothed)")
-    ax2.set_ylabel("Violation Rate", fontsize=11)
-    ax2.set_ylim(-0.05, 1.05)
+    sm, off = moving_avg(cb.episode_ars, C.SMOOTH_W)
+    ax2.plot(ts, cb.episode_ars, color="steelblue", alpha=0.2, linewidth=0.8)
+    ax2.plot(ts[off:off+len(sm)], sm, color="steelblue", linewidth=2,
+             label=f"Method AR (smoothed w={C.SMOOTH_W})")
+    ax2.axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
+                label=f"ILP Optimal  AR={ilp_ar:.4f}")
+    ax2.set_ylabel("Episode AR", fontsize=11)
+    ax2.set_ylim(0, 1.05)
     ax2.legend(fontsize=9)
     ax2.grid(alpha=0.3)
 
-    sm_p, off_p = moving_avg(cb.episode_placed, C.SMOOTH_W)
-    ax3.plot(ts, cb.episode_placed, color="royalblue", alpha=0.2, linewidth=0.8)
-    ax3.plot(ts[off_p:off_p+len(sm_p)], sm_p, color="royalblue", linewidth=2,
-             label="Services placed (smoothed)")
-    ax3.axhline(C.M, color="gray", linestyle=":", alpha=0.6, label=f"M={C.M}")
-    ax3.set_ylabel("Services Placed", fontsize=11)
-    ax3.set_xlabel("Training steps", fontsize=11)
-    ax3.set_ylim(0, C.M + 1)
+    sm_cap, off_cap = moving_avg(cb.episode_cap_viol_rates, C.SMOOTH_W)
+    ax3.plot(ts, cb.episode_cap_viol_rates, color="tomato", alpha=0.2, linewidth=0.8)
+    ax3.plot(ts[off_cap:off_cap+len(sm_cap)], sm_cap, color="tomato", linewidth=2,
+             label=f"cap violation rate (smoothed w={C.SMOOTH_W})")
+    ax3.set_ylabel("Cap Violation Rate", fontsize=11)
+    ax3.set_ylim(-0.02, 1.02)
     ax3.legend(fontsize=9)
     ax3.grid(alpha=0.3)
+
+    sm_conf, off_conf = moving_avg(cb.episode_conf_viol_rates, C.SMOOTH_W)
+    ax4.plot(ts, cb.episode_conf_viol_rates, color="darkorange", alpha=0.2, linewidth=0.8)
+    ax4.plot(ts[off_conf:off_conf+len(sm_conf)], sm_conf, color="darkorange", linewidth=2,
+             label=f"privacy (conflict) violation rate (smoothed w={C.SMOOTH_W})")
+    ax4.set_ylabel("Privacy Violation Rate", fontsize=11)
+    ax4.set_xlabel("Training steps", fontsize=11)
+    ax4.set_ylim(-0.02, 1.02)
+    ax4.legend(fontsize=9)
+    ax4.grid(alpha=0.3)
 
     plt.tight_layout()
     path = outdir / "training_curve.png"
@@ -246,80 +302,40 @@ def plot_training_curve(cb: P3Callback, ilp_ar: float, outdir: Path, scenario_na
     print(f"  Saved → {path}")
 
 
-def plot_comparison(ilp_ar, ppo_res, ppo_train_viol_mean, ppo_train_viol_std, outdir: Path, scenario_name: str):
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+def plot_comparison(ilp_ar, ppo_res, cap_viol_rate, conflict_viol_rate, outdir: Path, scenario_name: str):
+    # 2026-09-11: 2-panel layout (AR vs ILP bar chart / success+viol-rate bar
+    # chart) standardized across all 6 algorithms -- see ppo_mask/run_all.py's
+    # plot_comparison() comment for rationale.
+    algo_label = "PPO\n(P3, no constraint)"
+    success_rate = float(np.mean(ppo_res["success"]))
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 5))
     fig.suptitle(f"P2(ILP) vs P3(PPO) - {scenario_name}", fontsize=13, fontweight="bold")
 
+    labels1 = ["ILP\n(Optimal)", algo_label]
+    ar_means = [ilp_ar, float(np.mean(ppo_res["ars"]))]
+    ar_stds  = [0.0, float(np.std(ppo_res["ars"]))]
     colors = ["#e74c3c", "#2ecc71"]
-    labels = ["ILP\n(Optimal)", "PPO\n(P3, no constraint)"]
+    bars = ax1.bar(labels1, ar_means, yerr=ar_stds, capsize=5, color=colors, alpha=0.8, ecolor="black")
+    for bar, v in zip(bars, ar_means):
+        ax1.text(bar.get_x() + bar.get_width()/2, v + 0.02,
+                  f"{v:.4f}", ha="center", fontsize=10, fontweight="bold", color="black")
+    ax1.set_ylim(0, 1.1)
+    ax1.set_ylabel("Average Resource Utilisation (AR)", fontsize=11)
+    ax1.set_title("Test AR: Algorithm vs ILP", fontsize=11)
+    ax1.grid(axis="y", alpha=0.3)
 
-    ax = axes[0]
-    ppo_ars  = ppo_res["ars"]
-
-    bp = ax.boxplot(
-        [ppo_ars],
-        positions=[2],
-        widths=0.5,
-        patch_artist=True,
-        medianprops=dict(color="black", linewidth=2),
-        whiskerprops=dict(linewidth=1.2),
-        flierprops=dict(marker=".", markersize=3, alpha=0.4),
-    )
-    for patch, color in zip(bp["boxes"], colors[1:]):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-
-    ax.axhline(ilp_ar, color=colors[0], linestyle="--", linewidth=2, alpha=0.9,
-               label=f"ILP  AR={ilp_ar:.4f}")
-    ax.plot(1, ilp_ar, marker="D", color=colors[0], markersize=10, zorder=5)
-
-    for pos, data, color in zip([2], [ppo_ars], colors[1:]):
-        mv = np.mean(data)
-        ax.text(pos, mv + 0.02, f"μ={mv:.3f}", ha="center", va="bottom",
-                fontsize=9, fontweight="bold", color="black")
-
-    ax.set_xticks([1, 2])
-    ax.set_xticklabels(labels, fontsize=10)
-    ax.set_ylim(0, 1.1)
-    ax.set_ylabel("Average Resource Utilisation (AR)", fontsize=11)
-    ax.set_title("AR Distribution", fontsize=11)
-    ax.legend(fontsize=9, loc="lower right")
-    ax.grid(axis="y", alpha=0.3)
-
-    ax2 = axes[1]
-    vr_means = [
-        0.0,
-        ppo_train_viol_mean,
-    ]
-    vr_stds = [
-        0.0,
-        ppo_train_viol_std,
-    ]
-    bars = ax2.bar(labels, vr_means, color=colors, alpha=0.75,
-                   yerr=vr_stds, capsize=5, ecolor="black")
-    for bar, v in zip(bars, vr_means):
-        ax2.text(bar.get_x() + bar.get_width() / 2,
-                 v + max(vr_means) * 0.02 + 0.01,
-                 f"{v:.2%}", ha="center", va="bottom", fontsize=10, fontweight="bold", color="black")
-
+    labels2 = ["Success\nRate", "Cap Viol\nRate", "Privacy Viol\nRate"]
+    vals2 = [success_rate, cap_viol_rate, conflict_viol_rate]
+    colors2 = ["#2ecc71", "#e67e22", "#c0392b"]
+    bars2 = ax2.bar(labels2, vals2, color=colors2, alpha=0.8)
+    for bar, v in zip(bars2, vals2):
+        ax2.text(bar.get_x() + bar.get_width()/2, v + 0.02,
+                  f"{v:.2%}", ha="center", fontsize=10, fontweight="bold", color="black")
     ax2.set_ylim(0, 1.05)
-    ax2.set_ylabel("Violation Rate", fontsize=11)
-    ax2.set_title("Violation Rate (eval)", fontsize=11)
+    ax2.set_ylabel("Rate", fontsize=11)
+    ax2.set_title("Test Success Rate & Violation Rates", fontsize=11)
     ax2.grid(axis="y", alpha=0.3)
-
-    ax3 = axes[2]
-    pl_means = [C.M, np.mean(ppo_res["placed"])]
-    pl_stds = [0.0, np.std(ppo_res["placed"])]
-    bars = ax3.bar(labels, pl_means, color=colors, alpha=0.75,
-                   yerr=pl_stds, capsize=5, ecolor="black")
-    for bar, v in zip(bars, pl_means):
-        ax3.text(bar.get_x() + bar.get_width() / 2,
-                 v + 0.05,
-                 f"{v:.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold", color="black")
-    ax3.set_ylim(0, C.M + 1)
-    ax3.set_ylabel("Services Placed", fontsize=11)
-    ax3.set_title("Placement Completeness", fontsize=11)
-    ax3.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
     path = outdir / "comparison.png"
@@ -367,10 +383,14 @@ def main():
 
     # ── 5. PPO evaluation ────────────────────────────────────────────────────
     print(f"\n[4/4] PPO evaluation ({len(C.TEST_SCENARIOS)} episodes, deterministic) ...")
+    # 2026-09-11: reverted to a single deterministic pass (EVAL_BEST_OF_N=1) --
+    # the best-of-N re-roll (up to 32) was found to inflate success_rate by
+    # ~30pp purely from retry math (1-(1-p)^N), not from policy quality, which
+    # made train-time vs test-time success_rate numbers misleading to compare.
     def ppo_policy(obs):
         action, _ = model.predict(obs, deterministic=True)
         return int(action)
-    ppo_res = run_episodes(ecus, services, ppo_policy)
+    ppo_res = run_episodes(ecus, services, ppo_policy, n_samples=C.EVAL_BEST_OF_N)
     print(f"  PPO AR  mean={np.mean(ppo_res['ars']):.4f}  "
           f"std={np.std(ppo_res['ars']):.4f}")
     print(f"  Eval viol rate mean={np.mean(ppo_res['viol_rates']):.2%}")
@@ -450,8 +470,9 @@ def main():
             int(np.sum(ppo_res["conflict_viols"])),
         ])
     print(f"  CSV  saved → {csv_path}")
+    save_training_curve_csv(cb, run_dir)
     plot_training_curve(cb, ilp_ar, run_dir, sc_name)
-    plot_comparison(ilp_ar, ppo_res, p_v, p_v_std, run_dir, sc_name)
+    plot_comparison(ilp_ar, ppo_res, cap_viol_rate, conflict_viol_rate, run_dir, sc_name)
 
     print("\nAll done! Output files:")
     print(f"  {run_dir}/training_curve.png")

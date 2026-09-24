@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import secrets
 from pathlib import Path
 
 import numpy as np
@@ -139,7 +141,16 @@ def solve_ilp_all_scenarios(yaml_config: Path, scenarios: list, outdir: Path):
     """
     from ilp.objects import ECU, SVC
 
-    cache_key = f"{yaml_config.name}__n{len(scenarios)}"
+    # Must actually depend on scenario CONTENT, not just count: different
+    # seeds shuffle TRAIN_SCENARIOS/TEST_SCENARIOS differently but land on
+    # the same len(scenarios) (e.g. 400 test scenarios regardless of seed),
+    # so a count-only key collides across seeds and one seed's ILP baseline
+    # silently gets reused for a completely different scenario set —
+    # corrupting every AR-gap comparison that hits the collision. Also
+    # caused a hard crash under concurrent multi-seed runs (two processes
+    # racing on the same cache file/tmp path).
+    scenarios_fingerprint = content_hash(repr(scenarios))
+    cache_key = f"{yaml_config.name}__n{len(scenarios)}__{scenarios_fingerprint}"
 
     def _load_cache(path):
         try:
@@ -149,7 +160,16 @@ def solve_ilp_all_scenarios(yaml_config: Path, scenarios: list, outdir: Path):
             return {}
 
     def _save_cache(path, data):
-        tmp = path.with_suffix(".tmp")
+        # v4.1.0 fix: every algo sharing this scenario's ILP cache calls this
+        # after EACH scenario solved, concurrently. A literal `path.with_suffix
+        # (".tmp")` is the SAME filename across all of them -- process A's
+        # `tmp.replace(path)` can raise FileNotFoundError if process B's own
+        # replace already consumed that same tmp path first. Per-process/call
+        # unique tmp name removes the collision; `os.replace` onto the shared
+        # final `path` is still atomic, so the only remaining race is
+        # last-writer-wins on which process's snapshot ends up cached --
+        # harmless since all processes compute the same content deterministically.
+        tmp = path.with_name(f"{path.stem}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
         with open(tmp, "w") as f:
             json.dump(data, f)
         tmp.replace(path)

@@ -45,7 +45,7 @@ with open(YAML_CONFIG) as f:
     REQ_POOL = SCENARIOS[SCENARIO_IDX][1]
 
 # ── Training ──────────────────────────────────────────────────────────────────
-TOTAL_STEPS = get_total_steps("ppo_lagrangian")
+TOTAL_STEPS = get_total_steps("ppo_lagrangian", scenario=ROOT.parent.name)
 SEED        = int(os.environ.get("TRAIN_SEED", "42"))
 # ── Train / Test split (80/20 of feasible scenarios, deterministic) ──────────
 import random as _random
@@ -70,18 +70,55 @@ PPO_GAMMA      = 0.99
 PPO_GAE_LAMBDA = 0.95
 PPO_CLIP_RANGE = 0.2
 PPO_NET_ARCH   = dict(pi=[256, 256], vf=[512, 512])  # larger network for 43-dim obs
+# v1.0.1: was completely unset (SB3 default 0.0) — bug relative to ppo_mask
+# and eq/gt ppo_lagrangian, which already had ent_coef=0.005. Fix parity here,
+# then anneal (v1.0.2) and add advantage pruning (v1.0.3/v1.0.4). All three
+# overridable via env vars so scripts/run_paper_verification.sh can drive
+# v1.0.1..v1.0.4 without editing this file per run.
+PPO_ENT_COEF_INIT  = float(os.environ.get("ENT_COEF_INIT", "0.005"))
+PPO_ENT_COEF_FINAL = float(os.environ.get("ENT_COEF_FINAL", "0.005"))
+ADV_PRUNE_WEIGHT   = float(os.environ.get("ADV_PRUNE_WEIGHT", "1.0"))
 
 # ── Lagrangian multiplier (dual variable) ─────────────────────────────────────
 LAMBDA_INIT          = 0.0    # initial λ value
 LAMBDA_LR            = 0.0003   # slower dual-ascent to avoid AR collapse after warmup
 LAMBDA_TARGET        = 0.0    # zero-violation objective
 LAMBDA_MAX           = 2.0    # keep penalty scale comparable to per-step utilisation gain
-LAMBDA_UPDATE_WINDOW = 20     # update λ every 20 episodes after warmup
+# v4.1.0.3: 20 -> 500. LAMBDA_TARGET=0 means dual ascent's update term is never
+# negative, so lambda is monotonically driven toward LAMBDA_MAX over training --
+# updating every 20 episodes meant the per-step penalty's magnitude drifted
+# roughly 10x from early to late training, faster than PPO's value function
+# could track (root cause of the v4.1.0/v4.1.0.1 regression on lt). A much
+# longer window keeps lambda -- and therefore the reward scale -- stable for
+# most of a training run.
+LAMBDA_UPDATE_WINDOW = 500
 LAMBDA_WARMUP_EPISODES = 20000 # longer unconstrained phase to learn high-AR structure first
+# v4.1.0.3: caps the per-step conflict penalty at a fixed magnitude regardless
+# of lambda's current value -- see env.py's module docstring for the full
+# nonstationary-reward-scale rationale. Comparable in spirit to ppo_opt's
+# fixed -0.1 repair_penalty (a fixed, non-drifting per-step deterrent).
+LAGRANGE_PENALTY_CEILING = 0.5
+# v4.1.0.4: potential-based AR shaping weight (Phi(s) = AR_SHAPING_WEIGHT *
+# AR(s)) -- gives a dense, policy-invariant positive signal for improving AR
+# without violating, on top of the (0-or-negative-only) penalty terms above.
+# See env.py's module docstring for why this differs from the raw match_gain
+# bonus already ruled out in v4.1.0.1.
+AR_SHAPING_WEIGHT = 1.0
+
+# ── Behavior-cloning pretraining (ILP expert warm-start) ──────────────────────
+BC_EPOCHS     = 20
+BC_BATCH_SIZE = 256
+BC_LR         = 1e-3
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 EVAL_EPS = len(TEST_SCENARIOS)
 SMOOTH_W = 1000
+# best-of-N stochastic re-rolls at eval time: an online/no-backtrack
+# policy commits to one irrevocable pass per attempt, so re-sampling N
+# independent stochastic rollouts per test scenario and keeping the best
+# (success first, then most services validly placed, then highest AR)
+# sidesteps that ceiling without touching training.
+EVAL_BEST_OF_N = 1
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir
