@@ -84,26 +84,8 @@ LAMBDA_INIT          = 0.0    # initial λ value
 LAMBDA_LR            = 0.0003   # slower dual-ascent to avoid AR collapse after warmup
 LAMBDA_TARGET        = 0.0    # zero-violation objective
 LAMBDA_MAX           = 2.0    # keep penalty scale comparable to per-step utilisation gain
-# v4.1.0.3: 20 -> 500. LAMBDA_TARGET=0 means dual ascent's update term is never
-# negative, so lambda is monotonically driven toward LAMBDA_MAX over training --
-# updating every 20 episodes meant the per-step penalty's magnitude drifted
-# roughly 10x from early to late training, faster than PPO's value function
-# could track (root cause of the v4.1.0/v4.1.0.1 regression on lt). A much
-# longer window keeps lambda -- and therefore the reward scale -- stable for
-# most of a training run.
-LAMBDA_UPDATE_WINDOW = 500
+LAMBDA_UPDATE_WINDOW = 20     # update λ every 20 episodes after warmup
 LAMBDA_WARMUP_EPISODES = 20000 # longer unconstrained phase to learn high-AR structure first
-# v4.1.0.3: caps the per-step conflict penalty at a fixed magnitude regardless
-# of lambda's current value -- see env.py's module docstring for the full
-# nonstationary-reward-scale rationale. Comparable in spirit to ppo_opt's
-# fixed -0.1 repair_penalty (a fixed, non-drifting per-step deterrent).
-LAGRANGE_PENALTY_CEILING = 0.5
-# v4.1.0.4: potential-based AR shaping weight (Phi(s) = AR_SHAPING_WEIGHT *
-# AR(s)) -- gives a dense, policy-invariant positive signal for improving AR
-# without violating, on top of the (0-or-negative-only) penalty terms above.
-# See env.py's module docstring for why this differs from the raw match_gain
-# bonus already ruled out in v4.1.0.1.
-AR_SHAPING_WEIGHT = 1.0
 
 # ── Behavior-cloning pretraining (ILP expert warm-start) ──────────────────────
 BC_EPOCHS     = 20

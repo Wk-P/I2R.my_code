@@ -70,10 +70,7 @@ def _make_lagrange_env(seed: int) -> Monitor:
     services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
     env = LagrangeEnv(ecus, services, scenarios=C.TRAIN_SCENARIOS,
                       lambda_init=C.LAMBDA_INIT,
-                      lambda_max=C.LAMBDA_MAX,
-                      penalty_ceiling=C.LAGRANGE_PENALTY_CEILING,
-                      ar_shaping_weight=C.AR_SHAPING_WEIGHT,
-                      gamma=C.PPO_GAMMA)
+                      lambda_max=C.LAMBDA_MAX)
     return Monitor(env)
 
 
@@ -102,10 +99,7 @@ def run_episodes(ecus, services, policy_fn, lambda_eval: float = 0.0, n_samples:
         used_attempts = 0
         for attempt in range(max(1, n_samples)):
             env = LagrangeEnv(_ecus, _svcs, scenarios=[scenario],
-                              lambda_init=lambda_eval, lambda_max=C.LAMBDA_MAX,
-                              penalty_ceiling=C.LAGRANGE_PENALTY_CEILING,
-                              ar_shaping_weight=C.AR_SHAPING_WEIGHT,
-                              gamma=C.PPO_GAMMA)
+                              lambda_init=lambda_eval, lambda_max=C.LAMBDA_MAX)
             obs, _ = env.reset()
             done = False
             info = {}

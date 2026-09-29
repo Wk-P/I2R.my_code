@@ -11,49 +11,29 @@ collapse that distinction. action_masks() is defined below but is dead code
 plain PrunedPPO), kept only as an unused interface.
 
 Design:
-    - Capacity violation → fixed penalty (-2.0 per step); episode continues,
-      remaining_vms may go negative.
-    - Conflict violation → adaptive Lagrangian penalty, magnitude normalised
-      to a fixed ceiling regardless of the raw lambda value (see below);
+    - Capacity violation → fixed penalty (-2.0 per step, conceptually -- see
+      below); episode continues, remaining_vms may go negative.
+    - Conflict violation → adaptive Lagrangian penalty (λ + base_penalty) * c_t;
       λ is updated externally by the training callback via dual ascent.
 
-Per-step reward history (see v4.1.0_changelog.md for the full lt/eq/gt
-numbers across every variant):
+Per-step reward history (v4.1.0 -> v4.1.0.2 ablation, all at 5M steps/3 seeds,
+see v4.1.0_changelog.md for the full lt/eq/gt numbers):
     - v4.0.0: non-terminal reward hardcoded 0.0 (lagrange_penalty/
       forced_overflow_penalty computed but never wired in -- dead code).
-    - v4.1.0: wired in the full docstring formula (match_gain included,
-      lagrange_penalty raw = -(lambda+base_penalty)*c_t). lt regressed hard:
-      success_rate 0.81->0.52, conflict_viol 0.18->0.47.
-    - v4.1.0.1: dropped match_gain. Did NOT recover lt (0.54/0.45 --
-      statistically indistinguishable from v4.1.0). Ruled out match_gain
-      double-counting as the cause.
-    - v4.1.0.2: reverted to reward=0.0 (v4.0.0 behaviour) while the root
-      cause was investigated.
-    - v4.1.0.3 (current): root-caused the regression to a NONSTATIONARY
-      penalty scale, not the formula's terms per se -- LAMBDA_TARGET=0 means
-      dual ascent's update term (avg_viol_rate - 0) is never negative, so
-      lambda is monotonically driven toward lambda_max over training. The
-      raw penalty -(lambda+base_penalty)*c_t therefore grows roughly 10x in
-      magnitude from early to late training, a moving reward target that
-      PPO's GAE/value function can't track (unlike ppo_opt's fixed -0.1
-      repair_penalty, which never drifts). Fix: rescale into a FIXED
-      [0, penalty_ceiling] range regardless of lambda's absolute value --
-      lambda's dual-ascent *trajectory* is unchanged, only the magnitude
-      actually handed to the policy as reward is normalised. Did NOT recover
-      lt either (success_rate 0.527, conflict_viol 0.463 -- statistically
-      indistinguishable from v4.1.0/v4.1.0.1).
-    - v4.1.0.4 (current): with three different penalty formulas all
-      converging to the same failure, the common factor became suspect: every
-      wired-in variant gave the policy 0-or-negative per-step feedback ONLY
-      (no violation -> 0, violation -> penalty) with no positive signal for
-      good placements until the terminal step. Added potential-based AR
-      shaping, F(s,a,s')=gamma*Phi(s')-Phi(s), Phi(s)=ar_shaping_weight*AR(s)
-      -- NOT the raw match_gain bonus ruled out in v4.1.0.1 (that sums to ~M
-      in magnitude over an episode, rivalling the terminal reward's own
-      scale; this telescopes to ~AR_final-AR_initial, bounded ~1, and is
-      provably policy-invariant per Ng-Harada-Russell 1999 regardless of
-      weight). Same shaping pattern already used in ppo_mask/env.py (there
-      with an FFD-feasibility potential instead of AR).
+    - v4.1.0: wired in the full docstring formula (match_gain included). lt
+      regressed hard: success_rate 0.81->0.52, conflict_viol 0.18->0.47.
+    - v4.1.0.1: dropped match_gain (kept lagrange_penalty + forced_overflow_
+      penalty only), hypothesising match_gain double-counted utilisation
+      already in the terminal AR term. Did NOT recover lt (0.54/0.45 --
+      statistically indistinguishable from v4.1.0). Hypothesis falsified.
+    - v4.1.0.2 (current): reverted to v4.0.0 behaviour (reward=0.0). The
+      regression isn't about match_gain -- it's that ANY non-zero per-step
+      reward destabilises this env's PPO training on lt specifically (unlike
+      ppo_opt, which has no structural violation guard here either, but whose
+      repair_penalty is a much smaller -0.1 vs this env's -2.0/adaptive-λ
+      penalties that can rival the terminal reward's scale). lagrange_penalty
+      and forced_overflow_penalty are computed below but intentionally unused,
+      same as v4.0.0 -- this is a data-backed decision, not an oversight.
 """
 
 import sys
@@ -86,10 +66,8 @@ class LagrangeEnv(gym.Env):
         [6+5N+M:6+5N+2M] valid ECU count per remaining service (normalised by N; 0 for placed)
         [6+5N+2M]    current λ value, normalised by λ_max
 
-    Reward per step (v4.1.0.4, see module docstring for the full ablation history):
-        r_t = -forced_overflow_penalty_indicator*2.0
-              - penalty_ceiling * (lambda_val+base_penalty)/(lambda_max+base_penalty) * c_t
-              + [gamma*Phi(s') - Phi(s)], Phi(s) = ar_shaping_weight * AR(s)
+    Reward per step (v4.1.0.2, see module docstring for the full ablation history):
+        r_t = 0.0  (reverted to v4.0.0 behaviour -- data-backed, see above)
         (terminal step instead uses the graded terminal formula)
     """
 
@@ -97,8 +75,7 @@ class LagrangeEnv(gym.Env):
 
     def __init__(self, ecus: list[ECU], services: list[SVC],
                  scenarios=None, lambda_init: float = 0.0,
-                 lambda_max: float = 10.0, penalty_ceiling: float = 0.5,
-                 ar_shaping_weight: float = 1.0, gamma: float = 0.99):
+                 lambda_max: float = 10.0):
         super().__init__()
         self._scenarios = scenarios
         self.ecus       = ecus
@@ -107,27 +84,6 @@ class LagrangeEnv(gym.Env):
         self.M          = len(services)
         self.lambda_val = float(lambda_init)
         self.lambda_max = max(float(lambda_max), 1e-8)
-        # v4.1.0.3: caps the per-step conflict penalty at a fixed magnitude
-        # regardless of lambda_max, so the penalty's SCALE stays stationary
-        # across training even though lambda itself keeps climbing toward
-        # lambda_max under the zero-violation dual-ascent target (see env.py's
-        # module docstring for why a drifting penalty scale broke v4.1.0/
-        # v4.1.0.1's PPO training).
-        self.penalty_ceiling = float(penalty_ceiling)
-        # v4.1.0.4: potential-based reward shaping using AR itself as the
-        # potential, F(s,a,s') = gamma*Phi(s')-Phi(s), Phi(s)=ar_shaping_weight
-        # * self.ar. Per Ng-Harada-Russell (1999) this provably does not
-        # change the optimal policy for ANY ar_shaping_weight -- unlike a raw
-        # per-step match_gain bonus (tested and dropped in v4.1.0.1), which
-        # sums to up to ~M in magnitude over an episode (comparable to or
-        # exceeding the terminal reward's own scale) because it has no
-        # discount/telescoping baseline. The potential-based version telescopes
-        # to roughly AR_final - AR_initial over the episode (bounded ~1), a
-        # much smaller and theoretically safe way to give a dense, real-time
-        # "AR is improving" signal without violation. Same pattern already
-        # used in ppo_mask/env.py (there with an FFD-feasibility potential).
-        self.ar_shaping_weight = float(ar_shaping_weight)
-        self.shaping_gamma     = float(gamma)
 
         self.action_space = gym.spaces.Discrete(self.N)
         self.observation_space = gym.spaces.Box(
@@ -282,7 +238,6 @@ class LagrangeEnv(gym.Env):
     # ── step ──────────────────────────────────────────────────────────────────
     def step(self, action: int):
         svc = self.services[self._step]
-        phi_s = self.ar_shaping_weight * self.ar  # Phi(s), BEFORE this step's AR update
 
         cap_violated      = bool(self.remaining_vms[action] < svc.requirement)
         conflict_violated = self._has_conflict(action, self._step)
@@ -303,17 +258,7 @@ class LagrangeEnv(gym.Env):
         # via Lagrangian, not by zeroing out the utilisation reward (aligns with eq P5).
         base_penalty            = 0.2
         c_t                     = 1.0 if conflict_violated else 0.0
-        # v4.1.0.3: rescale the raw (lambda_val + base_penalty) -- which ranges
-        # from base_penalty up to lambda_max + base_penalty as lambda climbs
-        # under the zero-violation dual-ascent target -- into a FIXED range
-        # [0, penalty_ceiling]. Without this, the penalty's scale drifts
-        # throughout training (small early, large late), which is a
-        # nonstationary reward target that broke PPO's GAE/value-function
-        # fitting in v4.1.0/v4.1.0.1 (see module docstring). The raw
-        # lambda dynamics (dual ascent trajectory) are unchanged; only the
-        # magnitude actually handed to the policy as reward is normalized.
-        lagrange_penalty        = -(self.penalty_ceiling * (self.lambda_val + base_penalty)
-                                     / (self.lambda_max + base_penalty)) * c_t
+        lagrange_penalty        = -(self.lambda_val + base_penalty) * c_t
         forced_overflow_penalty = -2.0 if cap_violated else 0.0
         match_gain              = svc.requirement / (self.initial_vms[action] + 1e-8)
 
@@ -328,14 +273,6 @@ class LagrangeEnv(gym.Env):
         self.ar = self._total_ru / _active if _active > 0 else 0.0
         self._step += 1
 
-        # v4.1.0.4: potential-based AR shaping, F(s,a,s') = gamma*Phi(s')-Phi(s).
-        # Phi(s')-Phi(s) alone telescopes to ~AR_final-AR_initial over the whole
-        # episode (bounded, small); the (gamma-1)*Phi(s) term keeps it an exact
-        # policy-invariant potential-based shaping per Ng-Harada-Russell (1999),
-        # not just an ad hoc AR-delta bonus.
-        phi_s_next = self.ar_shaping_weight * self.ar
-        ar_shaping = self.shaping_gamma * phi_s_next - phi_s
-
         done = self._step >= self.M
         violated = cap_violated or conflict_violated
         if done:
@@ -347,26 +284,22 @@ class LagrangeEnv(gym.Env):
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0.4: v4.1.0.3's scale-stationary penalty alone (no positive
-            # per-step term at all) did NOT recover lt either (success_rate
-            # 0.527, conflict_viol 0.463 -- statistically indistinguishable from
-            # v4.1.0/v4.1.0.1's ~0.52-0.54/~0.45-0.47). With three different
-            # penalty formulas converging to the same failure mode, the common
-            # factor became suspect: every wired-in variant so far gives the
-            # policy ONLY 0-or-negative per-step feedback (no violation -> 0,
-            # violation -> penalty), with zero positive signal for placing well
-            # until the terminal step, M steps later. Added back a per-step
-            # positive-feedback term -- but as potential-based AR shaping
-            # (ar_shaping, computed above), NOT the raw match_gain bonus ruled
-            # out in v4.1.0.1. The two are NOT equivalent: raw match_gain sums
-            # to ~M in magnitude over an episode with no discount baseline
-            # (rivalling the terminal reward's own scale -- the likely reason
-            # it looked risky before); potential-based shaping telescopes to
-            # roughly AR_final-AR_initial (bounded ~1) and is provably
-            # policy-invariant regardless of ar_shaping_weight (Ng-Harada-
-            # Russell 1999). See v4.1.0_changelog.md for the full ablation
-            # history and v4.1.0.3 vs v4.1.0.4 comparison once run.
-            reward = forced_overflow_penalty + lagrange_penalty + ar_shaping
+            # v4.1.0.2: reverted to v4.0.0 behaviour (reward=0.0 for non-terminal
+            # steps). v4.1.0.1's penalty-only formula (reward = lagrange_penalty +
+            # forced_overflow_penalty, no match_gain) was ALSO tested at 5M steps/
+            # 3 seeds and did NOT recover lt (success_rate 0.54, conflict_viol 0.45
+            # -- statistically indistinguishable from v4.1.0's 0.52/0.47 with
+            # match_gain included). So the lt regression isn't about match_gain
+            # double-counting; it's that ANY non-zero per-step reward here
+            # destabilises this PPO variant's training on lt specifically (eq/gt
+            # were roughly unaffected in all 3 variants) -- likely because, unlike
+            # ppo_opt's small -0.1 repair_penalty in a repair-guarded environment,
+            # this env has no structural violation guard at all and the penalty
+            # magnitudes (-2.0, and an adaptively-growing lambda term) can rival
+            # the terminal reward's scale, destabilising GAE/advantage estimation.
+            # See v4.1.0_changelog.md for the full lt/eq/gt comparison across all
+            # 3 variants. Kept as reward=0.0 -- data-backed, not an oversight.
+            reward = 0.0
         return self._obs(), reward, done, False, {
             "ar":                  self.ar,
             "violated":            violated,

@@ -137,7 +137,7 @@ $$
 |---|---|---|
 | `ppo`（P3） | $0$（设计如此，从未变过） | 否 |
 | `ppo_mask`（P4） | $\text{violation\_penalty} + \text{shaping}$（详见4.2节） | 否（v4.1.0接入后保留） |
-| `ppo_lagrangian`（P5） | $0$（**回退到v4.0.0行为**，详见4.3节） | **是**——v4.1.0接入过完整公式，v4.1.0.1试过去掉match_gain，两版在lt场景都明显更差，最终撤回 |
+| `ppo_lagrangian`（P5） | $0$（**回退到v4.0.0行为**，详见4.3节） | **是**——先后试过4种非零逐步reward（v4.1.0/.1/.3/.4），lt场景全部明显更差，最终撤回 |
 | `ppo_opt`（P6） | $\text{repair\_penalty}$（详见4.4节） | 否（v4.1.0接入后保留） |
 | `dqn` | $\text{cap\_penalty} + \text{conflict\_penalty}$（详见4.5节） | 否（v4.1.0接入后保留） |
 | `ddqn` | 同`dqn` | 否（v4.1.0接入后保留） |
@@ -188,21 +188,31 @@ $$
 1. **不使用任何动作掩码**——硬掩码是 `ppo_mask` 专属机制。`env.py` 里定义的 `action_masks()` 是死代码（`run_all.py` 训练的是普通 `PrunedPPO`，从未用 `ActionMasker`/`MaskablePPO` 包装），这是**设计意图**，不是bug：P5 的方法论意义就是"用惩罚/对偶变量代替掩码"，若也硬掩码就和P4没区别了。
 2. **概念设计**上，容量违规该给固定惩罚、冲突违规该给拉格朗日自适应惩罚：
    $$
-   r_t^{\text{concept}} = -\text{cap\_penalty}_t - (\lambda + \text{base\_penalty}) \cdot c_t, \qquad \text{cap\_penalty}_t = -2.0\cdot\mathbf{1}[\text{cap\_violated}_t], \quad c_t=\mathbf{1}[\text{conflict\_violated}_t],\ \text{base\_penalty}=0.2
+   r_t^{\text{concept}} = \text{cap\_penalty}_t - (\lambda + \text{base\_penalty}) \cdot c_t, \qquad \text{cap\_penalty}_t = -2.0\cdot\mathbf{1}[\text{cap\_violated}_t], \quad c_t=\mathbf{1}[\text{conflict\_violated}_t],\ \text{base\_penalty}=0.2
    $$
-   但**这个公式最终没有被接入训练**（`cap_penalty`/`lagrange_penalty` 在代码里仍然计算，但显式未使用，`reward` 硬编码为 `0.0`）——这是v4.1.0→v4.1.0.1→v4.1.0.2三轮消融实验后的**数据支撑的主动决策**，不是遗漏。
+   但**这个公式最终没有被接入训练**（`cap_penalty`/`lagrange_penalty` 在代码里仍然计算，但显式未使用，`reward` 硬编码为 `0.0`）——这是v4.1.0→v4.1.0.4共四轮消融实验后的**数据支撑的主动决策**，不是遗漏。
 3. **对偶上升机制本身照常运行**，不受上述reward决策影响（$\lambda$ 更新依据episode级违反率统计，不依赖per-step reward）：
    $$
    \lambda \leftarrow \text{clip}\big(\lambda + \eta \cdot \bar{v},\; 0,\; \lambda_{\max}\big), \qquad \eta = 3\times10^{-4}
    $$
+4. **⚠ λ 不进入优化目标（写作时必须如实表述）**：由于非终端步 $r_t=0$、终端奖励 $R_{\text{terminal}}$ 中也不含 $\lambda$，定案版本里 $\lambda$ **唯一的作用通道是作为一维观测特征** $\text{clip}(\lambda/\lambda_{\max},0,1)$ 输入策略网络（`env.py` `_obs()`）。即策略优化的目标函数中不存在拉格朗日项，严格意义上不是"通过拉格朗日松弛施加约束"，而是"观测中携带对偶变量的PPO"。论文中如何命名/定位该方法由作者决定，但不能写成λ作为惩罚系数参与了reward。
 
 **为什么回退**（详见 `paper_contents/v4.1.0_changelog.md`，此处只摘结论）：
-- v4.1.0接入完整公式（含正向 $\text{match\_gain}=n_t/e_{a_t}$ 项）：lt场景 success_rate $0.81\to0.52$，conflict_viol $0.18\to0.47$，明显变差。
-- v4.1.0.1假设是match_gain重复计入AR信号，去掉它只留惩罚项重测：lt场景 $0.52\to0.54$，$0.47\to0.45$，**几乎没变化**，假设被推翻。
-- 结论：不是公式细节问题，是"任何非零逐步奖励在这个环境结构下都会破坏PPO训练"——环境本身无结构性约束保护（不像`ppo_mask`有掩码、`ppo_opt`有修复），逐步惩罚量级（$-2.0$ 及自适应增长的 $\lambda$ 项）可能与终局奖励同量级，扰乱了GAE优势估计。eq/gt场景约束压力小，未观察到同等程度的负面影响。
+四轮尝试，lt场景结果（5M步×3种子；v4.0.0参考为 success_rate 0.810、conflict_viol 0.181）：
+
+| 版本 | 非终端步 $r_t$ | success_rate | conflict_viol |
+|---|---|---|---|
+| v4.1.0 | $\text{match\_gain} + \text{cap\_penalty} - (\lambda+0.2)c_t$ | 0.518 | 0.472 |
+| v4.1.0.1 | $\text{cap\_penalty} - (\lambda+0.2)c_t$（去掉match_gain） | 0.537 | 0.448 |
+| v4.1.0.3 | $\text{cap\_penalty} - 0.5\cdot\frac{\lambda+0.2}{\lambda_{\max}+0.2}c_t$（惩罚归一化+λ窗口20→500） | 0.527 | 0.463 |
+| v4.1.0.4 | v4.1.0.3 $+\ \gamma\Phi(s')-\Phi(s)$，$\Phi=AR$（势函数塑形） | 0.543 | 0.443 |
+
+- 四个公式结构完全不同的版本收敛到统计上无法区分的同一结果，依次排除了"match_gain重复计入"（v4.1.0.1）、"λ单调爬升导致惩罚量级非平稳"（v4.1.0.3）、"只罚不奖缺少正向逐步信号"（v4.1.0.4）三个假设。
+- **结论只陈述事实**：在该环境中，凡非终端步 reward 非零的版本都显著劣于 reward=0 的版本；**具体机理尚未查明**，不应在正文给出机理性解释。eq/gt场景约束压力小，v4.1.0阶段未观察到同等程度的负面影响（v4.1.0.3/.4只在lt验证）。
+- 注：v4.1.0.4的塑形项只加在非终端步、终端步漏掉了最后一项 $\gamma\Phi(s_M)-\Phi(s_{M-1})$，严格说不满足Ng定理的策略不变性前提；该版本已放弃，不影响上述结论。
 - **gt场景额外说明**：v4.1.0期间同时删除了gt独有的一段"容量事后重定向"逻辑（历史遗留，与lt/eq不一致），这个删除**予以保留**（独立的正确性修正，与reward消融无关），经专项验证对gt结果无实质影响。
 
-**English**: No action masking anywhere (masking is P4-exclusive by design). The conceptual penalty formula is computed but was ultimately **not** wired into training — confirmed via three rounds of ablation (v4.1.0 full formula, v4.1.0.1 penalty-only) that ANY non-zero per-step reward here regresses lt hard (success_rate 0.81→~0.52-0.54) without a clear cause tied to the match_gain term specifically. Reverted to v4.0.0's reward=0.0 behaviour as a data-backed final decision. The dual-ascent λ update is unaffected (driven by episode-level stats, not per-step reward).
+**English**: No action masking anywhere (masking is P4-exclusive by design). The conceptual penalty formula is computed but was ultimately **not** wired into training — confirmed via four rounds of ablation (v4.1.0 full formula, v4.1.0.1 penalty-only, v4.1.0.3 normalised penalty, v4.1.0.4 plus potential-based AR shaping) that every non-zero per-step reward variant regresses lt hard (success_rate 0.81→0.52-0.54); the mechanism remains unidentified. Reverted to v4.0.0's reward=0.0 behaviour as a data-backed final decision. The dual-ascent λ update still runs (driven by episode-level violation statistics), **but λ enters neither the per-step nor the terminal reward — its only channel is a normalised λ feature in the observation**, so the optimised objective contains no Lagrangian term.
 
 ### 4.4 `ppo_opt`（P6，最佳适应修复启发式 / best-fit repair heuristic）
 
@@ -252,7 +262,7 @@ $$
 |---|---|---|---|---|
 | ppo (P3) | 0（设计如此） | 不适用 | 0（未改动） | 不适用，对照基线 |
 | ppo_mask (P4) | 0（死代码） | 是 | **保留** | 影响极小（掩码已结构性保证），无害 |
-| ppo_lagrangian (P5) | 0（死代码） | 是→又撤回 | **回退为0** | 曾接入两版公式，lt场景均明显变差，数据支撑回退 |
+| ppo_lagrangian (P5) | 0（死代码） | 是→又撤回 | **回退为0** | 先后接入四版公式，lt场景均明显变差，数据支撑回退 |
 | ppo_opt (P6) | 0（死代码） | 是 | **保留** | 三场景一致改善，lt尤其显著，缓解repair依赖问题 |
 | dqn | 0（死代码） | 是 | **保留** | 三场景一致改善 |
 | ddqn | 0（死代码） | 是 | **保留** | 三场景一致改善 |
@@ -286,5 +296,4 @@ $$
 
 ---
 
-*本文档反映 `final_paper_experiments` 分支 tag `v4.1.0.2` 的最终代码状态，涉及 `scenarios/{lt,eq,gt}/{ppo,ppo_mask,ppo_lagrangian,ppo_opt,dqn,ddqn}/env.py`。完整的修复/消融/回退过程见 `paper_contents/v4.1.0_changelog.md`。若代码后续更新，请重新核对本文档。*
-
+*本文档反映 `final_paper_experiments` 分支 tag `v4.1.0.2` 的最终代码状态（代码与冻结 tag `v4.1.0_final` 完全一致，v4.1.0.3/.4 的实验性改动已回退），涉及 `scenarios/{lt,eq,gt}/{ppo,ppo_mask,ppo_lagrangian,ppo_opt,dqn,ddqn}/env.py`。完整的修复/消融/回退过程见 `paper_contents/v4.1.0_changelog.md`。若代码后续更新，请重新核对本文档。*
