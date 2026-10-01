@@ -87,5 +87,8 @@ python paper_contents/v4.2.0/tools/make_figs.py
 - λ 的更新依据是容量与冲突违规的合计率，三个场景超参数不同。
 - Repair-PPO 的 LT 模型：触发过修复则终局奖励为 0；EQ/GT 跑满全程一律 M(2AR−1)。
 - Mask-PPO 的一步前瞻和课程权重 w 只在 LT；无合法 ECU 时掩码全 0，动作在 N 个 ECU 中均匀随机。
-- GT 的 DQN/DDQN 容量违规即终止（奖励 −M）。
 - PrunedPPO 的负优势权重为 1，等同标准 PPO。
+
+## 待办：GT 的 DQN/DDQN 需重新训练
+
+公式按设计写为单步惩罚 $r_t = R_t - P_t$，$P_t = 2v^{\text{cap}}_t + 2v^{\text{conf}}_t$，三个场景相同。但当前 v4.2.0 中 GT 的 DQN/DDQN 模型（v4.1.0 代码）在容量违规时是直接终止 episode、奖励 −M，与该公式不一致。需要把 `scenarios/gt/{dqn,ddqn}/env.py` 的 `step()` 改成与 eq 相同的单步惩罚逻辑后重新训练（3 种子 × 5M 步 × 2 算法），再替换 GT 这两格的数据。

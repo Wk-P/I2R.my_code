@@ -87,7 +87,7 @@ $$
   |---|---|
   | PPO、Lagrange-PPO、Repair-PPO（其执行的放置都合法） | Mask-PPO、DQN、DDQN |
 
-- **终止**：正常情况下恰好 $M$ 步。提前终止只有两种：Repair-PPO 修复失败（4.4）；GT 场景 DQN/DDQN 出现容量违规（4.5）。
+- **终止**：正常情况下恰好 $M$ 步；唯一的提前终止是 Repair-PPO 修复失败（4.4）。
 
 ### 3.2 观测 / Observation
 
@@ -223,10 +223,15 @@ $$
 
 损失为 Huber（smooth L1）$\ \mathcal{L}=\text{Huber}\big(Q_\theta(s_t,a_t)-y\big)$，终止步 $y=r_t$；探索为 $\varepsilon$-greedy，$\varepsilon$ 在前 $f$ 比例的训练步内从 1 线性降到 0。
 
-| 场景 | 非终端步奖励 $r_t$ | 容量违规 |
-|---|---|---|
-| LT、EQ | $-2\,v^{\text{cap}}_t - 2\,v^{\text{conf}}_t$ | 照常执行 |
-| GT | $-2\,v^{\text{conf}}_t$ | episode 立即终止，奖励 $-M$ |
+每一步奖励写成任务奖励减单步惩罚（三个场景相同）：
+
+$$
+r_t = R_t - P_t,\qquad
+R_t=\begin{cases}0, & t<M-1\\ R_{\text{term}}, & t=M-1\end{cases},\qquad
+P_t = 2\,v^{\text{cap}}_t + 2\,v^{\text{conf}}_t \;\;(t<M-1)
+$$
+
+违规的放置照常执行（episode 继续），该次放置的 $u_t$ 不计入 AR；容量与冲突同时违规时 $P_t=4$。
 
 ### 4.6 PPO 系列的优化目标
 
@@ -246,15 +251,19 @@ $\hat A_t$ 在每个 minibatch 内标准化。$c_v=0.5$（SB3 默认）。熵系
 
 ---
 
-## 5. 非终端步奖励一览 / Non-terminal reward summary
+## 5. 奖励一览：$r_t = R_t - P_t$ / Reward summary
 
-| 算法 | LT | EQ | GT |
-|---|---|---|---|
-| PPO | 0 | 0 | 0 |
-| Mask-PPO | 0 | 0 | 0 |
-| Lagrange-PPO | 0 | $\frac{u_t}{|\mathcal{J}_{t+1}|}-2v^{\text{cap}}_t-(\lambda+0.2)v^{\text{conf}}_t$ | $-2v^{\text{cap}}_t-(\lambda+0.2)v^{\text{conf}}_t$ |
-| Repair-PPO | $-0.1\cdot\mathbf{1}[\text{修复}]$ | 同左 | 同左 |
-| DQN / DDQN | $-2v^{\text{cap}}_t-2v^{\text{conf}}_t$ | 同左 | $-2v^{\text{conf}}_t$（容量违规即终止） |
+所有算法的每步奖励都写成任务奖励 $R_t$ 减单步惩罚 $P_t$。$R_t$ 在最后一步为终局奖励 $R_{\text{term}}$（3.3 节），其余步如下表；$P_t$ 只作用于非终端步。
+
+| 算法 | 非终端步 $R_t$ | 单步惩罚 $P_t$ |
+|---|---|---|
+| PPO | 0 | 0 |
+| Mask-PPO | 0 | 0 |
+| Lagrange-PPO（LT） | 0 | 0 |
+| Lagrange-PPO（EQ） | $u_t/|\mathcal{J}_{t+1}|$ | $2v^{\text{cap}}_t+(\lambda+0.2)\,v^{\text{conf}}_t$ |
+| Lagrange-PPO（GT） | 0 | $2v^{\text{cap}}_t+(\lambda+0.2)\,v^{\text{conf}}_t$ |
+| Repair-PPO | 0 | $0.1\cdot\mathbf{1}[\text{修复}]$ |
+| DQN / DDQN | 0 | $2v^{\text{cap}}_t+2v^{\text{conf}}_t$ |
 
 | 约束处理 | 算法 | 执行的放置能否违规 |
 |---|---|---|
@@ -262,7 +271,7 @@ $\hat A_t$ 在每个 minibatch 内标准化。$c_v=0.5$（SB3 默认）。熵系
 | 采样前掩码 | Mask-PPO | 只在无合法 ECU 时 |
 | 惩罚 + 对偶变量 | Lagrange-PPO | 能 |
 | 执行前修复 | Repair-PPO | 不能（修复失败则提前终止） |
-| 惩罚 | DQN、DDQN | 能（GT 容量违规直接终止） |
+| 单步惩罚 | DQN、DDQN | 能 |
 
 ---
 

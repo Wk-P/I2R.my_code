@@ -160,11 +160,10 @@ Training code v4.1.0 (all scenarios). No masking, no repair.
 # Environment: every step
 for t = 0 .. M-1:
     a_t ← ε-greedy(Q_θ, s_t)                            # ε = 0 at evaluation
-    if scenario == GT AND v_cap:
-        return reward -M, episode ends immediately
-    place; a violating placement has u_t = 0
-    if scenario == GT: r_t ← -2*v_conf
-    else:              r_t ← -2*v_cap - 2*v_conf
+    place (executed even if violating, episode continues); a violating placement has u_t = 0
+    R_t ← 0
+    P_t ← 2*v_cap + 2*v_conf                            # per-step penalty, same in all scenarios
+    r_t ← R_t - P_t
 r_{M-1} ← R_TERM(AR, valid, any_violation)
 
 # Training
@@ -236,4 +235,4 @@ mean ± sample std across the seed models of the same cell
 | Mask-PPO | mask before sampling (LT adds one-step lookahead) | only when no legal ECU exists | 0 |
 | Lagrange-PPO | penalties + dual variable | yes | LT 0; EQ utilisation gain + capacity penalty + λ-scaled conflict penalty; GT capacity penalty + λ-scaled conflict penalty |
 | Repair-PPO | repair before execution | no (episode ends early if repair fails) | -0.1 × repaired |
-| DQN / DDQN | penalties | yes (on GT a capacity violation ends the episode) | -2 each for capacity and conflict (GT: conflict only) |
+| DQN / DDQN | per-step penalty | yes | r_t = R_t - P_t, P_t = 2·capacity violation + 2·conflict violation |
