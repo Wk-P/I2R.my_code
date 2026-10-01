@@ -127,7 +127,7 @@ if t == M:
 
 **Effect of the v4.1.0 change (consistent improvement across all 3 scenarios — the clearest positive result of this fix series)**:
 
-| Scenario | conflict_viol_rate: v4.0.0 -> v4.1.0 | success_rate: v4.0.0 -> v4.1.0 |
+| Scenario | repair-trigger rate (conflict; episodes where the raw action violated and was repaired): v4.0.0 -> v4.1.0 | success_rate: v4.0.0 -> v4.1.0 |
 |---|---|---|
 | lt | 0.5425 -> 0.1450 (large drop) | 0.5005 -> 0.5408 |
 | eq | 1.0000 -> 0.7208 (clear drop, still high) | 1.0000 -> 1.0000 |

@@ -416,7 +416,7 @@ def main():
         # n_samples times per test scenario and keeps the best attempt, so
         # sampling from the distribution instead of arg-maxing gives it
         # actually-different attempts to pick from.
-        action, _ = model.predict(obs, deterministic=False, action_masks=mask)
+        action, _ = model.predict(obs, deterministic=True, action_masks=mask)
         return int(action)
     ppo_res = run_episodes(ecus, services, ppo_policy, n_samples=C.EVAL_BEST_OF_N)
     # AR is only meaningful as "solution quality" for episodes that actually

@@ -86,8 +86,17 @@ $$
 
 ### 3.1 状态转移过程 / State-Transition Process
 
-- 时间步 $t = 0, 1, \dots, M-1$，每步处理服务队列中的第 $t$ 个服务（按需求量降序排好）。
-  *Timestep $t$ processes the $t$-th service in a pre-sorted (descending demand) queue.*
+- 时间步 $t = 0, 1, \dots, M-1$，每步处理服务队列中的第 $t$ 个服务。队列顺序**因场景和算法而异**（数据集本身是乱序的，是否在 `reset()` 中按需求量降序重排见下表）：
+  *Timestep $t$ processes the $t$-th service in the queue. Whether the queue is re-sorted by descending demand in `reset()` differs by scenario and algorithm (the dataset itself is unsorted):*
+
+  | 场景 | 降序重排 | 不重排（数据集原始顺序） |
+  |---|---|---|
+  | lt | ppo_mask, ppo_lagrangian, ppo_opt, dqn, ddqn | ppo |
+  | eq | ppo_mask, ppo_lagrangian, ppo_opt | ppo, dqn, ddqn |
+  | gt | — | 全部 6 个 |
+
+  另外，观测中"每个剩余服务的可行 ECU 数"这组特征（长度 $M$，`svc_valid_ecus`）除 `ppo` 外 5 个算法在三场景都有，`ppo` 没有。这两项差异会影响算法间比较（尤其 lt 场景 `ppo` 的低成功率），写作时需如实说明。
+  *The per-remaining-service valid-ECU-count features (length $M$) are present in all algorithms except `ppo`, in all three scenarios.*
 - 动作空间 / Action space：$a_t \in \{0, 1, \dots, N-1\}$，即为当前服务选择一个 ECU（$\text{Discrete}(N)$）。
 - 终止条件 / Termination：$\text{done} = [\,t \ge M\,]$，即必须执行恰好 $M$ 步。
 

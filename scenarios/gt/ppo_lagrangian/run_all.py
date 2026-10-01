@@ -467,7 +467,7 @@ def main():
     # 4. Lagrangian PPO evaluation
     print(f"\n[3/3] Lagrangian PPO evaluation ({len(C.TEST_SCENARIOS)} episodes, deterministic) ...")
     def ppo_policy(obs):
-        action, _ = model.predict(obs, deterministic=False)
+        action, _ = model.predict(obs, deterministic=True)
         return int(action)
     ppo_res = run_episodes(ecus, services, ppo_policy, lambda_eval=cb.lambda_val,
                            n_samples=C.EVAL_BEST_OF_N)

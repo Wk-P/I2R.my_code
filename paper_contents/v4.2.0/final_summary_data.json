@@ -1,0 +1,280 @@
+{
+  "version": "v4.2.0",
+  "description": "v4.2.0 best-model set (mixed batches, see manifest.json). All cells evaluated with a single deterministic pass per test scenario; timing on 1 CPU thread.",
+  "eval_protocol": "single deterministic pass per test scenario (EVAL_BEST_OF_N=1)",
+  "scenarios": {
+    "lt": {
+      "ilp_ar": 0.741239,
+      "ilp_timing_ms": {
+        "ms_mean": 180.716,
+        "ms_std": 213.636,
+        "ms_median": 130.546,
+        "ms_max": 2342.45
+      },
+      "algos": {
+        "ppo": {
+          "ar_mean": 0.6781,
+          "ar_std": 0.0039,
+          "success_mean": 0.3505,
+          "success_std": 0.0198,
+          "cap_viol_mean": 0.2655,
+          "conflict_viol_mean": 0.5535,
+          "ms_per_episode_mean": 8.855,
+          "ms_per_episode_std": 0.149,
+          "ms_per_decision_mean": 0.59,
+          "n_seeds": 5,
+          "source": "v4.0.0"
+        },
+        "ppo_mask": {
+          "ar_mean": 0.629,
+          "ar_std": 0.0027,
+          "success_mean": 0.619,
+          "success_std": 0.0291,
+          "cap_viol_mean": 0.0,
+          "conflict_viol_mean": 0.0,
+          "ms_per_episode_mean": 17.886,
+          "ms_per_episode_std": 0.485,
+          "ms_per_decision_mean": 1.192,
+          "n_seeds": 5,
+          "source": "v4.0.0"
+        },
+        "ppo_lagrangian": {
+          "ar_mean": 0.6514,
+          "ar_std": 0.0024,
+          "success_mean": 0.5645,
+          "success_std": 0.0257,
+          "cap_viol_mean": 0.0595,
+          "conflict_viol_mean": 0.4105,
+          "ms_per_episode_mean": 10.119,
+          "ms_per_episode_std": 0.936,
+          "ms_per_decision_mean": 0.675,
+          "n_seeds": 5,
+          "source": "v4.0.0"
+        },
+        "ppo_opt": {
+          "ar_mean": 0.6347,
+          "ar_std": 0.0026,
+          "success_mean": 0.5408,
+          "success_std": 0.0146,
+          "cap_viol_mean": 0.0,
+          "conflict_viol_mean": 0.0,
+          "ms_per_episode_mean": 10.018,
+          "ms_per_episode_std": 0.659,
+          "ms_per_decision_mean": 0.668,
+          "n_seeds": 3,
+          "source": "v4.1.0",
+          "repair_trigger_cap_mean": 0.05,
+          "repair_trigger_conflict_mean": 0.145
+        },
+        "dqn": {
+          "ar_mean": 0.6408,
+          "ar_std": 0.0036,
+          "success_mean": 0.5333,
+          "success_std": 0.0138,
+          "cap_viol_mean": 0.12,
+          "conflict_viol_mean": 0.4267,
+          "ms_per_episode_mean": 6.666,
+          "ms_per_episode_std": 0.265,
+          "ms_per_decision_mean": 0.444,
+          "n_seeds": 3,
+          "source": "v4.1.0"
+        },
+        "ddqn": {
+          "ar_mean": 0.6464,
+          "ar_std": 0.0076,
+          "success_mean": 0.465,
+          "success_std": 0.0325,
+          "cap_viol_mean": 0.1125,
+          "conflict_viol_mean": 0.4892,
+          "ms_per_episode_mean": 6.695,
+          "ms_per_episode_std": 0.107,
+          "ms_per_decision_mean": 0.446,
+          "n_seeds": 3,
+          "source": "v4.1.0"
+        }
+      }
+    },
+    "eq": {
+      "ilp_ar": 0.546116,
+      "ilp_timing_ms": {
+        "ms_mean": 45.047,
+        "ms_std": 7.266,
+        "ms_median": 45.487,
+        "ms_max": 119.911
+      },
+      "algos": {
+        "ppo": {
+          "ar_mean": 0.5296,
+          "ar_std": 0.0041,
+          "success_mean": 0.8045,
+          "success_std": 0.0227,
+          "cap_viol_mean": 0.0485,
+          "conflict_viol_mean": 0.1525,
+          "ms_per_episode_mean": 6.061,
+          "ms_per_episode_std": 0.452,
+          "ms_per_decision_mean": 0.606,
+          "n_seeds": 5,
+          "source": "v4.0.0"
+        },
+        "ppo_mask": {
+          "ar_mean": 0.5419,
+          "ar_std": 0.0037,
+          "success_mean": 1.0,
+          "success_std": 0.0,
+          "cap_viol_mean": 0.0,
+          "conflict_viol_mean": 0.0,
+          "ms_per_episode_mean": 10.695,
+          "ms_per_episode_std": 0.913,
+          "ms_per_decision_mean": 1.069,
+          "n_seeds": 5,
+          "source": "v4.0.0"
+        },
+        "ppo_lagrangian": {
+          "ar_mean": 0.5438,
+          "ar_std": 0.0024,
+          "success_mean": 0.9292,
+          "success_std": 0.0153,
+          "cap_viol_mean": 0.0133,
+          "conflict_viol_mean": 0.0575,
+          "ms_per_episode_mean": 6.293,
+          "ms_per_episode_std": 0.497,
+          "ms_per_decision_mean": 0.629,
+          "n_seeds": 3,
+          "source": "v4.1.0"
+        },
+        "ppo_opt": {
+          "ar_mean": 0.5388,
+          "ar_std": 0.0023,
+          "success_mean": 1.0,
+          "success_std": 0.0,
+          "cap_viol_mean": 0.0,
+          "conflict_viol_mean": 0.0,
+          "ms_per_episode_mean": 6.787,
+          "ms_per_episode_std": 0.181,
+          "ms_per_decision_mean": 0.679,
+          "n_seeds": 3,
+          "source": "v4.1.0",
+          "repair_trigger_cap_mean": 0.3792,
+          "repair_trigger_conflict_mean": 0.7208
+        },
+        "dqn": {
+          "ar_mean": 0.5056,
+          "ar_std": 0.0018,
+          "success_mean": 0.7625,
+          "success_std": 0.0246,
+          "cap_viol_mean": 0.0592,
+          "conflict_viol_mean": 0.23,
+          "ms_per_episode_mean": 4.388,
+          "ms_per_episode_std": 0.151,
+          "ms_per_decision_mean": 0.439,
+          "n_seeds": 3,
+          "source": "v4.1.0"
+        },
+        "ddqn": {
+          "ar_mean": 0.5041,
+          "ar_std": 0.0006,
+          "success_mean": 0.74,
+          "success_std": 0.0434,
+          "cap_viol_mean": 0.0658,
+          "conflict_viol_mean": 0.255,
+          "ms_per_episode_mean": 4.438,
+          "ms_per_episode_std": 0.104,
+          "ms_per_decision_mean": 0.444,
+          "n_seeds": 3,
+          "source": "v4.1.0"
+        }
+      }
+    },
+    "gt": {
+      "ilp_ar": 0.623696,
+      "ilp_timing_ms": {
+        "ms_mean": 60.256,
+        "ms_std": 4.558,
+        "ms_median": 60.426,
+        "ms_max": 80.697
+      },
+      "algos": {
+        "ppo": {
+          "ar_mean": 0.5863,
+          "ar_std": 0.0014,
+          "success_mean": 0.935,
+          "success_std": 0.0138,
+          "cap_viol_mean": 0.043,
+          "conflict_viol_mean": 0.0225,
+          "ms_per_episode_mean": 5.983,
+          "ms_per_episode_std": 0.354,
+          "ms_per_decision_mean": 0.598,
+          "n_seeds": 5,
+          "source": "v4.0.0"
+        },
+        "ppo_mask": {
+          "ar_mean": 0.5889,
+          "ar_std": 0.0025,
+          "success_mean": 1.0,
+          "success_std": 0.0,
+          "cap_viol_mean": 0.0,
+          "conflict_viol_mean": 0.0,
+          "ms_per_episode_mean": 10.099,
+          "ms_per_episode_std": 0.374,
+          "ms_per_decision_mean": 1.01,
+          "n_seeds": 5,
+          "source": "v4.0.0"
+        },
+        "ppo_lagrangian": {
+          "ar_mean": 0.5842,
+          "ar_std": 0.0017,
+          "success_mean": 0.9617,
+          "success_std": 0.008,
+          "cap_viol_mean": 0.0217,
+          "conflict_viol_mean": 0.0167,
+          "ms_per_episode_mean": 6.56,
+          "ms_per_episode_std": 0.476,
+          "ms_per_decision_mean": 0.656,
+          "n_seeds": 3,
+          "source": "v4.1.0.1"
+        },
+        "ppo_opt": {
+          "ar_mean": 0.5764,
+          "ar_std": 0.0012,
+          "success_mean": 1.0,
+          "success_std": 0.0,
+          "cap_viol_mean": 0.0,
+          "conflict_viol_mean": 0.0,
+          "ms_per_episode_mean": 7.126,
+          "ms_per_episode_std": 0.319,
+          "ms_per_decision_mean": 0.713,
+          "n_seeds": 3,
+          "source": "v4.1.0",
+          "repair_trigger_cap_mean": 0.8892,
+          "repair_trigger_conflict_mean": 0.7692
+        },
+        "dqn": {
+          "ar_mean": 0.5684,
+          "ar_std": 0.002,
+          "success_mean": 0.9075,
+          "success_std": 0.0373,
+          "cap_viol_mean": 0.0167,
+          "conflict_viol_mean": 0.0758,
+          "ms_per_episode_mean": 4.489,
+          "ms_per_episode_std": 0.157,
+          "ms_per_decision_mean": 0.449,
+          "n_seeds": 3,
+          "source": "v4.1.0"
+        },
+        "ddqn": {
+          "ar_mean": 0.5659,
+          "ar_std": 0.0021,
+          "success_mean": 0.925,
+          "success_std": 0.0338,
+          "cap_viol_mean": 0.0167,
+          "conflict_viol_mean": 0.0592,
+          "ms_per_episode_mean": 4.456,
+          "ms_per_episode_std": 0.218,
+          "ms_per_decision_mean": 0.446,
+          "n_seeds": 3,
+          "source": "v4.1.0"
+        }
+      }
+    }
+  }
+}

@@ -86,7 +86,7 @@ SMOOTH_W  = 1000
 # independent stochastic rollouts per test scenario and keeping the best
 # (success first, then most services validly placed, then highest AR)
 # sidesteps that ceiling without touching training.
-EVAL_BEST_OF_N = 8
+EVAL_BEST_OF_N = 1  # 2026-10-01: best-of-8 retired (aligned with lt, single deterministic pass)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from shared.paths import results_dir

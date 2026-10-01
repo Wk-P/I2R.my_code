@@ -1,0 +1,522 @@
+{
+  "version": "v4.2.0",
+  "eval_protocol": "single deterministic pass per test scenario (EVAL_BEST_OF_N=1)",
+  "cells": {
+    "eq/ddqn": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "1c357915",
+          "source": "results/final_paper_experiments/eq/ddqn/1c357915",
+          "path": "results/v4.2.0/eq/ddqn/1c357915"
+        },
+        {
+          "seed": 2,
+          "exp_id": "fef53a6c",
+          "source": "results/final_paper_experiments/eq/ddqn/fef53a6c",
+          "path": "results/v4.2.0/eq/ddqn/fef53a6c"
+        },
+        {
+          "seed": 3,
+          "exp_id": "f83e8846",
+          "source": "results/final_paper_experiments/eq/ddqn/f83e8846",
+          "path": "results/v4.2.0/eq/ddqn/f83e8846"
+        }
+      ]
+    },
+    "eq/dqn": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "e858e22e",
+          "source": "results/final_paper_experiments/eq/dqn/e858e22e",
+          "path": "results/v4.2.0/eq/dqn/e858e22e"
+        },
+        {
+          "seed": 2,
+          "exp_id": "e4c897e1",
+          "source": "results/final_paper_experiments/eq/dqn/e4c897e1",
+          "path": "results/v4.2.0/eq/dqn/e4c897e1"
+        },
+        {
+          "seed": 3,
+          "exp_id": "906b4707",
+          "source": "results/final_paper_experiments/eq/dqn/906b4707",
+          "path": "results/v4.2.0/eq/dqn/906b4707"
+        }
+      ]
+    },
+    "eq/ppo": {
+      "batch": "v4.0.0",
+      "training_code": "v4.0.0 campaign (code at ce1dab0, frozen as tag v4.0.0_final_1 / 82513ac)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "fd7a4a51",
+          "source": "results/add_states/eq/ppo/fd7a4a51",
+          "path": "results/v4.2.0/eq/ppo/fd7a4a51"
+        },
+        {
+          "seed": 2,
+          "exp_id": "03056570",
+          "source": "results/add_states/eq/ppo/03056570",
+          "path": "results/v4.2.0/eq/ppo/03056570"
+        },
+        {
+          "seed": 3,
+          "exp_id": "c7e07794",
+          "source": "results/add_states/eq/ppo/c7e07794",
+          "path": "results/v4.2.0/eq/ppo/c7e07794"
+        },
+        {
+          "seed": 4,
+          "exp_id": "0cd39b4d",
+          "source": "results/add_states/eq/ppo/0cd39b4d",
+          "path": "results/v4.2.0/eq/ppo/0cd39b4d"
+        },
+        {
+          "seed": 5,
+          "exp_id": "33b45508",
+          "source": "results/add_states/eq/ppo/33b45508",
+          "path": "results/v4.2.0/eq/ppo/33b45508"
+        }
+      ]
+    },
+    "eq/ppo_lagrangian": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "69c94039",
+          "source": "results/final_paper_experiments/eq/ppo_lagrangian/69c94039",
+          "path": "results/v4.2.0/eq/ppo_lagrangian/69c94039"
+        },
+        {
+          "seed": 2,
+          "exp_id": "aa878d42",
+          "source": "results/final_paper_experiments/eq/ppo_lagrangian/aa878d42",
+          "path": "results/v4.2.0/eq/ppo_lagrangian/aa878d42"
+        },
+        {
+          "seed": 3,
+          "exp_id": "cb6d38b6",
+          "source": "results/final_paper_experiments/eq/ppo_lagrangian/cb6d38b6",
+          "path": "results/v4.2.0/eq/ppo_lagrangian/cb6d38b6"
+        }
+      ]
+    },
+    "eq/ppo_mask": {
+      "batch": "v4.0.0",
+      "training_code": "v4.0.0 campaign (code at ce1dab0, frozen as tag v4.0.0_final_1 / 82513ac)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "c0ce5d56",
+          "source": "results/add_states/eq/ppo_mask/c0ce5d56",
+          "path": "results/v4.2.0/eq/ppo_mask/c0ce5d56"
+        },
+        {
+          "seed": 2,
+          "exp_id": "08d93eaa",
+          "source": "results/add_states/eq/ppo_mask/08d93eaa",
+          "path": "results/v4.2.0/eq/ppo_mask/08d93eaa"
+        },
+        {
+          "seed": 3,
+          "exp_id": "04d04d84",
+          "source": "results/add_states/eq/ppo_mask/04d04d84",
+          "path": "results/v4.2.0/eq/ppo_mask/04d04d84"
+        },
+        {
+          "seed": 4,
+          "exp_id": "2b38cec4",
+          "source": "results/add_states/eq/ppo_mask/2b38cec4",
+          "path": "results/v4.2.0/eq/ppo_mask/2b38cec4"
+        },
+        {
+          "seed": 5,
+          "exp_id": "e44d628a",
+          "source": "results/add_states/eq/ppo_mask/e44d628a",
+          "path": "results/v4.2.0/eq/ppo_mask/e44d628a"
+        }
+      ]
+    },
+    "eq/ppo_opt": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "b3815b9a",
+          "source": "results/final_paper_experiments/eq/ppo_opt/b3815b9a",
+          "path": "results/v4.2.0/eq/ppo_opt/b3815b9a"
+        },
+        {
+          "seed": 2,
+          "exp_id": "5d7d2d24",
+          "source": "results/final_paper_experiments/eq/ppo_opt/5d7d2d24",
+          "path": "results/v4.2.0/eq/ppo_opt/5d7d2d24"
+        },
+        {
+          "seed": 3,
+          "exp_id": "8ad9c2ea",
+          "source": "results/final_paper_experiments/eq/ppo_opt/8ad9c2ea",
+          "path": "results/v4.2.0/eq/ppo_opt/8ad9c2ea"
+        }
+      ]
+    },
+    "gt/ddqn": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "7255e30c",
+          "source": "results/final_paper_experiments/gt/ddqn/7255e30c",
+          "path": "results/v4.2.0/gt/ddqn/7255e30c"
+        },
+        {
+          "seed": 2,
+          "exp_id": "d5287451",
+          "source": "results/final_paper_experiments/gt/ddqn/d5287451",
+          "path": "results/v4.2.0/gt/ddqn/d5287451"
+        },
+        {
+          "seed": 3,
+          "exp_id": "072f34f4",
+          "source": "results/final_paper_experiments/gt/ddqn/072f34f4",
+          "path": "results/v4.2.0/gt/ddqn/072f34f4"
+        }
+      ]
+    },
+    "gt/dqn": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "1759c893",
+          "source": "results/final_paper_experiments/gt/dqn/1759c893",
+          "path": "results/v4.2.0/gt/dqn/1759c893"
+        },
+        {
+          "seed": 2,
+          "exp_id": "2c955151",
+          "source": "results/final_paper_experiments/gt/dqn/2c955151",
+          "path": "results/v4.2.0/gt/dqn/2c955151"
+        },
+        {
+          "seed": 3,
+          "exp_id": "14bb8fb9",
+          "source": "results/final_paper_experiments/gt/dqn/14bb8fb9",
+          "path": "results/v4.2.0/gt/dqn/14bb8fb9"
+        }
+      ]
+    },
+    "gt/ppo": {
+      "batch": "v4.0.0",
+      "training_code": "v4.0.0 campaign (code at ce1dab0, frozen as tag v4.0.0_final_1 / 82513ac)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "9cfc9ec2",
+          "source": "results/add_states/gt/ppo/9cfc9ec2",
+          "path": "results/v4.2.0/gt/ppo/9cfc9ec2"
+        },
+        {
+          "seed": 2,
+          "exp_id": "b77f58a3",
+          "source": "results/add_states/gt/ppo/b77f58a3",
+          "path": "results/v4.2.0/gt/ppo/b77f58a3"
+        },
+        {
+          "seed": 3,
+          "exp_id": "3f4c06fe",
+          "source": "results/add_states/gt/ppo/3f4c06fe",
+          "path": "results/v4.2.0/gt/ppo/3f4c06fe"
+        },
+        {
+          "seed": 4,
+          "exp_id": "22986d4a",
+          "source": "results/add_states/gt/ppo/22986d4a",
+          "path": "results/v4.2.0/gt/ppo/22986d4a"
+        },
+        {
+          "seed": 5,
+          "exp_id": "50db0ed6",
+          "source": "results/add_states/gt/ppo/50db0ed6",
+          "path": "results/v4.2.0/gt/ppo/50db0ed6"
+        }
+      ]
+    },
+    "gt/ppo_lagrangian": {
+      "batch": "v4.1.0.1",
+      "training_code": "v4.1.0.1 ppo_lagrangian ablation (4757d10)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "6e4f9730",
+          "source": "results/final_paper_experiments/gt/ppo_lagrangian/6e4f9730",
+          "path": "results/v4.2.0/gt/ppo_lagrangian/6e4f9730"
+        },
+        {
+          "seed": 2,
+          "exp_id": "3987b950",
+          "source": "results/final_paper_experiments/gt/ppo_lagrangian/3987b950",
+          "path": "results/v4.2.0/gt/ppo_lagrangian/3987b950"
+        },
+        {
+          "seed": 3,
+          "exp_id": "78534789",
+          "source": "results/final_paper_experiments/gt/ppo_lagrangian/78534789",
+          "path": "results/v4.2.0/gt/ppo_lagrangian/78534789"
+        }
+      ]
+    },
+    "gt/ppo_mask": {
+      "batch": "v4.0.0",
+      "training_code": "v4.0.0 campaign (code at ce1dab0, frozen as tag v4.0.0_final_1 / 82513ac)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "2fd437cd",
+          "source": "results/add_states/gt/ppo_mask/2fd437cd",
+          "path": "results/v4.2.0/gt/ppo_mask/2fd437cd"
+        },
+        {
+          "seed": 2,
+          "exp_id": "e94e4660",
+          "source": "results/add_states/gt/ppo_mask/e94e4660",
+          "path": "results/v4.2.0/gt/ppo_mask/e94e4660"
+        },
+        {
+          "seed": 3,
+          "exp_id": "ce44d241",
+          "source": "results/add_states/gt/ppo_mask/ce44d241",
+          "path": "results/v4.2.0/gt/ppo_mask/ce44d241"
+        },
+        {
+          "seed": 4,
+          "exp_id": "6e7e45a8",
+          "source": "results/add_states/gt/ppo_mask/6e7e45a8",
+          "path": "results/v4.2.0/gt/ppo_mask/6e7e45a8"
+        },
+        {
+          "seed": 5,
+          "exp_id": "7030c405",
+          "source": "results/add_states/gt/ppo_mask/7030c405",
+          "path": "results/v4.2.0/gt/ppo_mask/7030c405"
+        }
+      ]
+    },
+    "gt/ppo_opt": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "97af3ae2",
+          "source": "results/final_paper_experiments/gt/ppo_opt/97af3ae2",
+          "path": "results/v4.2.0/gt/ppo_opt/97af3ae2"
+        },
+        {
+          "seed": 2,
+          "exp_id": "64af7fd6",
+          "source": "results/final_paper_experiments/gt/ppo_opt/64af7fd6",
+          "path": "results/v4.2.0/gt/ppo_opt/64af7fd6"
+        },
+        {
+          "seed": 3,
+          "exp_id": "3d303be2",
+          "source": "results/final_paper_experiments/gt/ppo_opt/3d303be2",
+          "path": "results/v4.2.0/gt/ppo_opt/3d303be2"
+        }
+      ]
+    },
+    "lt/ddqn": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "1ec5bee8",
+          "source": "results/final_paper_experiments/lt/ddqn/1ec5bee8",
+          "path": "results/v4.2.0/lt/ddqn/1ec5bee8"
+        },
+        {
+          "seed": 2,
+          "exp_id": "435f93c9",
+          "source": "results/final_paper_experiments/lt/ddqn/435f93c9",
+          "path": "results/v4.2.0/lt/ddqn/435f93c9"
+        },
+        {
+          "seed": 3,
+          "exp_id": "b239d8fd",
+          "source": "results/final_paper_experiments/lt/ddqn/b239d8fd",
+          "path": "results/v4.2.0/lt/ddqn/b239d8fd"
+        }
+      ]
+    },
+    "lt/dqn": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "96fe996c",
+          "source": "results/final_paper_experiments/lt/dqn/96fe996c",
+          "path": "results/v4.2.0/lt/dqn/96fe996c"
+        },
+        {
+          "seed": 2,
+          "exp_id": "68eb4ca8",
+          "source": "results/final_paper_experiments/lt/dqn/68eb4ca8",
+          "path": "results/v4.2.0/lt/dqn/68eb4ca8"
+        },
+        {
+          "seed": 3,
+          "exp_id": "4c4b51c9",
+          "source": "results/final_paper_experiments/lt/dqn/4c4b51c9",
+          "path": "results/v4.2.0/lt/dqn/4c4b51c9"
+        }
+      ]
+    },
+    "lt/ppo": {
+      "batch": "v4.0.0",
+      "training_code": "v4.0.0 campaign (code at ce1dab0, frozen as tag v4.0.0_final_1 / 82513ac)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "b99b7acb",
+          "source": "results/add_states/lt/ppo/b99b7acb",
+          "path": "results/v4.2.0/lt/ppo/b99b7acb"
+        },
+        {
+          "seed": 2,
+          "exp_id": "0b4d74c4",
+          "source": "results/add_states/lt/ppo/0b4d74c4",
+          "path": "results/v4.2.0/lt/ppo/0b4d74c4"
+        },
+        {
+          "seed": 3,
+          "exp_id": "b5058af1",
+          "source": "results/add_states/lt/ppo/b5058af1",
+          "path": "results/v4.2.0/lt/ppo/b5058af1"
+        },
+        {
+          "seed": 4,
+          "exp_id": "6d657681",
+          "source": "results/add_states/lt/ppo/6d657681",
+          "path": "results/v4.2.0/lt/ppo/6d657681"
+        },
+        {
+          "seed": 5,
+          "exp_id": "a33ee0ef",
+          "source": "results/add_states/lt/ppo/a33ee0ef",
+          "path": "results/v4.2.0/lt/ppo/a33ee0ef"
+        }
+      ]
+    },
+    "lt/ppo_lagrangian": {
+      "batch": "v4.0.0",
+      "training_code": "v4.0.0 campaign (code at ce1dab0, frozen as tag v4.0.0_final_1 / 82513ac)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "b2ca2cc6",
+          "source": "results/add_states/lt/ppo_lagrangian/b2ca2cc6",
+          "path": "results/v4.2.0/lt/ppo_lagrangian/b2ca2cc6"
+        },
+        {
+          "seed": 2,
+          "exp_id": "9fd89511",
+          "source": "results/add_states/lt/ppo_lagrangian/9fd89511",
+          "path": "results/v4.2.0/lt/ppo_lagrangian/9fd89511"
+        },
+        {
+          "seed": 3,
+          "exp_id": "7299fd01",
+          "source": "results/add_states/lt/ppo_lagrangian/7299fd01",
+          "path": "results/v4.2.0/lt/ppo_lagrangian/7299fd01"
+        },
+        {
+          "seed": 4,
+          "exp_id": "73c3c25e",
+          "source": "results/add_states/lt/ppo_lagrangian/73c3c25e",
+          "path": "results/v4.2.0/lt/ppo_lagrangian/73c3c25e"
+        },
+        {
+          "seed": 5,
+          "exp_id": "bcf12ece",
+          "source": "results/add_states/lt/ppo_lagrangian/bcf12ece",
+          "path": "results/v4.2.0/lt/ppo_lagrangian/bcf12ece"
+        }
+      ]
+    },
+    "lt/ppo_mask": {
+      "batch": "v4.0.0",
+      "training_code": "v4.0.0 campaign (code at ce1dab0, frozen as tag v4.0.0_final_1 / 82513ac)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "1b7783b5",
+          "source": "results/add_states/lt/ppo_mask/1b7783b5",
+          "path": "results/v4.2.0/lt/ppo_mask/1b7783b5"
+        },
+        {
+          "seed": 2,
+          "exp_id": "21491063",
+          "source": "results/add_states/lt/ppo_mask/21491063",
+          "path": "results/v4.2.0/lt/ppo_mask/21491063"
+        },
+        {
+          "seed": 3,
+          "exp_id": "ffb763bf",
+          "source": "results/add_states/lt/ppo_mask/ffb763bf",
+          "path": "results/v4.2.0/lt/ppo_mask/ffb763bf"
+        },
+        {
+          "seed": 4,
+          "exp_id": "cf71d6b3",
+          "source": "results/add_states/lt/ppo_mask/cf71d6b3",
+          "path": "results/v4.2.0/lt/ppo_mask/cf71d6b3"
+        },
+        {
+          "seed": 5,
+          "exp_id": "42b69771",
+          "source": "results/add_states/lt/ppo_mask/42b69771",
+          "path": "results/v4.2.0/lt/ppo_mask/42b69771"
+        }
+      ]
+    },
+    "lt/ppo_opt": {
+      "batch": "v4.1.0",
+      "training_code": "v4.1.0 5M campaign (tag v4.1.0 / d0899cc + ILP cache fix ece29ae)",
+      "runs": [
+        {
+          "seed": 1,
+          "exp_id": "326867ab",
+          "source": "results/final_paper_experiments/lt/ppo_opt/326867ab",
+          "path": "results/v4.2.0/lt/ppo_opt/326867ab"
+        },
+        {
+          "seed": 2,
+          "exp_id": "6fc0dcbe",
+          "source": "results/final_paper_experiments/lt/ppo_opt/6fc0dcbe",
+          "path": "results/v4.2.0/lt/ppo_opt/6fc0dcbe"
+        },
+        {
+          "seed": 3,
+          "exp_id": "ffcb8218",
+          "source": "results/final_paper_experiments/lt/ppo_opt/ffcb8218",
+          "path": "results/v4.2.0/lt/ppo_opt/ffcb8218"
+        }
+      ]
+    }
+  }
+}
