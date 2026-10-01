@@ -62,6 +62,8 @@ ILP 最优 AR（种子 1 测试集）：LT 0.7412，EQ 0.5461，GT 0.6237。违�
 
 ## 文件
 
+- `formula.md`：v4.2.0 各格模型的 MDP、奖励、学习算法、超参数、评估与计时公式
+- `各算法伪代码.md` / `Algorithm-Pseudocode-EN.md`：中英文伪代码
 - `manifest.json`：模型清单
 - `final_summary_data.json`：最终数据（含耗时）
 - `figs/`：`{ar,success,violation,timing}_{lt,eq,gt}.png`、`summary_table.png`、`timing_table.png`
@@ -77,6 +79,13 @@ python paper_contents/v4.2.0/tools/make_figs.py
 
 成功率/AR/违规率是确定性的，可逐位复现；耗时会随机器负载有几个百分点的波动。
 
-## 已知待办
+## 与 v4.1.0.2 文档的主要差别
 
-- `../v4.1.0.2/formula.md` 4.2/4.3 节和中英伪代码中，"lt 场景中间步非零 reward 明显降低成功率"（Lagrange-PPO 四轮消融、Mask-PPO 回退理由）是在 best-of-8 与单次评估混用的情况下得出的；统一口径后差距很小（如 lt Lagrange-PPO：v4.0.0 0.565，v4.1.0.x 0.52~0.54），需要订正。
+`../v4.1.0.2/` 的公式与伪代码描述的是 v4.1.0.2 定案代码，不对应 v4.2.0 的模型。以 v4.2.0 文档为准，主要差别：
+
+- Lagrange-PPO 的 EQ/GT 模型训练时 λ 进入了逐步奖励（EQ：利用率增益 + 容量惩罚 + λ 冲突惩罚；GT：容量惩罚 + λ 冲突惩罚），只有 LT 是逐步奖励为 0。
+- λ 的更新依据是容量与冲突违规的合计率，三个场景超参数不同。
+- Repair-PPO 的 LT 模型：触发过修复则终局奖励为 0；EQ/GT 跑满全程一律 M(2AR−1)。
+- Mask-PPO 的一步前瞻和课程权重 w 只在 LT；无合法 ECU 时掩码全 0，动作在 N 个 ECU 中均匀随机。
+- GT 的 DQN/DDQN 容量违规即终止（奖励 −M）。
+- PrunedPPO 的负优势权重为 1，等同标准 PPO。
