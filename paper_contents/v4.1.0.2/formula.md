@@ -1,6 +1,6 @@
 # 核心公式汇总 / Core Formula Reference
 
-**说明 / Note**：本文档记录**最终定案**（`final_paper_experiments` 分支，tag `v4.1.0.2`）的公式与代码实现状态，不涉及论文的论证方式或叙事框架。所有公式均已与代码逐行核对。完整的排查/消融过程（谁改了、为什么改、数据支撑）见 `paper_contents/v4.1.0_changelog.md`，本文档只给最终结论。
+**说明 / Note**：本文档记录**最终定案**（`final_paper_experiments` 分支，tag `v4.1.0.2`）的公式与代码实现状态，不涉及论文的论证方式或叙事框架。所有公式均已与代码逐行核对。完整的排查/消融过程（谁改了、为什么改、数据支撑）见 `paper_contents/[v4.1.0]/v4.1.0_changelog.md`，本文档只给最终结论。
 
 符号统一约定见文末《符号表 / Notation Table》。
 
@@ -208,7 +208,7 @@ $$
    $$
 4. **⚠ λ 不进入优化目标（写作时必须如实表述）**：由于非终端步 $r_t=0$、终端奖励 $R_{\text{terminal}}$ 中也不含 $\lambda$，定案版本里 $\lambda$ **唯一的作用通道是作为一维观测特征** $\text{clip}(\lambda/\lambda_{\max},0,1)$ 输入策略网络（`env.py` `_obs()`）。即策略优化的目标函数中不存在拉格朗日项，严格意义上不是"通过拉格朗日松弛施加约束"，而是"观测中携带对偶变量的PPO"。论文中如何命名/定位该方法由作者决定，但不能写成λ作为惩罚系数参与了reward。
 
-**为什么回退**（详见 `paper_contents/v4.1.0_changelog.md`，此处只摘结论）：
+**为什么回退**（详见 `paper_contents/[v4.1.0]/v4.1.0_changelog.md`，此处只摘结论）：
 四轮尝试，lt场景结果（5M步×3种子；v4.0.0参考为 success_rate 0.810、conflict_viol 0.181）：
 
 | 版本 | 非终端步 $r_t$ | success_rate | conflict_viol |
@@ -307,4 +307,4 @@ $$
 
 ---
 
-*本文档反映 `final_paper_experiments` 分支 tag `v4.1.0.2` 的最终代码状态（代码与冻结 tag `v4.1.0_final` 完全一致，v4.1.0.3/.4 的实验性改动已回退），涉及 `scenarios/{lt,eq,gt}/{ppo,ppo_mask,ppo_lagrangian,ppo_opt,dqn,ddqn}/env.py`。完整的修复/消融/回退过程见 `paper_contents/v4.1.0_changelog.md`。若代码后续更新，请重新核对本文档。*
+*本文档反映 `final_paper_experiments` 分支 tag `v4.1.0.2` 的最终代码状态（代码与冻结 tag `v4.1.0_final` 完全一致，v4.1.0.3/.4 的实验性改动已回退），涉及 `scenarios/{lt,eq,gt}/{ppo,ppo_mask,ppo_lagrangian,ppo_opt,dqn,ddqn}/env.py`。完整的修复/消融/回退过程见 `paper_contents/[v4.1.0]/v4.1.0_changelog.md`。若代码后续更新，请重新核对本文档。*

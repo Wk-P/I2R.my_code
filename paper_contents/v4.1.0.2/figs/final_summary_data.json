@@ -1,5 +1,5 @@
 {
-  "description": "v4.1.0.2 最终定案数据集：每个(场景,算法)单元格标明实际数据来源(provenance)，因为不同算法的最终决策不同(有的保留v4.1.0修复用3种子重跑数据，有的回退到v4.0.0用原5种子冻结数据)。详见 paper_contents/v4.1.0_changelog.md。",
+  "description": "v4.1.0.2 最终定案数据集：每个(场景,算法)单元格标明实际数据来源(provenance)，因为不同算法的最终决策不同(有的保留v4.1.0修复用3种子重跑数据，有的回退到v4.0.0用原5种子冻结数据)。详见 paper_contents/[v4.1.0]/v4.1.0_changelog.md。",
   "generated_at": "2026-10-01",
   "scenarios": {
     "lt": {

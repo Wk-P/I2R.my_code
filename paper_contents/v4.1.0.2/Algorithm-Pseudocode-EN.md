@@ -2,7 +2,7 @@
 
 This document mirrors `paper_contents/各算法伪代码.md` in English. It gives the **core decision/constraint-handling mechanism** pseudocode for each of the 6 algorithms — as distinct from the "overall experiment pipeline" and "shared per-episode logic" pseudocode already in `论文概要3.md` §13, which covers what's common across all algorithms; this document covers what differs between them.
 
-The pseudocode maps directly to `scenarios/lt/{algo}/env.py` and `run_all.py` (lt scenario as the reference; see each section for whether the mechanism is identical across lt/eq/gt). **This version reflects the final state on the `final_paper_experiments` branch, tag `v4.1.0.2`** — i.e. after the "dead-code penalty" audit, fix, ablation, and partial revert are all complete. The full investigation trail is in `paper_contents/v4.1.0_changelog.md`; this document only states the final conclusions.
+The pseudocode maps directly to `scenarios/lt/{algo}/env.py` and `run_all.py` (lt scenario as the reference; see each section for whether the mechanism is identical across lt/eq/gt). **This version reflects the final state on the `final_paper_experiments` branch, tag `v4.1.0.2`** — i.e. after the "dead-code penalty" audit, fix, ablation, and partial revert are all complete. The full investigation trail is in `paper_contents/[v4.1.0]/v4.1.0_changelog.md`; this document only states the final conclusions.
 
 ---
 
@@ -85,7 +85,7 @@ lambda <- clip(lambda + LAMBDA_LR * (avg_viol - LAMBDA_TARGET), 0, LAMBDA_MAX)
 env.set_lambda(lambda)
 ```
 
-**⚠️ This is not "left unfinished" — it's a deliberate decision after three rounds of ablation** (full story in `paper_contents/v4.1.0_changelog.md`):
+**⚠️ This is not "left unfinished" — it's a deliberate decision after three rounds of ablation** (full story in `paper_contents/[v4.1.0]/v4.1.0_changelog.md`):
 
 1. **v4.1.0**: wired `reward_t` to the full formula `match_gain + cap_penalty + lagrange_penalty` (including the positive utilisation term). Result: on lt, success_rate fell 0.81->0.52 and conflict_viol rose 0.18->0.47 — a clear regression; eq actually improved slightly, gt was roughly flat.
 2. **v4.1.0.1**: hypothesised `match_gain` double-counted utilisation against the terminal AR term, so it was dropped, leaving `reward_t <- cap_penalty + lagrange_penalty`. Retested at 5M steps/3 seeds: lt moved to 0.52->0.54 and 0.47->0.45 — **essentially no change**. Hypothesis falsified.
@@ -213,4 +213,4 @@ class DDQN(DQN):
 | DQN | No, free sampling over the full space | Never — recorded + penalised | None | **Wired in, consistent improvement across all 3 scenarios** |
 | DDQN | No, free sampling over the full space | Never — recorded + penalised (shares the environment with DQN) | None | **Wired in, consistent improvement across all 3 scenarios** |
 
-This overview complements the formula/pipeline-level pseudocode in `论文概要3.md` §12/§13 and the full LaTeX formulas in `formula.md`. The complete investigation/ablation/revert trail is recorded in `paper_contents/v4.1.0_changelog.md`.
+This overview complements the formula/pipeline-level pseudocode in `论文概要3.md` §12/§13 and the full LaTeX formulas in `formula.md`. The complete investigation/ablation/revert trail is recorded in `paper_contents/[v4.1.0]/v4.1.0_changelog.md`.

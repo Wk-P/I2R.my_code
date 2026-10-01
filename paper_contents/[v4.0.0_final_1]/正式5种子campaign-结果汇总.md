@@ -6,14 +6,14 @@
 - 规模：5 个随机种子 × 3 场景(lt/eq/gt) × 6 算法(ppo_mask/ppo_lagrangian/ppo_opt/ppo/dqn/ddqn) = 90 次独立训练，全部成功，0 失败。
 - 每次训练均为 5,000,000 步，使用各场景/算法**实际保留**的最终超参数配置（见 `本轮实验总结-超参调优与收敛性验证.md` 第 3 节）。
 - 结果写入项目正式目录 `results/add_states/<scenario>/<algo>/<exp_id>/`，原始数据（`summary.csv` 为测试集评估结果，`training_curve.csv` 为逐 episode 训练曲线）均可追溯。
-- exp_id 与种子的完整映射见本文档同目录 `campaign_5seed_figs/summary_data.json`。
+- exp_id 与种子的完整映射见`paper_contents/campaign_5seed_figs/summary_data.json`。
 - **说明**：提交 `ed58a6e` 的 commit message 字面写的是"lt 场景 1M 步 + best-of-32 实验"，指代的是另一批探索性实验，与该提交实际写入的 `summary_data.json`／图表内容（即本文档描述的 5M 步、90 次完整 campaign）不符。已通过 exp_id 反查 `results/` 目录下的原始日志确认：本文档引用的数据确为 5M 步 campaign 产出，不受该 commit message 描述误导，特此注明避免混淆。
 
 ---
 
 ## 一、测试集结果汇总表（5 种子均值±标准差）
 
-![summary table](campaign_5seed_figs/summary_table.png)
+![summary table](../campaign_5seed_figs/summary_table.png)
 
 原始数值见下表。**ILP 每场景单独一行**（因为 ILP 的 AR 本身也随种子/测试集浮动，不是常数——见下方"关于 ILP 行的重要说明"），"Gap vs ILP"按**同种子配对**计算（该种子的 ILP AR − 该种子的 RL AR，再取 5 个种子的均值±标准差），而不是先分别对 ILP 和 RL 取平均再相减：
 
@@ -62,11 +62,11 @@
 
 ### PPO 家族
 
-![ppo hparam table](campaign_5seed_figs/hparam_table_ppo.png)
+![ppo hparam table](../campaign_5seed_figs/hparam_table_ppo.png)
 
 ### DQN / DDQN
 
-![dqn hparam table](campaign_5seed_figs/hparam_table_dqn.png)
+![dqn hparam table](../campaign_5seed_figs/hparam_table_dqn.png)
 
 红色单元格 = 同一算法在 lt/eq/gt 三场景之间取值不一致。逐条核实结果：
 
@@ -86,7 +86,7 @@
 每张图三个面板：左=AR（柱=算法均值，误差棒=5种子标准差，虚线=ILP最优AR均值，灰色带=ILP的5种子标准差范围）；中=测试集 success_rate；右=CapViol%/ConflictViol%分组柱状图（统一为"交付到环境状态的动作是否违规"这一口径，Repair PPO 因结构性保证恒为0，见下表说明）。
 
 ### LT 场景
-![bars lt](campaign_5seed_figs/bars_lt.png)
+![bars lt](../campaign_5seed_figs/bars_lt.png)
 
 **关于"违规率为0但success_rate不高"（Maskable PPO 83.55%、Repair PPO 50.05%，均CapViol%=ConflictViol%=0）**：这不是矛盾，是lt（资源紧缺，N=10<M=15）场景下两种约束处理机制共有的结构性上限，跟另外4个算法（ppo/dqn/ddqn/ppo_lagrangian，success_rate 35%~81%，同时伴随26%~58%的真实违规率）的失败模式完全不同——那4个算法失败主要是因为**发生了违规**，Maskable PPO和Repair PPO失败则是因为**放不下**：
 
@@ -96,10 +96,10 @@
 两者的共同点是：**它们用不同机制（前置masking / 事后repair）保证了"一旦执行，动作必然合法"，但都无法保证"一定能找到合法动作"**——这是lt场景资源紧缺（N<M，后期剩余容量经常不足以容纳任何剩余服务）叠加"在线、单步决策、不可回溯"这一决策范式的结构性天花板，不是训练不充分或算法缺陷，5种子×5M步收敛验证也确认了这一点（收敛后该现象依然稳定存在）。
 
 ### EQ 场景
-![bars eq](campaign_5seed_figs/bars_eq.png)
+![bars eq](../campaign_5seed_figs/bars_eq.png)
 
 ### GT 场景
-![bars gt](campaign_5seed_figs/bars_gt.png)
+![bars gt](../campaign_5seed_figs/bars_gt.png)
 
 ---
 
@@ -112,13 +112,13 @@
 **统一使用 `w=1` 的最终版公式，不还原 lt/Maskable PPO 训练时实际用过的 AR 权重课程 `w`（0→1 线性退火）**：还原课程后的真实 reward 会在训练早期虚高（`w≈0` 时只要不违规就给满分 `M`，与 AR 质量无关），中后期随 `w→1` 逐渐回落到按 AR 打分，导致该算法单独出现"先冲高再下降"的非单调曲线——这不是训练退化（同期 success_rate/AR 都在稳定上升），而是评分标准本身在训练中途变严了，跟其余 5 个算法（reward 定义全程不变）放在一起比较会造成误导。因此图中统一用 `M*(2·AR-1)` 这把不随训练变化的尺子重算，牺牲了"忠实还原 lt/Maskable PPO 实际训练信号"的精确性，换来 6 个算法之间、以及同一算法训练全程内部的可比性。
 
 ### LT 场景（资源紧缺，论文核心困难场景）
-![lt curve](campaign_5seed_figs/learning_curve_lt.png)
+![lt curve](../campaign_5seed_figs/learning_curve_lt.png)
 
 ### EQ 场景（供需均衡）
-![eq curve](campaign_5seed_figs/learning_curve_eq.png)
+![eq curve](../campaign_5seed_figs/learning_curve_eq.png)
 
 ### GT 场景（资源充裕）
-![gt curve](campaign_5seed_figs/learning_curve_gt.png)
+![gt curve](../campaign_5seed_figs/learning_curve_gt.png)
 
 ---
 
