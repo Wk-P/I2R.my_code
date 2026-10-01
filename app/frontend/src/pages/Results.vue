@@ -120,7 +120,7 @@ const COLS = [
   { key: "batch", label: "批次", get: (r) => vOf(r) + bOf(r) },
   { key: "scenario", label: "场景", get: (r) => scenarioIndex(r.scenario) },
   { key: "algo", label: "算法", get: (r) => algoIndex(r.algo) },
-  { key: "variant", label: "变体", get: (r) => r.variant ?? "" },
+  { key: "variant", label: "奖励模式", get: (r) => r.variant ?? "" },
   { key: "seed", label: "种子", get: (r) => r.seed ?? 0, num: true },
   { key: "train_steps", label: "步数", get: (r) => r.train_steps ?? 0, num: true },
   { key: "test_success_rate", label: "success_rate", get: (r) => r.test_success_rate ?? -1, num: true },
@@ -238,7 +238,7 @@ function drill(row, s) {
         </div>
         <div class="filter-row">
           <template v-if="variantsAvail.length">
-            <span class="filter-label">变体</span>
+            <span class="filter-label">奖励模式</span>
             <select v-model="f.variant"><option value="">全部</option><option v-for="v in variantsAvail" :key="v" :value="v">{{ v }}</option></select>
             <span class="filter-sep"></span>
           </template>
@@ -309,7 +309,7 @@ function drill(row, s) {
         </div>
         <table class="grid pivot">
           <thead>
-            <tr><th>算法</th><th v-if="pivot.hasVariant">变体</th><th v-for="s in pivot.scens" :key="s" class="num">{{ s.toUpperCase() }}</th></tr>
+            <tr><th>算法</th><th v-if="pivot.hasVariant">奖励模式</th><th v-for="s in pivot.scens" :key="s" class="num">{{ s.toUpperCase() }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="row in pivot.body" :key="row.algo + row.variant">

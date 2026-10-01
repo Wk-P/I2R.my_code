@@ -4,10 +4,19 @@
                                 + MaskableDQN / MaskableDDQN
     repair_dqn / repair_ddqn  — Repair-PPO environment (ppo_opt/env.py::P6Env)
                                 + DQN / DoubleDQN
+    lagrange_dqn / lagrange_ddqn — Lagrange-PPO environment (ppo_lagrangian/env.py::
+                                LagrangeEnv) + DQN / DoubleDQN, with the same dual
+                                ascent on lambda as Lagrange-PPO (v4.3.1.2)
 
 Each variant reuses its PPO counterpart's environment unchanged (same
-observation, reward and constraint mechanism), so Mask-DQN vs Mask-PPO and
-Repair-DQN vs Repair-PPO differ only in the learning algorithm.
+observation, reward and constraint mechanism), so Mask-DQN vs Mask-PPO,
+Repair-DQN vs Repair-PPO and Lagrange-DQN vs Lagrange-PPO differ only in the
+learning algorithm. Lagrange: lambda is updated every LAMBDA_UPDATE_WINDOW
+episodes after LAMBDA_WARMUP_EPISODES by
+lambda <- clip(lambda + LAMBDA_LR * (mean violation rate - LAMBDA_TARGET), 0, LAMBDA_MAX)
+(same constants as <scen>/ppo_lagrangian/config.py) and frozen at its final
+value for evaluation. Transitions already in the replay buffer keep the
+reward computed under the lambda in force when they were collected.
 P4Env's curriculum weight _ar_weight is left at its default 1.0, i.e. the
 plain terminal reward M*(2*AR-1) -- the curriculum is a Mask-PPO training
 callback, not part of the environment.
@@ -66,7 +75,7 @@ def _episode_stats(info: dict, M: int, variant: str) -> dict:
         cap_v = conf_v = 0
         success = valid_placed == M
     else:
-        cap_v = int(info.get("capacity_violations", 0))
+        cap_v = int(info.get("capacity_violations", info.get("cap_violations", 0)))
         conf_v = int(info.get("conflict_violations", 0))
         success = valid_placed == M and cap_v == 0 and conf_v == 0
     return {
@@ -81,10 +90,11 @@ def _episode_stats(info: dict, M: int, variant: str) -> dict:
 
 
 def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
-    assert variant in ("mask", "repair")
+    assert variant in ("mask", "repair", "lagrange")
     algo = f"{variant}_{'ddqn' if double else 'dqn'}"
     label = {"mask_dqn": "Mask-DQN", "mask_ddqn": "Mask-DDQN",
-             "repair_dqn": "Repair-DQN", "repair_ddqn": "Repair-DDQN"}[algo]
+             "repair_dqn": "Repair-DQN", "repair_ddqn": "Repair-DDQN",
+             "lagrange_dqn": "Lagrange-DQN", "lagrange_ddqn": "Lagrange-DDQN"}[algo]
 
     if variant == "mask":
         from ppo_mask.env import P4Env as EnvCls
@@ -92,17 +102,30 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
         # P4Env observation: 7 scalars, then initial_cap, remaining,
         # conflict_flag, ecu_allowed_frac (N each), then valid_flag = action_masks().
         extra_kwargs = {"mask_start": 7 + 4 * C.N}
-    else:
+    elif variant == "repair":
         from ppo_opt.env import P6Env as EnvCls
         model_cls = DoubleDQN if double else DQN
         extra_kwargs = {}
+    else:
+        from ppo_lagrangian.env import LagrangeEnv as EnvCls
+        model_cls = DoubleDQN if double else DQN
+        extra_kwargs = {}
+
+    # lambda for the Lagrange env: the dual variable during training, frozen
+    # at its final value for evaluation
+    state = {"lambda": getattr(C, "LAMBDA_INIT", 0.0)}
+
+    def env_kwargs() -> dict:
+        if variant != "lagrange":
+            return {}
+        return {"lambda_init": state["lambda"], "lambda_max": C.LAMBDA_MAX}
 
     def make_env(seed: int) -> Monitor:
         random.seed(seed)
         caps, reqs, _ = C.SCENARIOS[C.SCENARIO_IDX]
         ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
         services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
-        return Monitor(EnvCls(ecus, services, scenarios=C.TRAIN_SCENARIOS))
+        return Monitor(EnvCls(ecus, services, scenarios=C.TRAIN_SCENARIOS, **env_kwargs()))
 
     # ── evaluation ───────────────────────────────────────────────────────────
     def run_episodes(ecus, services, policy_fn, n_samples: int = 1):
@@ -115,7 +138,7 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
             _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
             best = None
             for _ in range(max(1, n_samples)):
-                env = EnvCls(_ecus, _svcs, scenarios=[scenario])
+                env = EnvCls(_ecus, _svcs, scenarios=[scenario], **env_kwargs())
                 obs, _ = env.reset()
                 done, info = False, {}
                 while not done:
@@ -146,9 +169,29 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
             self.cap, self.conf, self.success, self.ts = [], [], [], []
             self._next_progress = C.PROGRESS_LOG_EVERY_STEPS
             self._t0 = 0.0
+            self.lambdas = []
+            if variant == "lagrange":
+                from collections import deque
+                self._viol_window = deque(maxlen=C.LAMBDA_UPDATE_WINDOW)
+                self._n_ep = 0
+                self._since_update = 0
 
         def _on_training_start(self) -> None:
             self._t0 = time.time()
+
+        def _dual_step(self, viol_rate: float) -> None:
+            self._n_ep += 1
+            self._viol_window.append(viol_rate)
+            if self._n_ep >= C.LAMBDA_WARMUP_EPISODES:
+                self._since_update += 1
+            if (self._n_ep >= C.LAMBDA_WARMUP_EPISODES
+                    and len(self._viol_window) == C.LAMBDA_UPDATE_WINDOW
+                    and self._since_update >= C.LAMBDA_UPDATE_WINDOW):
+                lam = state["lambda"] + C.LAMBDA_LR * (float(np.mean(self._viol_window)) - C.LAMBDA_TARGET)
+                state["lambda"] = float(np.clip(lam, 0.0, C.LAMBDA_MAX))
+                self.training_env.env_method("set_lambda", state["lambda"])
+                self._since_update = 0
+            self.lambdas.append(state["lambda"])
 
         def _on_step(self) -> bool:
             for info in self.locals.get("infos", []):
@@ -162,12 +205,15 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
                     self.conf.append(int(st["conf_v"] > 0))
                     self.success.append(st["success"])
                     self.ts.append(self.num_timesteps)
+                    if variant == "lagrange":
+                        self._dual_step(float(info.get("viol_rate_ep", 0.0)))
             if self.num_timesteps >= self._next_progress:
                 elapsed = max(time.time() - self._t0, 1e-6)
                 pct = min(100.0, self.num_timesteps * 100.0 / C.TOTAL_STEPS)
                 sps = self.num_timesteps / elapsed
+                lam = f" | lambda={state['lambda']:.4f}" if variant == "lagrange" else ""
                 print(f"  [train] step={self.num_timesteps:,}/{C.TOTAL_STEPS:,} "
-                      f"({pct:5.1f}%) | eps={len(self.rewards)} | steps/s={sps:,.0f}")
+                      f"({pct:5.1f}%) | eps={len(self.rewards)} | steps/s={sps:,.0f}{lam}")
                 write_progress(C.OUTDIR, step=self.num_timesteps, total_steps=C.TOTAL_STEPS,
                                pct=round(pct, 1), episodes=len(self.rewards),
                                steps_per_sec=round(sps), exp_id=C.EXP_ID)
@@ -353,6 +399,8 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
                 "ar_last50": round(float(np.mean(cb.ars[-50:])), 6),
                 "reward_last50": round(float(np.mean(cb.rewards[-50:])), 6),
                 "success_last50": round(float(np.mean(cb.success[-50:])), 4),
+                **({"final_lambda": round(state["lambda"], 6), "eval_lambda": round(state["lambda"], 6)}
+                   if variant == "lagrange" else {}),
             },
         }
         with open(base_dir / "results.json", "w") as f:

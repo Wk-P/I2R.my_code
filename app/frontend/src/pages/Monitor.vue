@@ -35,7 +35,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
     <div v-if="!training.length" class="empty">当前没有训练任务在运行</div>
     <table v-else class="grid">
       <thead>
-        <tr><th>批次</th><th>场景</th><th>算法</th><th>变体</th><th>种子</th><th>exp_id</th>
+        <tr><th>批次</th><th>场景</th><th>算法</th><th>奖励模式</th><th>种子</th><th>exp_id</th>
           <th class="w-progress">训练进度</th><th class="num">CPU</th><th class="num">已运行</th><th class="num">PID</th></tr>
       </thead>
       <tbody>

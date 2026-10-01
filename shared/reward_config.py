@@ -73,6 +73,7 @@ def success_quality(ar: float, ar_star: float | None) -> float:
 
 # ── directional objective reward (REWARD_MODE=directional) ─────────────────
 #
+#   dAR over legally executed placements only (see directional_step)
 #   r_obj = 1 + beta*dAR      if dAR >  eps
 #           beta*dAR          if |dAR| <= eps
 #           -lam + beta*dAR   if dAR < -eps          (dAR = AR_{t+1} - AR_t)
@@ -106,12 +107,27 @@ def _viol_count(env) -> int:
 
 def directional_step(step_fn):
     """Decorator for an environment's step(): leaves it untouched unless
-    REWARD_MODE=directional, otherwise replaces the returned reward."""
+    REWARD_MODE=directional, otherwise replaces the returned reward.
+
+    dAR is computed here, not from the env's own self.ar, on legally executed
+    placements only (v4.3.1.2): the envs disagree on how a violating
+    placement enters AR (DQN envs count 0, PPO / Lagrange envs count its
+    over-capacity utilisation, which can push AR above 1), and counting it
+    would reward violations. A violating step therefore has dAR = 0 and is
+    handled by the method's constraint mechanism alone. For Repair-* the
+    executed (repaired) placement is always legal."""
     if REWARD_MODE != "directional":
         return step_fn
 
     def step(self, action):
-        ar0, v0 = float(self.ar), _viol_count(self)
+        if self._step == 0:                      # first step of an episode
+            self._dir_ru, self._dir_active = 0.0, set()
+        idx = self._step
+        req = float(self.services[idx].requirement)
+        before = [len(p) for p in self.ecu_placements]
+        ar0 = self._dir_ru / len(self._dir_active) if self._dir_active else 0.0
+        v0 = _viol_count(self)
+
         obs, _, done, truncated, info = step_fn(self, action)
         M = float(self.M)
         B = float(_DIR_B) if _DIR_B is not None else M
@@ -123,7 +139,14 @@ def directional_step(step_fn):
             info["dead_end"] = True
             return obs, -C, done, truncated, info
 
-        r = objective_reward(float(self.ar) - ar0)
+        placed_on = next((j for j, p in enumerate(self.ecu_placements) if len(p) > before[j]), None)
+        if placed_on is not None and (is_repair or c_t == 0):
+            self._dir_ru += req / float(self.initial_vms[placed_on])
+            self._dir_active.add(placed_on)
+        ar1 = self._dir_ru / len(self._dir_active) if self._dir_active else 0.0
+        info["dir_ar"] = ar1
+
+        r = objective_reward(ar1 - ar0)
         if hasattr(self, "lambda_val"):
             r -= float(self.lambda_val) * c_t
 

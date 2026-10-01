@@ -45,7 +45,9 @@ import random
 import gymnasium as gym
 import numpy as np
 from ilp.objects import ECU, SVC
-from shared.reward_config import directional_step
+from shared.reward_config import directional_step, lookup_ar_star, success_quality
+
+_SCEN = Path(__file__).parent.parent.name
 
 
 class LagrangeEnv(gym.Env):
@@ -126,8 +128,10 @@ class LagrangeEnv(gym.Env):
     # ── reset ─────────────────────────────────────────────────────────────────
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self._sc = None  # (caps, reqs, conflict_sets) as drawn, for AR* lookup
         if self._scenarios is not None:
             caps, reqs, _cs = random.choice(self._scenarios)
+            self._sc = (caps, reqs, _cs)
             self.ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
             self.services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
             self.initial_vms = np.array([e.capacity for e in self.ecus], dtype=np.float32)
@@ -282,7 +286,7 @@ class LagrangeEnv(gym.Env):
             # AR-quality success reward + graded-by-completion failure
             # penalty, instead of flat +M/-M.
             if self.episode_violations == 0:
-                reward = float(self.M) * (2.0 * self.ar - 1.0)
+                reward = float(self.M) * success_quality(self.ar, lookup_ar_star(_SCEN, *self._sc) if self._sc else None)
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:

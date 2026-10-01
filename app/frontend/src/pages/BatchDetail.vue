@@ -81,7 +81,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       <table class="grid">
         <thead>
           <tr>
-            <th>场景</th><th>算法</th><th v-if="hasVariant">变体</th><th>种子</th>
+            <th>场景</th><th>算法</th><th v-if="hasVariant">奖励模式</th><th>种子</th>
             <th class="num" title="success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例">success_rate</th><th class="num" title="AR = average resource utilization（平均资源利用率，优化目标）">AR</th><th class="num">ILP AR</th><th class="num" title="AR gap = ILP AR − AR">AR gap</th>
             <th class="num">容量违规</th><th class="num">冲突违规</th>
           </tr>

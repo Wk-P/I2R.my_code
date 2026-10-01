@@ -20,6 +20,8 @@ PROBLEM_TOTAL_STEPS: dict[str, int] = {
     "mask_ddqn": 2_000_000,
     "repair_dqn": 2_000_000,
     "repair_ddqn": 2_000_000,
+    "lagrange_dqn": 2_000_000,
+    "lagrange_ddqn": 2_000_000,
 }
 
 # Per-(scenario, algorithm) overrides — takes precedence over PROBLEM_TOTAL_STEPS.
@@ -69,7 +71,8 @@ SCENARIO_TOTAL_STEPS: dict[tuple[str, str], int] = {
     (scenario, algo): 5_000_000
     for scenario in ("lt", "eq", "gt")
     for algo in ("ppo_mask", "ppo_lagrangian", "ppo", "ppo_opt", "dqn", "ddqn",
-                 "mask_dqn", "mask_ddqn", "repair_dqn", "repair_ddqn")
+                 "mask_dqn", "mask_ddqn", "repair_dqn", "repair_ddqn",
+                 "lagrange_dqn", "lagrange_ddqn")
 }
 
 
