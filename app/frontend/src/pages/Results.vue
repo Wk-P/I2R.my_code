@@ -6,7 +6,7 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import { store, setViewBranch, spaceLabel } from "../store.js";
 import { getExperiments } from "../api.js";
-import { SCENARIOS, algoLabel, algoIndex, scenarioIndex, zeroRepairViol } from "../labels.js";
+import { SCENARIOS, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, mechOf, LEARNERS, MECHANISMS, MECH_LABEL, scenarioIndex, zeroRepairViol } from "../labels.js";
 import { pct, fmt, shortTime, steps } from "../format.js";
 
 const NO_VERSION = "未标注版本";
@@ -14,7 +14,7 @@ const NO_BATCH = "（未归属批次）";
 
 // ── filter state <-> URL ────────────────────────────────────────────────
 let keepScope = false;
-const f = reactive({ version: "", batch: "", scen: [], algo: [], variant: "", q: "", view: "list", metric: "success" });
+const f = reactive({ version: "", batch: "", scen: [], learner: [], mech: [], variant: "", q: "", view: "list", metric: "success" });
 function readUrl() {
   const qs = new URLSearchParams(window.location.hash.split("?")[1] || "");
   // a link that names its branch keeps its own version/batch filters
@@ -22,7 +22,8 @@ function readUrl() {
   f.version = qs.get("version") || "";
   f.batch = qs.get("batch") || "";
   f.scen = (qs.get("scen") || "").split(",").filter(Boolean);
-  f.algo = (qs.get("algo") || "").split(",").filter(Boolean);
+  f.learner = (qs.get("model") || "").split(",").filter(Boolean);
+  f.mech = (qs.get("mech") || "").split(",").filter(Boolean);
   f.variant = qs.get("variant") || "";
   f.q = qs.get("q") || "";
   f.view = qs.get("view") || "list";
@@ -33,7 +34,8 @@ function writeUrl() {
   if (store.viewBranch) qs.set("branch", store.viewBranch);
   for (const k of ["version", "batch", "variant", "q"]) if (f[k]) qs.set(k, f[k]);
   if (f.scen.length) qs.set("scen", f.scen.join(","));
-  if (f.algo.length) qs.set("algo", f.algo.join(","));
+  if (f.learner.length) qs.set("model", f.learner.join(","));
+  if (f.mech.length) qs.set("mech", f.mech.join(","));
   if (f.view !== "list") qs.set("view", f.view);
   if (f.metric !== "success") qs.set("metric", f.metric);
   const s = qs.toString();
@@ -94,7 +96,8 @@ function pickBatch(v, b) { f.version = v; f.batch = f.batch === b ? "" : b; }
 // ── filtering ──────────────────────────────────────────────────────────
 const inTree = computed(() => rows.value.filter((r) =>
   (!f.version || vOf(r) === f.version) && (!f.batch || bOf(r) === f.batch)));
-const algosAvail = computed(() => [...new Set(inTree.value.map((r) => r.algo))].sort((a, b) => algoIndex(a) - algoIndex(b)));
+const learnersAvail = computed(() => LEARNERS.filter((l) => inTree.value.some((r) => learnerOf(r.algo) === l)));
+const mechsAvail = computed(() => MECHANISMS.filter((m) => inTree.value.some((r) => mechOf(r.algo) === m)));
 const variantsAvail = computed(() => [...new Set(inTree.value.map((r) => r.variant).filter(Boolean))].sort());
 const scensAvail = computed(() => SCENARIOS.filter((s) => inTree.value.some((r) => r.scenario === s)));
 
@@ -102,16 +105,17 @@ const filtered = computed(() => {
   const q = f.q.trim().toLowerCase();
   return inTree.value.filter((r) =>
     (!f.scen.length || f.scen.includes(r.scenario)) &&
-    (!f.algo.length || f.algo.includes(r.algo)) &&
+    (!f.learner.length || f.learner.includes(learnerOf(r.algo))) &&
+    (!f.mech.length || f.mech.includes(mechOf(r.algo))) &&
     (!f.variant || r.variant === f.variant) &&
     (!q || [r.exp_id, r.run, r.batch, r.algo, algoLabel(r.algo), r.variant].some((x) => (x ?? "").toLowerCase().includes(q))));
 });
 const toggle = (arr, v) => { const i = arr.indexOf(v); i === -1 ? arr.push(v) : arr.splice(i, 1); };
 function reset() {
-  Object.assign(f, { version: "", batch: "", scen: [], algo: [], variant: "", q: "" });
+  Object.assign(f, { version: "", batch: "", scen: [], learner: [], mech: [], variant: "", q: "" });
 }
 const activeFilters = computed(() =>
-  [f.version, f.batch, f.variant, f.q].filter(Boolean).length + f.scen.length + f.algo.length);
+  [f.version, f.batch, f.variant, f.q].filter(Boolean).length + f.scen.length + f.learner.length + f.mech.length);
 
 // ── detail list: sorting + paging ──────────────────────────────────────
 const gap = (r) => (r.ilp_ar == null || r.test_ar_mean == null ? null : r.ilp_ar - r.test_ar_mean);
@@ -119,7 +123,8 @@ const COLS = [
   { key: "created_at", label: "完成时间", get: (r) => r.created_at ?? "" },
   { key: "batch", label: "批次", get: (r) => vOf(r) + bOf(r) },
   { key: "scenario", label: "场景", get: (r) => scenarioIndex(r.scenario) },
-  { key: "algo", label: "算法", get: (r) => algoIndex(r.algo) },
+  { key: "algo", label: "模型", get: (r) => algoIndex(r.algo) },
+  { key: "mech", label: "约束处理", get: (r) => algoIndex(r.algo) % 10 },
   { key: "variant", label: "奖励模式", get: (r) => r.variant ?? "" },
   { key: "seed", label: "种子", get: (r) => r.seed ?? 0, num: true },
   { key: "train_steps", label: "步数", get: (r) => r.train_steps ?? 0, num: true },
@@ -191,7 +196,7 @@ const pivot = computed(() => {
   return { scens, body, best, M, hasVariant };
 });
 function drill(row, s) {
-  Object.assign(f, { scen: [s], algo: [row.algo], variant: row.variant, view: "list" });
+  Object.assign(f, { scen: [s], learner: [learnerOf(row.algo)], mech: [mechOf(row.algo)], variant: row.variant, view: "list" });
 }
 </script>
 
@@ -233,8 +238,11 @@ function drill(row, s) {
           <span class="filter-label">场景</span>
           <button v-for="s in scensAvail" :key="s" class="chip-btn" :class="{ on: f.scen.includes(s) }" @click="toggle(f.scen, s)">{{ s.toUpperCase() }}</button>
           <span class="filter-sep"></span>
-          <span class="filter-label">算法</span>
-          <button v-for="a in algosAvail" :key="a" class="chip-btn" :class="{ on: f.algo.includes(a) }" @click="toggle(f.algo, a)">{{ algoLabel(a) }}</button>
+          <span class="filter-label">模型</span>
+          <button v-for="l in learnersAvail" :key="l" class="chip-btn" :class="{ on: f.learner.includes(l) }" @click="toggle(f.learner, l)">{{ l.toUpperCase() }}</button>
+          <span class="filter-sep"></span>
+          <span class="filter-label">约束处理</span>
+          <button v-for="m in mechsAvail" :key="m" class="chip-btn" :class="{ on: f.mech.includes(m) }" @click="toggle(f.mech, m)">{{ MECH_LABEL[m] }}</button>
         </div>
         <div class="filter-row">
           <template v-if="variantsAvail.length">
@@ -278,7 +286,8 @@ function drill(row, s) {
                 <td>{{ shortTime(r.created_at) }}</td>
                 <td :title="`版本 ${vOf(r)}`">{{ bOf(r) }}</td>
                 <td><span class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
-                <td>{{ algoLabel(r.algo) }}<span v-if="r.is_bc" class="tag">BC</span></td>
+                <td>{{ learnerLabel(r.algo) }}<span v-if="r.is_bc" class="tag">BC</span></td>
+                <td>{{ mechLabel(r.algo) }}</td>
                 <td><span v-if="r.variant" class="tag">{{ r.variant }}</span></td>
                 <td class="num">{{ r.seed ?? "—" }}</td>
                 <td class="num">{{ steps(r.train_steps) }}</td>
@@ -309,11 +318,12 @@ function drill(row, s) {
         </div>
         <table class="grid pivot">
           <thead>
-            <tr><th>算法</th><th v-if="pivot.hasVariant">奖励模式</th><th v-for="s in pivot.scens" :key="s" class="num">{{ s.toUpperCase() }}</th></tr>
+            <tr><th>模型</th><th>约束处理</th><th v-if="pivot.hasVariant">奖励模式</th><th v-for="s in pivot.scens" :key="s" class="num">{{ s.toUpperCase() }}</th></tr>
           </thead>
           <tbody>
-            <tr v-for="row in pivot.body" :key="row.algo + row.variant">
-              <td>{{ algoLabel(row.algo) }}</td>
+            <tr v-for="(row, k) in pivot.body" :key="row.algo + row.variant" :class="{ 'row-sep': k && learnerLabel(pivot.body[k - 1].algo) !== learnerLabel(row.algo) }">
+              <td><b v-if="!k || learnerLabel(pivot.body[k - 1].algo) !== learnerLabel(row.algo)">{{ learnerLabel(row.algo) }}</b></td>
+              <td>{{ mechLabel(row.algo) }}</td>
               <td v-if="pivot.hasVariant"><span v-if="row.variant" class="tag">{{ row.variant }}</span></td>
               <td v-for="s in pivot.scens" :key="s" class="num" :class="{ best: row.stats[s] && row.stats[s].m === pivot.best[s] }">
                 <a v-if="row.stats[s]" class="cell-link" @click="drill(row, s)" title="查看这些运行">

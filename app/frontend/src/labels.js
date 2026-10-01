@@ -8,36 +8,39 @@ export const SCENARIO_LABEL = {
   gt: "GT 资源充裕",
 };
 
-export const ALGO_ORDER = [
-  "ppo", "ppo_mask", "ppo_lagrangian", "ppo_opt",
-  "mask_ppo", "lagrange_ppo", "repair_ppo",
-  "dqn", "mask_dqn", "lagrange_dqn", "repair_dqn",
-  "ddqn", "mask_ddqn", "lagrange_ddqn", "repair_ddqn",
-];
+// 12 models = 3 learners x 4 constraint-handling mechanisms.
+// The unconstrained learner is the control group.
+export const LEARNERS = ["ppo", "dqn", "ddqn"];
+export const MECHANISMS = ["none", "lagrange", "mask", "repair"];
+export const MECH_LABEL = { none: "无约束", lagrange: "Lagrangian", mask: "Maskable", repair: "Repair" };
+const OLD_PPO = { ppo_lagrangian: "lagrange", ppo_mask: "mask", ppo_opt: "repair" };  // pre-v4.3.1.3 dir names
 
-export const ALGO_LABEL = {
-  ppo: "PPO",
-  ppo_mask: "Mask-PPO",
-  ppo_lagrangian: "Lagrange-PPO",
-  ppo_opt: "Repair-PPO",
-  dqn: "DQN",
-  ddqn: "DDQN",
-  mask_dqn: "Mask-DQN",
-  mask_ddqn: "Mask-DDQN",
-  repair_dqn: "Repair-DQN",
-  repair_ddqn: "Repair-DDQN",
-  lagrange_dqn: "Lagrange-DQN",
-  lagrange_ddqn: "Lagrange-DDQN",
-  mask_ppo: "Mask-PPO",
-  lagrange_ppo: "Lagrange-PPO",
-  repair_ppo: "Repair-PPO",
-};
+export function learnerOf(a) {
+  if (OLD_PPO[a]) return "ppo";
+  const l = (a ?? "").split("_").pop();
+  return LEARNERS.includes(l) ? l : a;
+}
+export function mechOf(a) {
+  if (OLD_PPO[a]) return OLD_PPO[a];
+  const parts = (a ?? "").split("_");
+  return parts.length > 1 && MECHANISMS.includes(parts[0]) ? parts[0] : "none";
+}
+export const learnerLabel = (a) => learnerOf(a).toUpperCase();
+export const mechLabel = (a) => MECH_LABEL[mechOf(a)];
+
+// ordered by learner, then 无约束 -> Lagrangian -> Maskable -> Repair
+export const ALGO_ORDER = LEARNERS.flatMap((l) => MECHANISMS.map((m) => (m === "none" ? l : `${m}_${l}`)));
+const ALGO_LABEL = { ppo_lagrangian: "Lagrangian-PPO", ppo_mask: "Maskable-PPO", ppo_opt: "Repair-PPO" };
+for (const a of ALGO_ORDER) {
+  const m = mechOf(a), l = learnerOf(a).toUpperCase();
+  ALGO_LABEL[a] = m === "none" ? `${l}（无约束）` : `${MECH_LABEL[m]}-${l}`;
+}
 
 export const algoLabel = (a) => ALGO_LABEL[a] ?? a;
-export const algoIndex = (a) => {
-  const i = ALGO_ORDER.indexOf(a);
-  return i === -1 ? ALGO_ORDER.length : i;
-};
+export const algoIndex = (a) =>
+  LEARNERS.includes(learnerOf(a))
+    ? LEARNERS.indexOf(learnerOf(a)) * 10 + MECHANISMS.indexOf(mechOf(a))
+    : 99;
 export const scenarioIndex = (s) => {
   const i = SCENARIOS.indexOf(s);
   return i === -1 ? SCENARIOS.length : i;

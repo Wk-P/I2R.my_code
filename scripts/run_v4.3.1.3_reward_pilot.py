@@ -32,13 +32,13 @@ RESULTS = ROOT / "results" / "unified"
 CAPACITY = int(56 * 0.93)
 MODES = ["legacy", "ar", "directional"]
 SCENARIOS = ["lt", "eq", "gt"]
-MECHS = ["", "mask", "lagrange", "repair"]
+MECHS = ["", "lagrange", "mask", "repair"]      # 无约束（对照）, Lagrangian, Maskable, Repair
 LEARNERS = ["ppo", "dqn", "ddqn"]
 ALGOS = [f"{m}_{l}" if m else l for l in LEARNERS for m in MECHS]
 WEIGHT = {a: (4 if a.endswith("ppo") else 2) for a in ALGOS}   # measured cores per job (ps: PPO ~3.9, DQN ~1.4)
 SEED = 1
 STEPS = 1_000_000
-MECH_LABEL = {"": "无约束", "mask": "Mask", "lagrange": "Lagrange", "repair": "Repair"}
+MECH_LABEL = {"": "无约束（对照）", "lagrange": "Lagrangian", "mask": "Maskable", "repair": "Repair"}
 
 
 def split(algo):
@@ -96,14 +96,14 @@ def write_report(exp_ids):
              "AR = average resource utilization（只计合法执行的放置），全部测试 episode 的均值；"
              "AR/AR* = 成功 episode 上 AR 与该实例 ILP 最优值之比的均值。",
              "- manifest：`scripts/logs/v4.3.1.3_reward_pilot/manifest.json`", ""]
-    order = sorted(ALGOS, key=lambda a: (MECHS.index(split(a)[0]), LEARNERS.index(split(a)[1])))
+    order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",
-                  "| 约束机制 | 算法 | success_rate legacy | ar | directional | AR/AR* legacy | ar | directional | AR legacy | ar | directional |",
+                  "| 模型 | 约束处理 | success_rate legacy | ar | directional | AR/AR* legacy | ar | directional | AR legacy | ar | directional |",
                   "|---|---|---|---|---|---|---|---|---|---|---|"]
         for a in order:
             mech, learner = split(a)
-            r = [MECH_LABEL[mech], learner.upper()]
+            r = [learner.upper(), MECH_LABEL[mech]]
             r += [cell(m, s, a, "success_rate", f3) for m in MODES]
             r += [cell(m, s, a, "ar_ratio_successful", f4) for m in MODES]
             r += [cell(m, s, a, "ar_mean", f4) for m in MODES]

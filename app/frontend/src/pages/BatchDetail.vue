@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { getBatch } from "../api.js";
-import { SCENARIOS, algoLabel, algoIndex, statusLabel, statusClass, zeroRepairViol } from "../labels.js";
+import { SCENARIOS, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol } from "../labels.js";
 import { pct, fmt, pm, shortTime, secToHuman, steps } from "../format.js";
 
 const props = defineProps({ name: { type: String, required: true } });
@@ -36,6 +36,8 @@ const hasVariant = computed(() => (data.value?.rows || []).some((r) => r.variant
 const scenCount = (s) => (data.value?.rows || []).filter((r) => r.scenario === s).length;
 
 // first row of each scenario group gets a divider
+const firstOfLearner = (i) =>
+  firstOfScen(i) || learnerOf(rows.value[i - 1].algo) !== learnerOf(rows.value[i].algo);
 const firstOfScen = (i) => i === 0 || rows.value[i - 1].scenario !== rows.value[i].scenario;
 
 const gap = (r) =>
@@ -81,7 +83,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       <table class="grid">
         <thead>
           <tr>
-            <th>场景</th><th>算法</th><th v-if="hasVariant">奖励模式</th><th>种子</th>
+            <th>场景</th><th>模型</th><th>约束处理</th><th v-if="hasVariant">奖励模式</th><th>种子</th>
             <th class="num" title="success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例">success_rate</th><th class="num" title="AR = average resource utilization（平均资源利用率，优化目标）">AR</th><th class="num">ILP AR</th><th class="num" title="AR gap = ILP AR − AR">AR gap</th>
             <th class="num">容量违规</th><th class="num">冲突违规</th>
           </tr>
@@ -89,7 +91,8 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <tbody>
           <tr v-for="(r, i) in rows" :key="r.scenario + r.algo + r.variant" :class="{ 'row-sep': firstOfScen(i) }">
             <td><span v-if="firstOfScen(i)" class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
-            <td>{{ algoLabel(r.algo) }}</td>
+            <td><b v-if="firstOfLearner(i)">{{ learnerLabel(r.algo) }}</b></td>
+            <td :class="{ dim: mechLabel(r.algo) === '无约束' }">{{ mechLabel(r.algo) }}</td>
             <td v-if="hasVariant"><span v-if="r.variant" class="tag">{{ r.variant }}</span></td>
             <td>
               <span class="seeds">
