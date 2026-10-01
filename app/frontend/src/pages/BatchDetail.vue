@@ -42,7 +42,7 @@ const gap = (r) =>
   r.ilp_ar_mean == null || r.test_ar_mean_mean == null ? null : r.ilp_ar_mean - r.test_ar_mean_mean;
 
 const seedTitle = (s) =>
-  `种子 ${s.seed ?? "—"} · ${statusLabel(s.status)}${s.progress_pct != null ? ` ${s.progress_pct}%` : ""} · ${s.exp_id}`;
+  `种子 ${s.seed ?? "—"} · ${statusLabel(s.status)}${s.progress_pct != null ? ` ${s.progress_pct}%` : ""}${s.exp_id ? " · " + s.exp_id : ""}`;
 const runLink = (r, s) =>
   s.status === "done" ? `#/run/${data.value.branch}/${r.scenario}/${r.algo}/${s.exp_id}` : null;
 const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.value?.branch ?? "")}&version=${encodeURIComponent(data.value?.version ?? "未标注版本")}&batch=${encodeURIComponent(props.name)}&view=pivot`);
@@ -65,7 +65,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       <div class="kpi"><div class="kpi-label">总进度</div><div class="kpi-value">{{ data.overall_pct }}%</div>
         <div class="bar bar--kpi"><div class="bar-fill" :style="{ width: data.overall_pct + '%' }"></div></div></div>
       <div class="kpi"><div class="kpi-label">已完成</div><div class="kpi-value">{{ data.done }}<span class="kpi-unit">/ {{ data.total_runs }}</span></div></div>
-      <div class="kpi"><div class="kpi-label">运行 / 排队 / 中断</div><div class="kpi-value kpi-value--sm">{{ data.running }} / {{ data.queued }} / {{ data.stopped }}</div></div>
+      <div class="kpi"><div class="kpi-label">运行 / 排队 / 中断{{ data.skipped ? " / 未运行" : "" }}</div><div class="kpi-value kpi-value--sm">{{ data.running }} / {{ data.queued }} / {{ data.stopped }}{{ data.skipped ? " / " + data.skipped : "" }}</div></div>
       <div class="kpi"><div class="kpi-label">已用时</div><div class="kpi-value kpi-value--sm">{{ secToHuman(data.elapsed_seconds) }}</div>
         <div class="kpi-foot">最后更新 {{ shortTime(data.last_updated) }}</div></div>
     </div>
@@ -93,7 +93,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <td v-if="hasVariant"><span v-if="r.variant" class="tag">{{ r.variant }}</span></td>
             <td>
               <span class="seeds">
-                <component :is="runLink(r, s) ? 'a' : 'span'" v-for="s in r.seeds" :key="s.exp_id" :href="runLink(r, s)"
+                <component :is="runLink(r, s) ? 'a' : 'span'" v-for="s in r.seeds" :key="`${s.seed}-${s.exp_id}`" :href="runLink(r, s)"
                   class="seed" :class="`seed--${s.status}`" :title="seedTitle(s)">
                   {{ s.status === "running" && s.progress_pct != null ? Math.round(s.progress_pct) : s.seed ?? "·" }}
                 </component>
@@ -113,6 +113,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <span><i class="seed seed--done"></i>已完成（可点击查看）</span>
         <span><i class="seed seed--running"></i>运行中（数字为训练进度 %）</span>
         <span><i class="seed seed--queued"></i>排队中</span>
+        <span v-if="data.skipped"><i class="seed seed--skipped"></i>未运行（批次已结束）</span>
         <span><i class="seed seed--stopped"></i>已中断</span>
         <span>指标为已完成种子的均值 ± 标准差；AR = average resource utilization；AR gap = ILP AR − AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例</span>
       </div>

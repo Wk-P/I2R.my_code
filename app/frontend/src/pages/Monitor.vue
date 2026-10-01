@@ -1,6 +1,7 @@
 <script setup>
-import { computed } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { store } from "../store.js";
+import { getBatches, getBatch } from "../api.js";
 import { algoLabel, algoIndex, scenarioIndex } from "../labels.js";
 import { secToClock } from "../format.js";
 
@@ -14,6 +15,31 @@ const training = computed(() =>
       algoIndex(a.algo) - algoIndex(b.algo) ||
       (a.variant ?? "").localeCompare(b.variant ?? "")));
 const others = computed(() => procs.value.filter((p) => !(p.scenario && p.algo)));
+// queued jobs of every running batch
+const queued = ref([]);
+let qTimer = null;
+async function loadQueued() {
+  const { batches } = await getBatches(false);
+  const out = [];
+  for (const b of batches) {
+    const d = await getBatch(b.batch_name);
+    for (const r of d?.rows || [])
+      for (const s of r.seeds)
+        if (s.status === "queued") out.push({ batch: b.batch_name, scenario: r.scenario, algo: r.algo, variant: r.variant, seed: s.seed });
+  }
+  queued.value = out;
+}
+onMounted(() => { loadQueued(); qTimer = setInterval(loadQueued, 15000); });
+onUnmounted(() => clearInterval(qTimer));
+const queuedByBatch = computed(() => {
+  const m = new Map();
+  for (const q of queued.value) {
+    if (!m.has(q.batch)) m.set(q.batch, []);
+    m.get(q.batch).push(q);
+  }
+  return [...m.entries()];
+});
+
 const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_percent || 0), 0));
 </script>
 
@@ -57,6 +83,20 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
       </tbody>
     </table>
     <div class="note">训练进度来自各任务日志中最近一次 [train] 记录（旧实现每 20 万步、paper_rl 每 10 万步写一次），刚启动或处于 ILP / 评估阶段时显示 0%。</div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>排队中 <span class="tab-count">{{ queued.length }}</span></h2></div>
+    <div v-if="!queued.length" class="empty">没有排队中的任务</div>
+    <template v-for="[batch, items] in queuedByBatch" :key="batch">
+      <div class="queue-head"><a :href="`#/batches/${batch}`">{{ batch }}</a> · {{ items.length }} 个任务，调度器按空闲 CPU 依次启动</div>
+      <div class="queue-chips">
+        <span v-for="(q, k) in items" :key="k" class="queue-chip">
+          <span class="scen" :class="`scen--${q.scenario}`">{{ q.scenario.toUpperCase() }}</span>
+          {{ algoLabel(q.algo) }}<span v-if="q.variant" class="tag">{{ q.variant }}</span><span v-if="q.seed != null" class="dim small"> s{{ q.seed }}</span>
+        </span>
+      </div>
+    </template>
   </section>
 
   <section class="panel">

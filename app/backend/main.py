@@ -20,6 +20,7 @@ Serves:
   GET  /                                              single-page dashboard (vanilla JS, no build step)
 """
 
+import itertools
 import json
 import math
 import os
@@ -292,6 +293,8 @@ def _exp_batch_index() -> dict[str, dict]:
         if d.is_dir():
             runs, manifest = _batch_runs(d)
             for r in runs:
+                if r["exp_id"] is None:
+                    continue
                 index[r["exp_id"]] = {"batch": d.name, "variant": r["variant"], "seed": r["seed"],
                                       "version": manifest.get("version")}
     return index
@@ -887,6 +890,19 @@ def _manifest_runs(manifest: dict) -> list[dict]:
             runs.append(run)
 
     walk(manifest.get("exp_ids") or {}, [])
+
+    # Planned but not yet launched: the manifest only lists launched runs, so
+    # fill in the rest of scenarios x algos x modes x seeds as queued
+    # (exp_id None) -- otherwise queued jobs are invisible until they start.
+    scens = manifest.get("scenarios") or []
+    seeds = manifest.get("seeds") or ([manifest["seed"]] if manifest.get("seed") is not None else [None])
+    modes = manifest.get("modes") or [""]
+    if scens and algos:
+        have = {(r["scenario"], r["algo"], r["variant"], r["seed"]) for r in runs}
+        for mode, scen, algo, seed in itertools.product(modes, scens, manifest["algos"], seeds):
+            seed = int(seed) if seed is not None else None
+            if (scen, algo, mode, seed) not in have:
+                runs.append({"scenario": scen, "algo": algo, "seed": seed, "variant": mode, "exp_id": None})
     return runs
 
 
@@ -916,7 +932,7 @@ def _branch_holding(runs: list[dict]) -> str | None:
         return None
     for r in runs:
         for bdir in RESULTS_ROOT_BASE.iterdir():
-            if (bdir / r["scenario"] / r["algo"] / r["exp_id"]).is_dir():
+            if r["exp_id"] and (bdir / r["scenario"] / r["algo"] / r["exp_id"]).is_dir():
                 return bdir.name
     return None
 
@@ -949,6 +965,9 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     branch = manifest.get("branch") or _branch_holding(runs)
     results_root = _results_root(branch)
     for r in runs:
+        if r["exp_id"] is None:
+            r["status"] = "queued"
+            continue
         run_dir = results_root / r["scenario"] / r["algo"] / r["exp_id"]
         if (run_dir / "results.json").is_file():
             r["status"] = "done"
@@ -984,6 +1003,15 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
         status = "finished"
     else:
         status = "stopped"
+    if status in ("stopped", "cancelled", "finished"):
+        # nothing is going to launch them any more
+        for r in runs:
+            if r["status"] == "queued":
+                r["status"] = "skipped"
+        counts["skipped"] = counts.pop("queued")
+        counts["queued"] = 0
+    else:
+        counts["skipped"] = 0
     log_files = list(log_dir.glob("*.log"))
     mtimes = [f.stat().st_mtime for f in log_files] or [log_dir.stat().st_mtime]
     ctimes = [f.stat().st_ctime for f in log_files] or [log_dir.stat().st_ctime]
@@ -1043,7 +1071,7 @@ def get_batch_progress(batch_name: str):
 
     for r in st["runs"]:
         r["progress_pct"] = None
-        run_dir = results_root / r["scenario"] / r["algo"] / r["exp_id"]
+        run_dir = results_root / r["scenario"] / r["algo"] / (r["exp_id"] or "_")
         if r["status"] == "done":
             row = _row_from_run(r["scenario"], r["algo"], run_dir)
             if row:

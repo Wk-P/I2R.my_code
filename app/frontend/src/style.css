@@ -170,6 +170,7 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 .seed--done { background: var(--ok); }
 .seed--running { background: var(--run); }
 .seed--queued { background: #cfd5df; color: #5d6778; }
+.seed--skipped { background: #fff; color: #98a1b0; border: 1px dashed #cfd5df; }
 .seed--stopped { background: #e0a65a; }
 .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--text-dim); margin-top: 12px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -323,3 +324,6 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 @media (max-width: 380px) {
   .kpis { grid-template-columns: 1fr; }
 }
+.queue-head { font-size: 13px; color: var(--text-dim); margin: 6px 0 8px; }
+.queue-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.queue-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fafbfc; }

@@ -51,6 +51,7 @@ export const STATUS = {
   stopped: ["已中断", "warn"],
   cancelled: ["已作废", "off"],
   queued: ["排队中", "off"],
+  skipped: ["未运行", "off"],
 };
 export const statusLabel = (s) => (STATUS[s] ?? [s])[0];
 export const statusClass = (s) => "badge--" + ((STATUS[s] ?? [s, "off"])[1]);
