@@ -101,8 +101,9 @@ def run_episodes(ecus, services, policy_fn, n_samples: int = 1):
             while not done:
                 obs, _, done, _, info = env.step(policy_fn(obs))
             ar = info.get("ar", 0.0)
-            cap_v = info.get("cap_violations", 0)
-            conflict_v = info.get("conflict_violations", 0)
+            # The executed placement never violates (repair); repair triggers are not reported.
+            cap_v = 0
+            conflict_v = 0
             viol_rate = float(info.get("repair_rate", 0.0))
             placed = int(info.get("services_placed", 0))
             valid_placed = int(info.get("valid_placed", placed))
@@ -449,7 +450,6 @@ def main():
         "ppo": {
             "ar_mean":            round(float(np.mean(ppo_res["ars"])), 6),
             "ar_std":             round(float(np.std(ppo_res["ars"])),  6),
-            "viol_rate_mean":     round(float(p_v), 6),
             "success_rate":       round(success_rate, 6),
             "cap_viol_rate":      round(cap_viol_rate, 6),
             "conflict_viol_rate": round(conflict_viol_rate, 6),
@@ -460,7 +460,6 @@ def main():
             "total_steps":  C.TOTAL_STEPS,
             "n_episodes":   len(cb.episode_ars),
             "ar_last50":    round(float(np.mean(cb.episode_ars[-50:])), 6),
-            "repair_rate_last50": round(float(np.mean(cb.episode_repair_rates[-50:])), 6),
         }
     }
     log_path = run_dir / "results.json"

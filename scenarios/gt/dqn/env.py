@@ -1,9 +1,11 @@
 """
 DQN Environment — RL WITHOUT action masking.
 
+v4.3.0 reward: identical to PPO -- 0 on every non-terminal step; terminal
+M*(2*AR-1) if the episode has no violation, else -M*(1-valid_placed/M).
+
 Constraint handling:
-    - Capacity violation → hard (episode terminates immediately with penalty).
-    - Conflict violation → soft (recorded in info, does not terminate episode).
+    - Capacity / conflict violation → recorded, placement still proceeds (v4.3.0).
     - Multiple services may share an ECU (no uniqueness constraint).
     - Each valid assignment receives its exact utilisation contribution req/cap.
 """
@@ -11,11 +13,15 @@ Constraint handling:
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))  # project root for shared
 
 import random
 import gymnasium as gym
 import numpy as np
 from ilp.objects import ECU, SVC
+from shared.reward_config import directional_step, lookup_ar_star, success_quality
+
+_SCEN = Path(__file__).parent.parent.name
 
 
 class DQNEnv(gym.Env):
@@ -33,10 +39,10 @@ class DQNEnv(gym.Env):
         [6+3N:6+4N]  valid-action flags (1 = sufficient capacity)
         [6+4N:6+4N+M] remaining service demands (sorted descending)
 
-    Reward:
-        -remaining_services  on capacity violation (hard fail)
-        +ru                  for valid assignment (req/cap)
-        conflict violations are recorded in info only
+    Reward (v4.3.0, same as PPO):
+        0                       non-terminal step
+        M*(2*AR-1)              terminal, no violation in the episode
+        -M*(1-valid_placed/M)   terminal, otherwise
     """
 
     metadata = {"render_modes": []}
@@ -51,7 +57,7 @@ class DQNEnv(gym.Env):
 
         self.action_space = gym.spaces.Discrete(self.N)
         self.observation_space = gym.spaces.Box(
-            low=0.0, high=1.0, shape=(4 * self.N + 6 + 2 * self.M,), dtype=np.float32,
+            low=-1.0, high=1.0, shape=(4 * self.N + 6 + 2 * self.M,), dtype=np.float32,
         )
 
         self.initial_vms = np.array([e.capacity for e in ecus], dtype=np.float32)
@@ -85,8 +91,10 @@ class DQNEnv(gym.Env):
     # ── reset ────────────────────────────────────────────────────────────────
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self._sc = None  # (caps, reqs, conflict_sets) as drawn, for AR* lookup
         if self._scenarios is not None:
             caps, reqs, _cs = random.choice(self._scenarios)
+            self._sc = (caps, reqs, _cs)
             self.ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
             self.services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
             self.initial_vms = np.array([e.capacity for e in self.ecus], dtype=np.float32)
@@ -171,37 +179,21 @@ class DQNEnv(gym.Env):
     def step(self, action: int):
         svc = self.services[self._step]
 
-        cap_violated = bool(self.remaining_vms[action] < svc.requirement)
+        cap_violated      = bool(self.remaining_vms[action] < svc.requirement)
+        conflict_violated = self._has_conflict(action, self._step)
 
+        # v4.3.0: capacity violation no longer terminates the episode -- the
+        # placement proceeds (remaining_vms may go negative), same as gt/ppo.
         if cap_violated:
             self.capacity_violations += 1
             self.episode_has_cap_violation = True
-            # Hard termination on capacity violation (docstring intent)
-            return self._obs(), -float(self.M), True, False, {
-                "ar":                             self.ar,
-                "step":                           self._step,
-                "services_placed":                self._step,
-                "valid_placed":                   self.valid_placed,
-                "ecus_used":                      sum(1 for j in range(self.N) if self.ecu_placements[j]),
-                "cap_violated":                   True,
-                "conflict_violated":              False,
-                "capacity_violations":            self.capacity_violations,
-                "conflict_violations":            self.conflict_violations,
-                "total_violations":               self.capacity_violations + self.conflict_violations,
-                "violation_rate":                 (self.capacity_violations + self.conflict_violations) / max(self._step, 1),
-                "episode_has_cap_violation":      self.episode_has_cap_violation,
-                "episode_has_conflict_violation": self.episode_has_conflict_violation,
-            }
-
-        conflict_violated = self._has_conflict(action, self._step)
         if conflict_violated:
             self.conflict_violations += 1
             self.episode_has_conflict_violation = True
-        else:
+        if not (cap_violated or conflict_violated):
             self.valid_placed += 1
 
-        conflict_penalty = -2.0 if conflict_violated else 0.0
-        ru = 0.0 if conflict_violated else svc.requirement / (self.initial_vms[action] + 1e-8)
+        ru = 0.0 if (cap_violated or conflict_violated) else svc.requirement / (self.initial_vms[action] + 1e-8)
 
         self.remaining_vms[action] -= svc.requirement
         self.ecu_placements[action].add(self._step)
@@ -215,19 +207,19 @@ class DQNEnv(gym.Env):
         total_viol = self.capacity_violations + self.conflict_violations
         if done:
             if total_viol == 0:
-                reward = float(self.M) * (2.0 * self.ar - 1.0)
+                reward = float(self.M) * success_quality(self.ar, lookup_ar_star(_SCEN, *self._sc) if self._sc else None)
             else:
                 reward = -float(self.M) * (1.0 - self.valid_placed / float(self.M))
         else:
-            # v4.1.0: wire in the per-step violation penalty (was dead code in v4.0.0)
-            reward = conflict_penalty
+            # v4.3.0: same sparse reward as PPO -- no per-step violation penalty
+            reward = 0.0
         return self._obs(), reward, done, False, {
             "ar":                             self.ar,
             "step":                           self._step,
             "services_placed":                self._step,
             "valid_placed":                   self.valid_placed,
             "ecus_used":                      _active,
-            "cap_violated":                   False,
+            "cap_violated":                   cap_violated,
             "conflict_violated":              conflict_violated,
             "capacity_violations":            self.capacity_violations,
             "conflict_violations":            self.conflict_violations,
@@ -245,6 +237,10 @@ class DQNEnv(gym.Env):
                   f"| AR={self.ar:.4f} | conflict_viol={self.conflict_violations}")
         else:
             print(f"  Done | AR={self.ar:.4f} | conflict_viol={self.conflict_violations}")
+
+
+# REWARD_MODE=directional replaces the reward (shared/reward_config.py); no-op otherwise.
+DQNEnv.step = directional_step(DQNEnv.step)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

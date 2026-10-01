@@ -71,29 +71,70 @@ def _git_branch_list() -> list[str]:
         return []
 
 
+def _active_space() -> str:
+    """results/<space>/ that new training runs write to: $RESULTS_SPACE, else
+    RESULTS_SPACE in shared/version_config.py (read as text -- this module
+    never imports shared/), else the checked-out branch (pre-v4.3.1 layout)."""
+    if os.environ.get("RESULTS_SPACE"):
+        return os.environ["RESULTS_SPACE"]
+    try:
+        m = re.search(r'^RESULTS_SPACE\s*=\s*"([^"]+)"',
+                      (PROJECT_ROOT / "shared" / "version_config.py").read_text(), re.M)
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    return _git_current_branch() or "unknown"
+
+
 def _results_root(branch: str | None = None) -> Path:
-    """results/<branch>/ — defaults to the currently checked-out branch, but
-    every data endpoint accepts an explicit `?branch=` query param so the
-    dashboard can browse any branch's already-recorded results without an
-    actual `git checkout` (which would disrupt whatever's in the working
-    tree). Re-resolves the current branch on every call — see module note
-    above — rather than caching it, so a `git checkout` elsewhere is picked
-    up without restarting uvicorn. Falls back to the current branch (not the
-    literal string) if the requested branch doesn't exist, so a stale/typo'd
-    `?branch=` can't silently point at a nonexistent directory."""
-    current = _git_current_branch() or "unknown"
-    if branch and branch in _git_branch_list():
+    """results/<space>/ -- `branch` (the ?branch= query param, kept under
+    that name for URL compatibility) may name any existing results/
+    subdirectory, whether or not a git branch of that name still exists;
+    anything else falls back to the active space."""
+    if branch and "/" not in branch and ".." not in branch and (RESULTS_ROOT_BASE / branch).is_dir():
         return RESULTS_ROOT_BASE / branch
-    return RESULTS_ROOT_BASE / current
+    return RESULTS_ROOT_BASE / _active_space()
 
 
 @app.get("/api/branch")
 def get_branch():
     return {
-        "current":      _git_current_branch(),
+        # "current" = the results space new runs write to (see _active_space)
+        "current":      _active_space(),
+        "git_branch":   _git_current_branch(),
         "branches":     _git_branch_list(),
         "bc_supported": (PROJECT_ROOT / "shared" / "bc_pretrain.py").is_file(),
+        # Branches that have a results/<branch>/ tree, with their run count
+        # (results.json files), so the UI can offer only browsable branches.
+        "result_branches": _result_branches(),
     }
+
+
+def _result_branches() -> list[dict]:
+    """Every results/<space>/ with runs, labelled from result_spaces.json
+    (stage name, version range, branch vs. model collection) and the actual
+    date range of its runs; newest stage first."""
+    if not RESULTS_ROOT_BASE.is_dir():
+        return []
+    meta = _read_json(APP_DIR / "result_spaces.json") or {}
+    out = []
+    for b in RESULTS_ROOT_BASE.iterdir():
+        if not b.is_dir():
+            continue
+        files = list(b.glob("*/*/*/results.json"))
+        if not files:
+            continue
+        mtimes = [f.stat().st_mtime for f in files]
+        m = meta.get(b.name, {})
+        out.append({
+            "name": b.name, "runs": len(files),
+            "label": m.get("label", b.name), "versions": m.get("versions"),
+            "kind": m.get("kind", "branch"), "order": m.get("order", 99),
+            "first": min(mtimes), "last": max(mtimes),
+        })
+    out.sort(key=lambda x: (x["order"], -x["last"]))
+    return out
 
 
 def _algo_key(data: dict) -> str | None:
@@ -239,9 +280,31 @@ def get_results(branch: str | None = None):
     return _collect_results(branch)
 
 
+def _exp_batch_index() -> dict[str, dict]:
+    """exp_id -> {batch, variant, seed} over every batch under scripts/logs/."""
+    index = {}
+    if not LOGS_ROOT.is_dir():
+        return index
+    for d in LOGS_ROOT.iterdir():
+        if d.is_dir():
+            runs, manifest = _batch_runs(d)
+            for r in runs:
+                index[r["exp_id"]] = {"batch": d.name, "variant": r["variant"], "seed": r["seed"],
+                                      "version": manifest.get("version")}
+    return index
+
+
 @app.get("/api/experiments")
 def get_experiments(branch: str | None = None):
-    return _collect_all_experiments(branch)
+    rows = _collect_all_experiments(branch)
+    index = _exp_batch_index()
+    for r in rows:
+        info = index.get(r["exp_id"], {})
+        r["batch"] = info.get("batch")
+        r["variant"] = info.get("variant") or ""
+        r["seed"] = info.get("seed")
+        r["version"] = info.get("version")
+    return rows
 
 
 def _git_tag_dates() -> dict[str, str]:
@@ -293,6 +356,34 @@ def _parse_version_md() -> dict[str, dict]:
     return out
 
 
+def _tag_sort_key(tag: str):
+    """Newest first for any tag shape: v4.1.0, v4.1.0.2, v4.0.0_final_1,
+    lt-1M-bestof32-partial-14of30. Version tags sort by their numeric parts
+    (suffix after the numbers ranks after the bare version); other tags go
+    last, by name."""
+    import re as _re
+    m = _re.match(r"^v(\d+(?:\.\d+)*)(.*)$", tag)
+    if not m:
+        return (0, [], tag)
+    return (1, [int(x) for x in m.group(1).split(".")], m.group(2))
+
+
+def _tag_doc_path(tag: str) -> Path | None:
+    """version/<doc>.md (from VERSION.md or <tag>.md), else the paper
+    package's README (paper_contents/<tag>/ or paper_contents/[<tag>]/)."""
+    info = _parse_version_md().get(tag) or {}
+    doc_file = info.get("doc_file") or f"{tag}.md"
+    if ".." not in Path(doc_file).parts and (PROJECT_ROOT / "version" / doc_file).is_file():
+        return PROJECT_ROOT / "version" / doc_file
+    if "/" in tag or ".." in tag:
+        return None
+    for d in (tag, tag.removeprefix("v"), f"[{tag}]"):
+        readme = PROJECT_ROOT / "paper_contents" / d / "README.md"
+        if readme.is_file():
+            return readme
+    return None
+
+
 @app.get("/api/tags")
 def get_tags():
     """All git tags with a description for the frontend: VERSION.md's summary
@@ -303,10 +394,10 @@ def get_tags():
     parsed = _parse_version_md()
     docs_dir = PROJECT_ROOT / "version"
     tags = []
-    for tag in sorted(dates, key=lambda t: [int(x) for x in t.lstrip("v").split(".")], reverse=True):
+    for tag in sorted(dates, key=_tag_sort_key, reverse=True):
         info = parsed.get(tag, {})
         doc_file = info.get("doc_file") or f"{tag}.md"
-        has_doc = (docs_dir / doc_file).is_file() if doc_file else False
+        has_doc = _tag_doc_path(tag) is not None
         tags.append({
             "tag":       tag,
             "date":      info.get("date") or dates.get(tag),
@@ -319,14 +410,10 @@ def get_tags():
 
 @app.get("/api/tags/{tag}/doc")
 def get_tag_doc(tag: str):
-    info = _parse_version_md().get(tag)
-    doc_file = (info or {}).get("doc_file") or f"{tag}.md"
-    path = PROJECT_ROOT / "version" / doc_file
-    # version/ is a fixed, non-user-supplied directory and doc_file must
-    # resolve inside it — reject anything that would climb out via "..".
-    if ".." in Path(doc_file).parts or not path.is_file():
+    path = _tag_doc_path(tag)
+    if path is None:
         raise HTTPException(404)
-    return {"tag": tag, "doc_file": doc_file, "content": path.read_text(encoding="utf-8")}
+    return {"tag": tag, "doc_file": str(path.relative_to(PROJECT_ROOT)), "content": path.read_text(encoding="utf-8")}
 
 
 @app.get("/api/history/{scenario}/{algo}")
@@ -349,6 +436,13 @@ def get_result_file(scenario: str, algo: str, run: str, filename: str, branch: s
 
 
 MONITOR_STATE_PATH = APP_DIR / "monitor_state.json"
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def _read_monitor_state() -> dict:
@@ -667,6 +761,33 @@ def get_progress():
     return result
 
 
+def _training_proc_info(pid: int) -> dict:
+    """exp_id / seed / reward mode (from the launcher-provided environment),
+    owning batch (log directory) and training progress (log tail)."""
+    info = {"exp_id": None, "seed": None, "variant": None, "batch": None, "progress_pct": None}
+    try:
+        env = dict(kv.split(b"=", 1) for kv in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0") if b"=" in kv)
+        info["exp_id"] = env.get(b"EXP_ID", b"").decode() or None
+        info["seed"] = env.get(b"TRAIN_SEED", b"").decode() or None
+        info["variant"] = env.get(b"REWARD_MODE", b"").decode() or None
+    except OSError:
+        pass
+    log_path = _proc_stdout_log_path(pid)
+    if log_path:
+        lp = Path(log_path)
+        if lp.parent.parent == LOGS_ROOT:
+            info["batch"] = lp.parent.name
+        try:
+            with open(lp, "rb") as fh:
+                fh.seek(0, 2)
+                fh.seek(max(0, fh.tell() - 8192))
+                hits = _TRAIN_PCT_RE.findall(fh.read().decode(errors="ignore"))
+            info["progress_pct"] = float(hits[-1]) if hits else 0.0
+        except OSError:
+            pass
+    return info
+
+
 @app.get("/api/system")
 def get_system():
     """Live, generic "what's actually running right now" view — independent
@@ -677,6 +798,9 @@ def get_system():
     counts as "related" if it runs under this project's venv interpreter or
     its cwd is inside the repo — see _project_related_procs()."""
     procs = _project_related_procs()
+    for p in procs:
+        if p.get("scenario") and p.get("algo"):
+            p.update(_training_proc_info(p["pid"]))
     try:
         load1, load5, load15 = os.getloadavg()
     except OSError:
@@ -689,208 +813,262 @@ def get_system():
 
 
 def _live_exp_ids(procs: list[dict]) -> set[str]:
-    """Returns the exp_id of every currently-live training process, resolved
-    from each process's own stdout log filename (which every campaign
-    launcher names "{scenario}_{algo}_{steps}_seed{seed}_{exp_id}.log" --
-    see scripts/run_*_campaign.py's launch()). Matching on exp_id (rather
-    than just (scenario, algo)) is required once two campaigns can have a
-    live run for the same (scenario, algo) pair at once -- e.g. a killed
-    batch's still-"queued"/"running"-looking entries must not borrow
-    liveness from an unrelated, later campaign's process for that same
-    scenario/algo (see the lt_eq_gt_10M_extension incident where a stale
-    ppo_opt entry showed "running" only because the NEW lt_1M_bestofN_retry
-    campaign happened to have its own, unrelated ppo_opt process live).
-    """
+    """exp_id of every live training process. Two sources, either is enough:
+    the EXP_ID environment variable every campaign launcher passes to
+    run_all.py, and the trailing _<exp_id>.log of the process's stdout log
+    (older launchers). Matching on exp_id rather than (scenario, algo) keeps
+    a stale entry of a killed batch from borrowing liveness from an
+    unrelated later campaign's process for the same scenario/algo."""
     exp_ids = set()
     for p in procs:
+        try:
+            env = Path(f"/proc/{p['pid']}/environ").read_bytes().split(b"\0")
+            for kv in env:
+                if kv.startswith(b"EXP_ID="):
+                    exp_ids.add(kv[7:].decode(errors="ignore"))
+        except OSError:
+            pass
         log_path = _proc_stdout_log_path(p["pid"])
-        if not log_path:
-            continue
-        m = BATCH_LOG_DIR_RE.match(Path(log_path).name)
+        m = LOG_EXP_ID_RE.search(Path(log_path).name) if log_path else None
         if m:
             exp_ids.add(m["exp_id"])
     return exp_ids
 
 
+# Old-style batch log name: {scenario}_{algo}_{steps}_seed{seed}_{exp_id}.log
 BATCH_LOG_DIR_RE = re.compile(
     r"^(?P<scenario>eq|gt|lt)_(?P<algo>\w+)_(?P<steps>\d+)_seed(?P<seed>\d+)_(?P<exp_id>[0-9a-f]+)\.log$"
 )
+LOG_EXP_ID_RE = re.compile(r"_(?P<exp_id>[0-9a-f]{8})\.log$")
+LOGS_ROOT = PROJECT_ROOT / "scripts" / "logs"
+
+
+def _manifest_runs(manifest: dict) -> list[dict]:
+    """Flatten a campaign manifest's nested exp_ids dict into runs. Launchers
+    nest it differently ({scen: {algo: {seed: id}}} for seed campaigns,
+    {mode: {scen: {algo: id}}} for the reward pilot), so each key on the path
+    is classified instead of assuming one order: lt/eq/gt is the scenario,
+    a member of manifest["algos"] is the algo, a bare integer is the seed,
+    and anything else is a variant label (e.g. a reward mode)."""
+    algos = set(manifest.get("algos") or [])
+    runs = []
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, path + [str(k)])
+            return
+        if not isinstance(node, str):
+            return
+        run = {"scenario": None, "algo": None, "seed": None, "variant": "", "exp_id": node}
+        variant = []
+        for k in path:
+            if k in SCENARIOS and run["scenario"] is None:
+                run["scenario"] = k
+            elif k in algos and run["algo"] is None:
+                run["algo"] = k
+            elif k.isdigit() and run["seed"] is None:
+                run["seed"] = int(k)
+            else:
+                variant.append(k)
+        if run["scenario"] and run["algo"]:
+            if run["seed"] is None and manifest.get("seed") is not None:
+                run["seed"] = int(manifest["seed"])
+            run["variant"] = "/".join(variant)
+            runs.append(run)
+
+    walk(manifest.get("exp_ids") or {}, [])
+    return runs
+
+
+def _batch_runs(log_dir: Path) -> tuple[list[dict], dict]:
+    """(runs, manifest) of one batch. manifest.json wins when present;
+    otherwise runs come from old-style log file names."""
+    manifest_path = log_dir / "manifest.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text())
+            return _manifest_runs(manifest), manifest
+        except (json.JSONDecodeError, OSError):
+            pass
+    runs = []
+    for f in sorted(log_dir.glob("*.log")):
+        m = BATCH_LOG_DIR_RE.match(f.name)
+        if m:
+            runs.append({"scenario": m["scenario"], "algo": m["algo"], "seed": int(m["seed"]),
+                         "variant": "", "exp_id": m["exp_id"]})
+    return runs, {}
+
+
+def _branch_holding(runs: list[dict]) -> str | None:
+    """Branch whose results/ tree holds this batch's runs (old batches have
+    no manifest saying which branch they ran on). None = current branch."""
+    if not RESULTS_ROOT_BASE.is_dir():
+        return None
+    for r in runs:
+        for bdir in RESULTS_ROOT_BASE.iterdir():
+            if (bdir / r["scenario"] / r["algo"] / r["exp_id"]).is_dir():
+                return bdir.name
+    return None
+
+
+_TRAIN_PCT_RE = re.compile(r"\[train\] step=[\d,]+/[\d,]+ \(\s*([\d.]+)%\)")
+
+
+def _log_train_pct(log_dir: Path, exp_id: str) -> float | None:
+    """Latest "[train] ... (P%)" in this run's own log -- per run, unlike
+    .progress.json, which concurrent runs of one algo overwrite in turn."""
+    for f in log_dir.glob(f"*{exp_id}*.log"):
+        try:
+            with open(f, "rb") as fh:
+                fh.seek(0, 2)
+                fh.seek(max(0, fh.tell() - 8192))
+                tail = fh.read().decode(errors="ignore")
+        except OSError:
+            continue
+        hits = _TRAIN_PCT_RE.findall(tail)
+        if hits:
+            return float(hits[-1])
+    return None
+
+
+def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
+    log_dir = LOGS_ROOT / batch_name
+    runs, manifest = _batch_runs(log_dir)
+    if not runs:
+        return None
+    branch = manifest.get("branch") or _branch_holding(runs)
+    results_root = _results_root(branch)
+    for r in runs:
+        run_dir = results_root / r["scenario"] / r["algo"] / r["exp_id"]
+        if (run_dir / "results.json").is_file():
+            r["status"] = "done"
+        elif r["exp_id"] in live_exp_ids:
+            r["status"] = "running"
+        elif (run_dir / ".progress.json").is_file() or run_dir.is_dir():
+            r["status"] = "stopped"   # started, never finished, not alive
+        else:
+            r["status"] = "queued"
+
+    # A slot can hold several attempts after a crash/retry: keep the best one.
+    rank = {"done": 0, "running": 1, "queued": 2, "stopped": 3}
+    best: dict[tuple, dict] = {}
+    for r in runs:
+        slot = (r["scenario"], r["algo"], r["variant"], r["seed"])
+        if slot not in best or rank[r["status"]] < rank[best[slot]["status"]]:
+            best[slot] = r
+    runs = list(best.values())
+
+    counts = {s: sum(1 for r in runs if r["status"] == s) for s in rank}
+    # A manifest only lists runs launched so far; the planned total is the
+    # product of its scenarios / algos / seeds / modes lists.
+    total = 1
+    for k in ("scenarios", "algos", "seeds", "modes"):
+        if isinstance(manifest.get(k), list) and manifest[k]:
+            total *= len(manifest[k])
+    total = max(total if manifest else 0, len(runs))
+    if (log_dir / ".cancelled").is_file():
+        status = "cancelled"
+    elif counts["running"]:
+        status = "running"
+    elif counts["done"] == len(runs):
+        status = "finished"
+    else:
+        status = "stopped"
+    log_files = list(log_dir.glob("*.log"))
+    mtimes = [f.stat().st_mtime for f in log_files] or [log_dir.stat().st_mtime]
+    ctimes = [f.stat().st_ctime for f in log_files] or [log_dir.stat().st_ctime]
+    return {
+        "batch_name": batch_name,
+        "status": status,
+        "version": manifest.get("version"),
+        "branch": branch or _active_space(),
+        "steps": manifest.get("steps"),
+        "total_runs": total,
+        **counts,
+        "queued": counts["queued"] + (total - len(runs)),
+        "overall_pct": round(100.0 * counts["done"] / total, 1),
+        "started_at": min(ctimes),
+        "last_updated": max(mtimes),
+        "runs": runs,
+        "results_root": results_root,
+    }
 
 
 @app.get("/api/batches")
-def list_batches():
-    """Auto-discovers every ad-hoc batch under scripts/logs/ that is STILL
-    LIVE, so the frontend doesn't need a hardcoded, ever-growing list of
-    batch names — any subdirectory containing at least one log file matching
-    BATCH_LOG_DIR_RE counts as a batch, PROVIDED at least one of its
-    (scenario, algo) pairs currently has a matching run_all.py process alive
-    (same live-process check get_batch_progress uses for each run's
-    "running" status). A batch that finished normally (all runs done) or was
-    killed/abandoned partway (no runs done, nothing left running either) both
-    end up with zero live rows, so both disappear from this list the same
-    way — no separate "mark it finished" bookkeeping needed, and a batch
-    that gets relaunched later reappears automatically the moment its first
-    process starts. Historical batches are still fully queryable via
-    /api/batch_progress/{batch_name} directly; this list only decides what
-    the frontend's "Live Training Progress" section shows right now.
-    Sorted by most-recently-modified log file first."""
-    logs_root = PROJECT_ROOT / "scripts" / "logs"
-    if not logs_root.is_dir():
+def list_batches(all: bool = False, branch: str | None = None):
+    """Batches under scripts/logs/ (one subdirectory each, described by a
+    manifest.json or by old-style run log names). Default: only batches with
+    a live run (what "currently training" needs). all=true: every batch with
+    its status (running / finished / stopped / cancelled), newest first."""
+    if not LOGS_ROOT.is_dir():
         return {"batches": []}
-    live_exp_ids = _live_exp_ids(_ps_snapshot())
+    live = _live_exp_ids(_ps_snapshot())
     batches = []
-    for d in logs_root.iterdir():
+    for d in LOGS_ROOT.iterdir():
         if not d.is_dir():
             continue
-        if (d / ".cancelled").is_file():
-            # A batch is marked cancelled by dropping a .cancelled file in
-            # its log dir (see scripts/logs/gt_full_5M_rerun/.cancelled) --
-            # e.g. after an oversubscription incident where the run was
-            # aborted and its partial results explicitly discarded. Hidden
-            # from the frontend entirely rather than shown as "stale" so a
-            # cancelled batch never gets mistaken for real data.
+        st = _batch_state(d.name, live)
+        if st is None or (not all and st["status"] != "running"):
             continue
-        log_files = [f for f in d.glob("*.log") if BATCH_LOG_DIR_RE.match(f.name)]
-        if not log_files:
+        if branch and st["branch"] != branch:
             continue
-        still_live = any(
-            m["exp_id"] in live_exp_ids
-            for m in (BATCH_LOG_DIR_RE.match(f.name) for f in log_files)
-        )
-        if not still_live:
-            continue
-        latest_mtime = max(f.stat().st_mtime for f in log_files)
-        batches.append({"batch_name": d.name, "last_updated": latest_mtime, "run_count": len(log_files)})
+        st.pop("runs")
+        st.pop("results_root")
+        batches.append(st)
     batches.sort(key=lambda b: b["last_updated"], reverse=True)
     return {"batches": batches}
 
 
 @app.get("/api/batch_progress/{batch_name}")
 def get_batch_progress(batch_name: str):
-    """Progress view for an ad-hoc parallel batch launched by a script like
-    scripts/<batch_name>.sh (e.g. eq_gt_migration_5seed), whose runs don't fit
-    /api/progress's "one sequential process per scenario" assumption: many
-    algos x many seeds run concurrently, each with its own exp_id, so
-    "N/6 models done" is meaningless here — this counts run completion
-    (results.json written) per (scenario, algo, seed) instead, which is
-    unambiguous regardless of how many processes are running at once.
-
-    Reads scripts/logs/<batch_name>/*.log filenames (written by the launch
-    script itself, see e.g. scripts/eq_gt_migration_5seed.sh) as the source
-    of truth for "which runs belong to this batch" — no manifest file
-    required, so this stays accurate even mid-launch while new runs are
-    still being started."""
-    log_dir = PROJECT_ROOT / "scripts" / "logs" / batch_name
-    if not log_dir.is_dir():
-        raise HTTPException(status_code=404, detail=f"no such batch log dir: {log_dir}")
-
-    # Elapsed time since the batch's first run was launched, taken from the
-    # oldest log file's ctime (each run's log is created the moment its
-    # process is spawned — see e.g. scripts/eq_gt_migration_5seed.sh's
-    # launch()). st_ctime on Linux is "inode change time", which for a
-    # freshly-created file is its creation time — good enough here since
-    # these log files are never touched again after creation.
-    log_ctimes = [f.stat().st_ctime for f in log_dir.glob("*.log")]
-    batch_started_at = min(log_ctimes) if log_ctimes else None
-    elapsed_seconds = (time.time() - batch_started_at) if batch_started_at else None
-
-    procs = _ps_snapshot()
-    live_exp_ids = _live_exp_ids(procs)
-    results_root = _results_root()
-
-    runs = []
-    for log_file in sorted(log_dir.glob("*.log")):
-        m = BATCH_LOG_DIR_RE.match(log_file.name)
-        if not m:
-            continue
-        scenario, algo, seed, exp_id = m["scenario"], m["algo"], m["seed"], m["exp_id"]
-        run_dir = results_root / scenario / algo / exp_id
-        results_path = run_dir / "results.json"
-        done = results_path.is_file()
-        running = (not done) and (exp_id in live_exp_ids)
-        run = {
-            "scenario": scenario, "algo": algo, "seed": int(seed), "exp_id": exp_id,
-            "status": "done" if done else ("running" if running else "queued"),
-        }
-        if done:
-            # results.json nests the method's metrics under a method-specific
-            # key that varies per algo (e.g. "ppo", "lagrange_ppo",
-            # "maskable_ppo", "dqn", "ddqn") — pull whichever sub-dict has
-            # ar_mean instead of hardcoding one key per algo.
-            try:
-                payload = json.loads(results_path.read_text())
-                metrics = next(
-                    (v for v in payload.values() if isinstance(v, dict) and "ar_mean" in v),
-                    None,
-                )
-                if metrics:
-                    run["ar_mean"] = _nan_to_none(metrics.get("ar_mean"))
-                    run["success_rate"] = _nan_to_none(metrics.get("success_rate"))
-            except (json.JSONDecodeError, OSError):
-                pass
-        runs.append(run)
-
-    # Dedup to one entry per (scenario, algo, seed): a slot can have more
-    # than one underlying run when a crashed/interrupted attempt was retried
-    # under a fresh exp_id (each launch mints its own — see
-    # scripts/run_full_5M_campaign.py's new_exp_id() call), leaving the dead
-    # attempt's log behind. Rank done > running > queued so a completed
-    # retry always wins over a stale dead entry, and drop the losers
-    # entirely (not just deprioritize) so the frontend never has to
-    # reimplement this same dedup logic or accidentally render a stale row.
-    STATUS_RANK = {"done": 0, "running": 1, "queued": 2}
-    best_by_slot: dict[tuple[str, str, int], dict] = {}
-    for r in runs:
-        slot = (r["scenario"], r["algo"], r["seed"])
-        existing = best_by_slot.get(slot)
-        if existing is None or STATUS_RANK[r["status"]] < STATUS_RANK[existing["status"]]:
-            best_by_slot[slot] = r
-    runs = list(best_by_slot.values())
-
-    by_scenario: dict[str, dict] = {}
-    for r in runs:
-        sc = by_scenario.setdefault(r["scenario"], {"runs": [], "done": 0, "running": 0, "queued": 0})
-        sc["runs"].append(r)
-        sc[r["status"]] += 1
-
-    # Seed aggregation: mean±std of ar_mean/success_rate across each
-    # (scenario, algo)'s DONE seeds, so the frontend can show one summary
-    # row per algo instead of one row per seed once a batch is far enough
-    # along to be meaningful. n < total seed count for that algo means the
-    # aggregate is partial (still-running seeds not yet included) — the
-    # frontend should label it as such, not present it as final.
+    """Per-run status and metrics of one batch, plus mean/std per
+    (scenario, algo, variant) over the finished seeds."""
     import statistics
-    aggregates: dict[str, list[dict]] = {}
-    by_scenario_algo: dict[tuple[str, str], list[dict]] = {}
-    for r in runs:
-        if r["status"] == "done" and r.get("ar_mean") is not None:
-            by_scenario_algo.setdefault((r["scenario"], r["algo"]), []).append(r)
-    for (scenario, algo), done_runs in by_scenario_algo.items():
-        ar_vals = [r["ar_mean"] for r in done_runs]
-        succ_vals = [r["success_rate"] for r in done_runs if r.get("success_rate") is not None]
-        total_seeds_for_slot = sum(
-            1 for r in runs if r["scenario"] == scenario and r["algo"] == algo
-        )
-        aggregates.setdefault(scenario, []).append({
-            "algo": algo,
-            "n_done": len(done_runs),
-            "n_total": total_seeds_for_slot,
-            "ar_mean": round(statistics.fmean(ar_vals), 6) if ar_vals else None,
-            "ar_std": round(statistics.pstdev(ar_vals), 6) if len(ar_vals) > 1 else 0.0,
-            "success_rate_mean": round(statistics.fmean(succ_vals), 6) if succ_vals else None,
-            "success_rate_std": round(statistics.pstdev(succ_vals), 6) if len(succ_vals) > 1 else 0.0,
-        })
+    if not (LOGS_ROOT / batch_name).is_dir():
+        raise HTTPException(status_code=404, detail=f"no such batch: {batch_name}")
+    st = _batch_state(batch_name, _live_exp_ids(_ps_snapshot()))
+    if st is None:
+        raise HTTPException(status_code=404, detail=f"batch {batch_name} has no runs")
+    results_root = st.pop("results_root")
 
-    total_done = sum(1 for r in runs if r["status"] == "done")
-    return {
-        "batch_name": batch_name,
-        "total_runs": len(runs),
-        "done": total_done,
-        "overall_pct": round(100.0 * total_done / len(runs), 1) if runs else 0.0,
-        "elapsed_seconds": round(elapsed_seconds, 1) if elapsed_seconds is not None else None,
-        "by_scenario": by_scenario,
-        "aggregates": aggregates,
-    }
+    for r in st["runs"]:
+        r["progress_pct"] = None
+        run_dir = results_root / r["scenario"] / r["algo"] / r["exp_id"]
+        if r["status"] == "done":
+            row = _row_from_run(r["scenario"], r["algo"], run_dir)
+            if row:
+                for k in ("test_success_rate", "test_ar_mean", "ilp_ar",
+                          "test_cap_viol_rate", "test_conflict_viol_rate"):
+                    r[k] = row[k]
+        elif r["status"] == "running":
+            r["progress_pct"] = _log_train_pct(LOGS_ROOT / batch_name, r["exp_id"])
+
+    def agg(vals):
+        vals = [v for v in vals if v is not None]
+        if not vals:
+            return None, None
+        return round(statistics.fmean(vals), 6), (round(statistics.stdev(vals), 6) if len(vals) > 1 else 0.0)
+
+    groups: dict[tuple, list[dict]] = {}
+    for r in st["runs"]:
+        groups.setdefault((r["scenario"], r["algo"], r["variant"]), []).append(r)
+    rows = []
+    for (scenario, algo, variant), rs in groups.items():
+        done = [r for r in rs if r["status"] == "done"]
+        row = {"scenario": scenario, "algo": algo, "variant": variant,
+               "n_done": len(done), "n_total": len(rs),
+               "seeds": sorted(({"seed": r["seed"], "status": r["status"], "exp_id": r["exp_id"],
+                                 "progress_pct": r["progress_pct"]} for r in rs),
+                               key=lambda x: (x["seed"] is None, x["seed"] or 0))}
+        for k in ("test_success_rate", "test_ar_mean", "ilp_ar", "test_cap_viol_rate", "test_conflict_viol_rate"):
+            row[k + "_mean"], row[k + "_std"] = agg([r.get(k) for r in done])
+        rows.append(row)
+    scen_order = {"lt": 0, "eq": 1, "gt": 2}
+    rows.sort(key=lambda x: (scen_order.get(x["scenario"], 9), x["algo"], x["variant"]))
+    st["rows"] = rows
+    st["elapsed_seconds"] = round(time.time() - st["started_at"], 1)
+    return st
 
 
 @app.get("/", response_class=HTMLResponse)

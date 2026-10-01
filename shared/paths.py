@@ -2,17 +2,16 @@
 paths.py — Single source of truth for where experiment artifacts live.
 
 All algorithms, in every scenario, write to
-results/<git-branch>/<scenario>/<algo>/ under the project root. This keeps
+results/<space>/<scenario>/<algo>/ under the project root, where <space> is
+shared/version_config.RESULTS_SPACE ($RESULTS_SPACE overrides it). This keeps
 scenarios/ code-only; nothing under scenarios/ should ever create a results/
 directory of its own.
 
-results/ is gitignored — checking out a different branch does not change
-what's on disk under it. The branch segment exists so that experiments run
-from different branches (e.g. a "pretrain" branch adding ILP behavior-cloning
-pipelines vs a "main" branch that doesn't have them) don't land in the same
-directory and get silently mixed together; each branch gets its own subtree,
-and the dashboard (app/backend) only ever reads the currently checked-out
-branch's subtree.
+Until v4.3.1 <space> was the checked-out git branch, which is why the older
+results/ subtrees are named after the stage branches (main, pretrain,
+paper-verfication, add_states, final_paper_experiments). Those branches are
+archived as tags (archive/stage*-*) and their data directories are kept as-is.
+results/ is gitignored.
 """
 
 import hashlib
@@ -44,7 +43,9 @@ def _git_current_branch() -> str:
 # switch branches mid-execution, so there's no need to re-shell-out per call.
 CURRENT_BRANCH = _git_current_branch()
 
-RESULTS_ROOT = PROJECT_ROOT / "results" / CURRENT_BRANCH
+from shared.version_config import RESULTS_SPACE as _DEFAULT_SPACE
+RESULTS_SPACE = os.environ.get("RESULTS_SPACE") or _DEFAULT_SPACE
+RESULTS_ROOT = PROJECT_ROOT / "results" / RESULTS_SPACE
 
 PROGRESS_FILENAME = ".progress.json"
 EXP_ID_ENV_VAR = "EXP_ID"
@@ -52,7 +53,7 @@ EXP_ID_ENV_VAR = "EXP_ID"
 # Bump shared/version_config.py's CURRENT_VERSION on every tagged release
 # (git tag vX.Y.Z) — embedded in saved model filenames so a model file is
 # self-describing even if it's copied out of its
-# results/<branch>/<scenario>/<algo>/<exp_id>/ directory.
+# results/<space>/<scenario>/<algo>/<exp_id>/ directory.
 # Overridable via $PAPER_VERSION so ad-hoc/historical runs (e.g. replaying
 # v1.0.1..v1.0.4) can tag differently without editing version_config.py.
 from shared.version_config import CURRENT_VERSION
@@ -60,7 +61,7 @@ VERSION = os.environ.get("PAPER_VERSION", CURRENT_VERSION)
 
 
 def results_dir(scenario: str, *parts: str) -> Path:
-    """results/<branch>/<scenario>/<*parts>, e.g. results_dir("lt", "ppo_opt")."""
+    """results/<space>/<scenario>/<*parts>, e.g. results_dir("lt", "ppo_opt")."""
     return RESULTS_ROOT.joinpath(scenario, *parts)
 
 

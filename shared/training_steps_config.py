@@ -16,6 +16,10 @@ PROBLEM_TOTAL_STEPS: dict[str, int] = {
     "ppo_opt": GLOBAL_TOTAL_STEPS,
     "dqn": 2_000_000,
     "ddqn": 2_000_000,
+    "mask_dqn": 2_000_000,
+    "mask_ddqn": 2_000_000,
+    "repair_dqn": 2_000_000,
+    "repair_ddqn": 2_000_000,
 }
 
 # Per-(scenario, algorithm) overrides — takes precedence over PROBLEM_TOTAL_STEPS.
@@ -58,10 +62,14 @@ PROBLEM_TOTAL_STEPS: dict[str, int] = {
 # cell in the six-algorithm comparison table is back to the same steps
 # count, and this time the convergence check was actually run against the
 # hyperparameters being kept.
+#
+# 2026-10-01 (v4.3.0): the four new DQN-family variants (mask_dqn, mask_ddqn,
+# repair_dqn, repair_ddqn) join the same uniform 5M budget.
 SCENARIO_TOTAL_STEPS: dict[tuple[str, str], int] = {
     (scenario, algo): 5_000_000
     for scenario in ("lt", "eq", "gt")
-    for algo in ("ppo_mask", "ppo_lagrangian", "ppo", "ppo_opt", "dqn", "ddqn")
+    for algo in ("ppo_mask", "ppo_lagrangian", "ppo", "ppo_opt", "dqn", "ddqn",
+                 "mask_dqn", "mask_ddqn", "repair_dqn", "repair_ddqn")
 }
 
 

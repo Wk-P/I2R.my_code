@@ -39,11 +39,13 @@ see v4.1.0_changelog.md for the full lt/eq/gt numbers):
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))  # project root for shared
 
 import random
 import gymnasium as gym
 import numpy as np
 from ilp.objects import ECU, SVC
+from shared.reward_config import directional_step
 
 
 class LagrangeEnv(gym.Env):
@@ -324,6 +326,10 @@ class LagrangeEnv(gym.Env):
                   f" | cap_viol={self.cap_violations} conflict_viol={self.conflict_violations}")
         else:
             print(f"  Done | AR={self.ar:.4f} | violations={self.episode_violations}/{self.M}")
+
+
+# REWARD_MODE=directional replaces the reward (shared/reward_config.py); no-op otherwise.
+LagrangeEnv.step = directional_step(LagrangeEnv.step)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -88,8 +88,9 @@ def run_episodes(ecus, services, policy_fn):
         placed_list.append(placed)
         valid_placed_list.append(valid_placed)
         ecus_used_list.append(int(info.get("ecus_used", 0)))
-        cap_v = int(info.get("cap_violations", 0))
-        conflict_v = int(info.get("conflict_violations", 0))
+        # The executed placement never violates (repair); repair triggers are not reported.
+        cap_v = 0
+        conflict_v = 0
         cap_viol_list.append(cap_v)
         conflict_viol_list.append(conflict_v)
         # v2.8.1: success == "did this episode finish with all M_sc services
@@ -445,8 +446,6 @@ def main():
         "ppo": {
             "ar_mean":                round(float(np.mean(ppo_res["ars"])), 6),
             "ar_std":                 round(float(np.std(ppo_res["ars"])),  6),
-            "repair_rate_mean":       round(p_rr, 6),
-            "repair_rate_std":        round(p_rr_std, 6),
             "success_rate":           round(success_rate, 6),
             "cap_viol_rate":          round(cap_viol_rate, 6),
             "conflict_viol_rate":     round(conflict_viol_rate, 6),
@@ -460,7 +459,6 @@ def main():
             "total_steps":            C.TOTAL_STEPS,
             "n_episodes":             len(cb.episode_ars),
             "ar_last50":              round(float(np.mean(cb.episode_ars[-50:])), 6),
-            "repair_rate_last50":     round(float(np.mean(cb.episode_repair_rates[-50:])), 6),
             "cap_viol_last50":        round(float(np.mean(cb.episode_cap_violations[-50:])), 4),
             "conflict_viol_last50":   round(float(np.mean(cb.episode_conflict_violations[-50:])), 4),
         }

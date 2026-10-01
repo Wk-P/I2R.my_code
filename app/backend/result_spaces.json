@@ -1,0 +1,9 @@
+{
+  "_doc": "Display metadata for each results/<space>/ directory (the directory name is the git branch the runs were trained on, except v4.2.0). Order = newest first.",
+  "final_paper_experiments": {"order": 1, "label": "阶段5 · 论文最终实验", "versions": "v4.1 – v4.3.x", "kind": "branch"},
+  "v4.2.0": {"order": 2, "label": "v4.2.0 · 论文最优模型合集", "versions": "v4.2.0（模型副本）", "kind": "collection"},
+  "add_states": {"order": 3, "label": "阶段4 · 状态设计与奖励探索", "versions": "v2.4 – v4.0", "kind": "branch"},
+  "paper-verfication": {"order": 4, "label": "阶段3 · 论文验证", "versions": "v1.0 – v2.3", "kind": "branch"},
+  "pretrain": {"order": 5, "label": "阶段2 · BC 预训练", "versions": "v0.3", "kind": "branch"},
+  "main": {"order": 6, "label": "阶段1 · 初始实现", "versions": "v0.x", "kind": "branch"}
+}

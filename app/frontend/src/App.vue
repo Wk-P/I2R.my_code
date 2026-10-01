@@ -1,124 +1,135 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import ProgressPanel from "./components/ProgressPanel.vue";
-import BatchProgressPanel from "./components/BatchProgressPanel.vue";
-import SystemPanel from "./components/SystemPanel.vue";
-import ExperimentTree from "./components/ExperimentTree.vue";
-import RunDetail from "./components/RunDetail.vue";
-import VersionList from "./components/VersionList.vue";
-import VersionDetail from "./components/VersionDetail.vue";
+import { store, startPolling, trainingProcs, setViewBranch } from "./store.js";
+import { getBatches } from "./api.js";
+import Overview from "./pages/Overview.vue";
+import Monitor from "./pages/Monitor.vue";
+import Batches from "./pages/Batches.vue";
+import BatchDetail from "./pages/BatchDetail.vue";
+import Results from "./pages/Results.vue";
+import RunDetail from "./pages/RunDetail.vue";
+import Versions from "./pages/Versions.vue";
+import VersionDetail from "./pages/VersionDetail.vue";
 import PaperDraft from "./components/PaperDraft.vue";
-import { getBranch, getBatches } from "./api.js";
 
-// #/run/<branch>/<scenario>/<algo>/<run> routes to a standalone run detail
-// page; anything else (including "" and "#/") shows the normal dashboard.
-// branch is part of the route (not just "whatever's checked out") because
-// ExperimentTree lets you browse any branch's tab without a real `git
-// checkout` — drilling into a run has to keep querying that same branch,
-// not silently fall back to the currently-checked-out one.
-const hash = ref(window.location.hash);
-function onHashChange() {
-  hash.value = window.location.hash;
+// Hash routes:
+//   #/                       总览
+//   #/monitor                训练监控
+//   #/batches[/<name>]       批次管理 / 批次详情
+//   #/results                实验结果
+//   #/run/<branch>/<scen>/<algo>/<run>   运行详情
+//   #/versions[/<tag>]       版本记录 / 版本详情
+//   #/paper                  论文草稿
+const hash = ref(window.location.hash || "#/");
+const menuOpen = ref(false);   // mobile navigation drawer
+const onHash = () => {
+  menuOpen.value = false;
+  const prev = hash.value.split("?")[0];
+  hash.value = window.location.hash || "#/";
+  if (hash.value.split("?")[0] !== prev) window.scrollTo(0, 0);
+};
+onMounted(() => { window.addEventListener("hashchange", onHash); startPolling(); });
+onUnmounted(() => window.removeEventListener("hashchange", onHash));
+
+const route = computed(() => {
+  const h = decodeURIComponent(hash.value.replace(/^#/, "").split("?")[0]) || "/";
+  let m;
+  if ((m = h.match(/^\/run\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/)))
+    return { page: "run", nav: "results", props: { branch: m[1], scenario: m[2], algo: m[3], run: m[4] } };
+  if ((m = h.match(/^\/batches\/(.+)$/))) return { page: "batch", nav: "batches", props: { name: m[1] } };
+  if ((m = h.match(/^\/versions\/(.+)$/))) return { page: "version", nav: "versions", props: { tag: m[1] } };
+  const simple = { "/monitor": "monitor", "/batches": "batches", "/results": "results", "/versions": "versions", "/paper": "paper" };
+  const page = simple[h] ?? "overview";
+  return { page, nav: page, props: {} };
+});
+
+const NAV = [
+  { key: "overview", href: "#/", icon: "▦", label: "总览" },
+  { key: "monitor", href: "#/monitor", icon: "◉", label: "训练监控" },
+  { key: "batches", href: "#/batches", icon: "☰", label: "批次管理" },
+  { key: "results", href: "#/results", icon: "▤", label: "实验结果" },
+  { key: "versions", href: "#/versions", icon: "⎇", label: "版本记录" },
+  { key: "paper", href: "#/paper", icon: "✎", label: "论文草稿" },
+];
+
+const running = computed(() => trainingProcs().length);
+const loadPct = computed(() => {
+  const s = store.system;
+  if (!s?.load_avg?.["1m"]) return null;
+  return Math.round((100 * s.load_avg["1m"]) / (s.cpu_count || 1));
+});
+const loadClass = computed(() =>
+  loadPct.value === null ? "" : loadPct.value > 90 ? "chip--bad" : loadPct.value > 60 ? "chip--warn" : "chip--ok");
+// Global search: a batch name opens that batch, anything else searches results.
+const search = ref("");
+async function doSearch() {
+  const q = search.value.trim();
+  if (!q) return;
+  const { batches } = await getBatches(true);
+  const hit = batches.find((b) => b.batch_name === q) ?? batches.find((b) => b.batch_name.includes(q));
+  window.location.hash = hit && hit.batch_name.includes(q) && !/^[0-9a-f]{8}$/.test(q)
+    ? `#/batches/${hit.batch_name}`
+    : `#/results?q=${encodeURIComponent(q)}`;
+  search.value = "";
 }
-onMounted(() => window.addEventListener("hashchange", onHashChange));
-onUnmounted(() => window.removeEventListener("hashchange", onHashChange));
 
-const runRoute = computed(() => {
-  const m = hash.value.match(/^#\/run\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/);
-  return m ? { branch: m[1], scenario: m[2], algo: m[3], run: m[4] } : null;
-});
-
-// #/versions is the doc-index page (every tag, one line each); #/versions/<tag>
-// drills into that tag's full doc — two separate pages/routes, not an inline
-// expand-in-place list, so each has its own linkable/bookmarkable URL.
-const versionTagRoute = computed(() => {
-  const m = hash.value.match(/^#\/versions\/(.+)$/);
-  return m ? m[1] : null;
-});
-const isVersionsIndexRoute = computed(() => hash.value === "#/versions");
-
-// #/paper is a single standalone page (no sub-routes) -- a paper-draft-style
-// writeup of the add_states branch's reward-engineering findings, kept
-// separate from the raw version/vX.Y.Z.md dump in #/versions so it can read
-// as a coherent narrative instead of one changelog entry per tag.
-const isPaperRoute = computed(() => hash.value === "#/paper");
-
-// Auto-detects the checked-out git branch and re-polls so a manual
-// `git checkout` elsewhere shows up here without reloading the page.
-const branch = ref({ current: null, branches: [], bc_supported: false });
-let branchTimer = null;
-async function loadBranch() {
-  branch.value = await getBranch();
-}
-onMounted(() => {
-  loadBranch();
-  branchTimer = setInterval(loadBranch, 10000);
-});
-onUnmounted(() => clearInterval(branchTimer));
-
-// Auto-discovers every ad-hoc parallel batch under scripts/logs/ (see
-// app/backend/main.py's /api/batches) instead of hardcoding batch names
-// here — a new batch script (like scripts/gt_full_5M_rerun) shows up on its
-// own without a frontend change. Re-polled on the same cadence as branch
-// detection since a new batch can start at any time.
-const batchNames = ref([]);
-let batchesTimer = null;
-async function loadBatches() {
-  const { batches } = await getBatches();
-  batchNames.value = batches.map((b) => b.batch_name);
-}
-onMounted(() => {
-  loadBatches();
-  batchesTimer = setInterval(loadBatches, 10000);
-});
-onUnmounted(() => clearInterval(batchesTimer));
+const updated = computed(() =>
+  store.updatedAt ? store.updatedAt.toTimeString().slice(0, 8) : "—");
 </script>
 
 <template>
-  <RunDetail v-if="runRoute" v-bind="runRoute" />
-
-  <VersionDetail v-else-if="versionTagRoute" :tag="versionTagRoute" />
-
-  <PaperDraft v-else-if="isPaperRoute" />
-
-  <template v-else-if="isVersionsIndexRoute">
-    <a class="back-btn" href="#/">&larr; Back to dashboard</a>
-    <h1>Version History</h1>
-    <div class="sub">Every git tag, newest first · summary from version/VERSION.md · click a row for the full version/vX.Y.Z.md doc when one exists</div>
-    <VersionList />
-  </template>
-
-  <template v-else>
-    <h1>
-      my-code Experiment Dashboard
-      <span v-if="branch.current" class="branch-badge" :title="'Other branches: ' + (branch.branches.filter(b => b !== branch.current).join(', ') || 'none')">
-        {{ branch.current }}
-      </span>
-    </h1>
-    <div class="sub">Read-only view, does not affect any training process · auto-scanned from results/&lt;branch&gt;/&lt;scenario&gt;/&lt;algo&gt;/ · badge above tracks the checked-out branch, tabs below can browse any branch</div>
-
-    <div class="intro-card">
-      <h3>What am I looking at?</h3>
-      <p>
-        This is a read-only dashboard over <code>results/&lt;branch&gt;/&lt;scenario&gt;/&lt;algo&gt;/</code> —
-        it never starts, stops, or otherwise touches any training run. "Live Training Progress" below shows
-        any <code>run_all*.py</code> process currently running on this machine; "Results Summary" shows the
-        latest saved result per scenario/algo, click any row to drill into its full history and training
-        curve. Everything is scoped to the branch badge above — switch branches on disk (<code>git checkout</code>)
-        and this page picks it up automatically within a few seconds, no reload needed.
-      </p>
-      <div class="intro-nav">
-        <a href="#/versions">📜 Version History — every git tag's changelog</a>
-        <a href="#/paper">📄 Paper Draft — narrative writeup of the add_states findings</a>
+  <div class="shell" :class="{ 'menu-open': menuOpen }">
+    <div class="drawer-mask" @click="menuOpen = false"></div>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-title">实验管理台</div>
+        <div class="brand-sub">ILP vs RL · 服务部署</div>
       </div>
+      <nav>
+        <a v-for="n in NAV" :key="n.key" :href="n.href" class="nav-item" :class="{ active: route.nav === n.key }">
+          <span class="nav-icon">{{ n.icon }}</span>{{ n.label }}
+          <span v-if="n.key === 'monitor' && running" class="nav-count">{{ running }}</span>
+        </a>
+      </nav>
+      <div class="sidebar-foot">只读面板，不影响任何训练进程</div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-btn" aria-label="菜单" @click="menuOpen = !menuOpen">☰</button>
+          <input v-model="search" class="global-search" placeholder="搜索 exp_id / 批次名 / 算法，回车" @keyup.enter="doSearch" />
+          <label class="branch-select" title="切换要查看的数据空间（results/ 下的目录，不会执行 git checkout）">
+            <span>数据空间</span>
+            <select :value="store.viewBranch" @change="setViewBranch($event.target.value)">
+              <option v-for="b in store.resultBranches" :key="b.name" :value="b.name">
+                {{ b.label }}（{{ b.versions }}）· {{ b.runs }} 次{{ b.name === store.branch ? " · 新训练写入此处" : "" }}
+              </option>
+            </select>
+          </label>
+          <span v-if="store.viewBranch && store.viewBranch !== store.branch" class="chip chip--warn-bg"
+            :title="`新训练写入 results/${store.branch}/`">新训练写入 <b>{{ store.branch }}</b></span>
+        </div>
+        <div class="topbar-right">
+          <a href="#/monitor" class="chip" :class="running ? 'chip--run' : ''">训练中 <b>{{ running }}</b></a>
+          <span class="chip" :class="loadClass" :title="store.system ? `load ${store.system.load_avg['1m']?.toFixed(1)} / ${store.system.cpu_count} 核` : ''">
+            CPU 负载 <b>{{ loadPct === null ? "—" : loadPct + "%" }}</b>
+          </span>
+          <span class="chip chip--plain">更新 {{ updated }}</span>
+        </div>
+      </header>
+
+      <main class="content">
+        <Overview v-if="route.page === 'overview'" />
+        <Monitor v-else-if="route.page === 'monitor'" />
+        <Batches v-else-if="route.page === 'batches'" />
+        <BatchDetail v-else-if="route.page === 'batch'" v-bind="route.props" />
+        <Results v-else-if="route.page === 'results'" />
+        <RunDetail v-else-if="route.page === 'run'" v-bind="route.props" />
+        <Versions v-else-if="route.page === 'versions'" />
+        <VersionDetail v-else-if="route.page === 'version'" v-bind="route.props" />
+        <PaperDraft v-else-if="route.page === 'paper'" />
+      </main>
     </div>
-
-    <h2>Live Training Progress</h2>
-    <SystemPanel />
-    <BatchProgressPanel v-for="name in batchNames" :key="name" :batch-name="name" />
-    <ProgressPanel />
-
-    <h2>Results Summary</h2>
-    <ExperimentTree :current-branch="branch.current" :branches="branch.branches" />
-  </template>
+  </div>
 </template>
