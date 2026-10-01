@@ -10,6 +10,7 @@ export const SCENARIO_LABEL = {
 
 export const ALGO_ORDER = [
   "ppo", "ppo_mask", "ppo_lagrangian", "ppo_opt",
+  "mask_ppo", "lagrange_ppo", "repair_ppo",
   "dqn", "mask_dqn", "lagrange_dqn", "repair_dqn",
   "ddqn", "mask_ddqn", "lagrange_ddqn", "repair_ddqn",
 ];
@@ -27,6 +28,9 @@ export const ALGO_LABEL = {
   repair_ddqn: "Repair-DDQN",
   lagrange_dqn: "Lagrange-DQN",
   lagrange_ddqn: "Lagrange-DDQN",
+  mask_ppo: "Mask-PPO",
+  lagrange_ppo: "Lagrange-PPO",
+  repair_ppo: "Repair-PPO",
 };
 
 export const algoLabel = (a) => ALGO_LABEL[a] ?? a;

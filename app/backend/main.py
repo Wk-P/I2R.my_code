@@ -145,7 +145,10 @@ def _algo_key(data: dict) -> str | None:
     # run_all_bc.py — see shared/bc_pretrain.py.
     reserved = ("scenario", "prototype_scenario", "scenario_count",
                 "train_count", "test_count", "N", "M", "ilp", "training",
-                "feasibility", "created_at", "bc", "exp_id")
+                "feasibility", "created_at", "bc", "exp_id",
+                # paper_rl (v4.3.1.3+) metadata
+                "version", "commit", "algo", "mechanism", "learner", "reward_mode",
+                "seed", "data")
     return next((k for k in data.keys() if k not in reserved), None)
 
 

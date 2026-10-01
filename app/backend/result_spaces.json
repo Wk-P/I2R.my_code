@@ -1,5 +1,6 @@
 {
   "_doc": "Display metadata for each results/<space>/ directory (the directory name is the git branch the runs were trained on, except v4.2.0). Order = newest first.",
+  "unified": {"order": 0, "label": "阶段6 · 统一实现", "versions": "v4.3.1.3 起", "kind": "branch"},
   "final_paper_experiments": {"order": 1, "label": "阶段5 · 论文最终实验", "versions": "v4.1 – v4.3.x", "kind": "branch"},
   "v4.2.0": {"order": 2, "label": "v4.2.0 · 论文最优模型合集", "versions": "v4.2.0（模型副本）", "kind": "collection"},
   "add_states": {"order": 3, "label": "阶段4 · 状态设计与奖励探索", "versions": "v2.4 – v4.0", "kind": "branch"},
