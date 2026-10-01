@@ -45,13 +45,13 @@ for t = 1..M:
     mask <- action_masks()
     a_t <- policy.sample(only ECUs with mask=True)      # sampling space is hard-restricted; infeasible actions get probability 0
     violated <- (forced-overflow fallback triggers only when mask is all False; picks the ECU with the most remaining capacity)
-    reward_t <- violation_penalty(-2.0, nonzero only on the forced-overflow fallback) + shaping (off by default)
+    reward_t <- 0 + shaping (off by default)        # violation_penalty(-2.0) still computed but not wired in (same as v4.0.0)
     place(a_t, svc[t])
 if t == M:
     reward <- §12.3-style graded terminal reward (lt scenario additionally has an AR-weight curriculum w, see §12.4)
 ```
 
-**v4.1.0 change**: `violation_penalty` used to be dead code (computed, never wired into the reward). It is now wired in. Because masking already structurally prevents almost all violations (campaign results: CapViol%=ConflictViol%=0.00% across lt/eq/gt), this fix only ever matters in the extremely rare forced-overflow-fallback case — **its effect on overall performance is negligible**, and pre/post numbers are essentially unchanged. `eq` has no forced-overflow-fallback branch at all, so this term doesn't apply there and that file was left untouched.
+**v4.1.0 change and revert**: `violation_penalty` was dead code in v4.0.0; v4.1.0 wired it in (lt/gt). On lt, success_rate dropped from 0.8355 to 0.6133 (violation rates 0 in both versions, AR essentially unchanged); gt was unaffected. **Reverted to v4.0.0 behaviour** (non-terminal reward = 0), and the paper reports v4.0.0's 5-seed results for all three scenarios. `eq` has no forced-overflow-fallback branch, so its file was never changed.
 
 **Key point**: constraint handling happens **before** sampling, making this the only one of the 6 that can, in principle, guarantee zero violations at both training and deployment time. The cost is needing to enumerate the feasible action set, and the one-step lookahead is itself a heuristic approximation.
 
@@ -207,7 +207,7 @@ class DDQN(DQN):
 | Algorithm | Action space restricted? | When constraints are handled | Zero-violation guarantee (train/deploy) | v4.1.0 dead-code fix |
 |---|---|---|---|---|
 | PPO (P3) | No, free sampling over the full space | Never — recorded only | None | N/A (no such penalty was ever designed) |
-| PPO+Mask (P4) | Yes, hard-masked before sampling (capacity+conflict+one-step lookahead) | Before sampling | Yes (structural, whenever the mask isn't all False) | Wired in; negligible effect (masking already prevented violations) |
+| PPO+Mask (P4) | Yes, hard-masked before sampling (capacity+conflict+one-step lookahead) | Before sampling | Yes (structural, whenever the mask isn't all False) | **Wired in, lt success_rate dropped; reverted to reward = 0** |
 | Lagrangian PPO (P5) | No, free sampling over the full space | Never — pure penalty in concept, but **the penalty was never wired into the reward** | None | **Wired in, measured a negative effect, ultimately reverted to reward=0** |
 | Repair PPO (P6/ppo_opt) | No, free sampling over the full space | After the fact: environment-internal best-fit reassignment | Conditional (episode ends in failure if repair is impossible) | **Wired in, consistent improvement across all 3 scenarios (clearest positive effect)** |
 | DQN | No, free sampling over the full space | Never — recorded + penalised | None | **Wired in, consistent improvement across all 3 scenarios** |

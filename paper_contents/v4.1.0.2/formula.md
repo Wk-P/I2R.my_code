@@ -136,7 +136,7 @@ $$
 | 算法 | 非终端步 $r_t$（最终，v4.1.0.2） | 是否曾修改后又回退 |
 |---|---|---|
 | `ppo`（P3） | $0$（设计如此，从未变过） | 否 |
-| `ppo_mask`（P4） | $\text{violation\_penalty} + \text{shaping}$（详见4.2节） | 否（v4.1.0接入后保留） |
+| `ppo_mask`（P4） | $0$（**回退到v4.0.0行为**，详见4.2节） | **是**——v4.1.0接入 violation_penalty 后 lt 场景 success_rate 0.836→0.613，最终撤回 |
 | `ppo_lagrangian`（P5） | $0$（**回退到v4.0.0行为**，详见4.3节） | **是**——先后试过4种非零逐步reward（v4.1.0/.1/.3/.4），lt场景全部明显更差，最终撤回 |
 | `ppo_opt`（P6） | $\text{repair\_penalty}$（详见4.4节） | 否（v4.1.0接入后保留） |
 | `dqn` | $\text{cap\_penalty} + \text{conflict\_penalty}$（详见4.5节） | 否（v4.1.0接入后保留） |
@@ -154,7 +154,7 @@ $$
 R_t = 0 \;\; (t < M), \qquad R_{\text{terminal}} \text{ 同第 3.2 节公式}
 $$
 
-**中文**：刻意设计的"什么都不管"下限对照组，唯一奖励信号就是终端的分级公式，不含任何针对约束的塑形。全程未改动，是6算法里唯一从v4.0.0到v4.1.0.2代码零变化的一个。
+**中文**：刻意设计的"什么都不管"下限对照组，唯一奖励信号就是终端的分级公式，不含任何针对约束的塑形。全程未改动，从v4.0.0到最终版代码零变化（`ppo_mask` 回退后也与v4.0.0一致）。
 
 ### 4.2 `ppo_mask`（P4，硬掩码 / hard action masking）—— **唯一真正使用动作掩码的算法**
 
@@ -164,11 +164,13 @@ $$
 \text{mask}[j] = \mathbf{1}\!\left[\text{remaining\_vms}[j] \ge n_t \;\wedge\; \neg\,\text{conflict}(j, t)\right]
 $$
 
-若 $\forall j: \text{mask}[j] = 0$（无合法 ECU，极罕见），触发强制溢出兜底（选剩余容量最大的 ECU）：
+若 $\forall j: \text{mask}[j] = 0$（无合法 ECU），触发强制溢出兜底（选剩余容量最大的 ECU）。非终端步奖励（最终版，与v4.0.0一致）：
 
 $$
-r_t = \text{violation\_penalty} + F(s,a,s'), \qquad \text{violation\_penalty} = -2.0 \cdot \mathbf{1}[\text{forced-overflow triggered}]
+r_t = 0 + F(s,a,s') \quad (t < M)
 $$
+
+代码中仍计算 $\text{violation\_penalty} = -2.0 \cdot \mathbf{1}[\text{forced-overflow triggered}]$，但不接入 reward。
 
 外加基于势函数的塑形项（默认关闭）：
 
@@ -176,7 +178,7 @@ $$
 F(s,a,s') = \gamma\,\Phi(s') - \Phi(s), \qquad \Phi(s) = -\beta \cdot \big(1 - \text{FFD\_feasibility}(s)\big), \qquad \beta = 0 \text{（默认，no-op）}
 $$
 
-**中文**：依据 Ng-Harada-Russell (1999) 势函数塑形理论，$\beta \ge 0$ 时该项不改变最优策略。`violation_penalty` 在 v4.1.0 前是死代码（算了没接线，非终端步恒为0），v4.1.0接入后保留至今——因为掩码已结构性防住了99%以上的情况，这项修复本身影响很小，符合预期。**例外**：`eq` 场景没有强制溢出兜底分支（代码结构上不存在这种情况），非终端步恒为 $0$，无需任何改动。
+**中文**：依据 Ng-Harada-Russell (1999) 势函数塑形理论，$\beta \ge 0$ 时该项不改变最优策略。`violation_penalty` 在 v4.0.0 中是死代码（算了没接线，非终端步恒为0）。v4.1.0 将其接入（lt/gt），但 lt 场景 success_rate 从 0.8355±0.0206（v4.0.0，5种子）降到 0.6133±0.0247（v4.1.0，3种子），AR 与违规率基本不变（违规率两版都为0）；gt 两版都为 1.0。因此**最终回退到 v4.0.0 行为**（非终端步 reward=0），论文数据三场景均引用 v4.0.0 的5种子结果。这与 `ppo_lagrangian` 的现象一致：lt 场景下非终端步一旦出现非零惩罚，success_rate 明显下降。**例外**：`eq` 场景没有强制溢出兜底分支，代码从v4.0.0起未改动。
 
 ### 4.3 `ppo_lagrangian`（P5，无动作掩码，纯惩罚约束 / no action masking, pure-penalty constraints）—— **最终回退到 v4.0.0 行为**
 
@@ -261,7 +263,7 @@ $$
 | 算法 | v4.0.0非终端reward | v4.1.0是否接入修复 | 最终（v4.1.0.2）状态 | 效果 |
 |---|---|---|---|---|
 | ppo (P3) | 0（设计如此） | 不适用 | 0（未改动） | 不适用，对照基线 |
-| ppo_mask (P4) | 0（死代码） | 是 | **保留** | 影响极小（掩码已结构性保证），无害 |
+| ppo_mask (P4) | 0（死代码） | 是→又撤回 | **回退为0** | lt场景 success_rate 0.836→0.613，eq/gt 不变；数据支撑回退 |
 | ppo_lagrangian (P5) | 0（死代码） | 是→又撤回 | **回退为0** | 先后接入四版公式，lt场景均明显变差，数据支撑回退 |
 | ppo_opt (P6) | 0（死代码） | 是 | **保留** | 三场景一致改善，lt尤其显著，缓解repair依赖问题 |
 | dqn | 0（死代码） | 是 | **保留** | 三场景一致改善 |
