@@ -104,7 +104,20 @@ Lagrange（PPO / DQN / DDQN 相同）：$\lambda_0=0.1$，预热 5000 个 episod
 
 12 个模型 × 3 场景 × {legacy, ar, directional} × 种子 1 × 1M 步 = 108 个任务，三个场景交错排队。报告：`reward_pilot_report.md`（本目录）。选型标准同 v4.3.1.2：带约束机制方法的 success_rate 不下降、AR/AR\* 不明显下降、4 种约束机制之间的排序稳定。
 
-（结果待补充）
+**已完成**（2026-10-01 23:42 – 10-02 00:54，108/108，无失败）。完整表格见 `reward_pilot_report.md`。
+
+结论（单种子、1M 步、p = 0.3，仅作选型依据）：
+
+1. **directional 不采用**。
+   - 带约束机制的 9 个模型上，directional 的 AR/AR\* 普遍最低，例如 GT Maskable-DQN 0.951（ar）→ 0.904，EQ Maskable-DDQN 0.938 → 0.889，GT Repair-DDQN 0.942 → 0.885。离散项 $+1/0/-\lambda_d$ 鼓励"多次小幅上升"，与最终 AR 不一致。
+   - 无约束 DQN/DDQN 在 directional 下 success_rate 崩溃（LT 0.058 / 0.030，GT 0.107 / 0.325），因为违规步只是 $\Delta AR=0$、几乎没有代价。
+2. **ar 与 legacy 接近，ar 略好，建议采用 ar**。
+   - LT 上 PPO 的四种约束处理 success_rate 都提高 1.5～3 个百分点（无约束 0.970→0.985，Lagrangian 0.968→0.983，Maskable 0.958→0.973，Repair 0.912→0.940），AR/AR\* 基本不变。
+   - ar 保证"任何成功 > 任何失败"，legacy 不保证。
+   - 单种子波动：GT Lagrangian-DDQN 在 ar 下 success_rate 0.767（legacy 0.985），需多种子确认。
+3. **约束处理机制之间的排序在 legacy / ar 下稳定**：PPO 在三个场景中 AR/AR\* 都是 Maskable 最高、Repair 最低；DQN/DDQN 上 Maskable 与 Repair 的 success_rate 稳定在 0.90～1.00，Lagrangian 次之，无约束最差。
+4. **约束偏松**：无约束 PPO 的 success_rate 在 LT / EQ / GT 分别为 0.97～0.985 / 0.998～1.0 / 0.995，与有约束方法几乎相同（原因：奖励失败分支惩罚违规 + 观测含可行标志，PPO 学会了避开违规）。无约束 DQN/DDQN 学不会（0.19～0.81）。→ v4.3.1.4 提高冲突密度。
+5. LT 上 Maskable 在 legacy / ar 下出现 2%～4% 的违规回合，来自死局时放开掩码的设计 → v4.3.1.4 改为死局即失败并终止。
 
 ## 下一步（已定，待本轮试跑结束后执行）
 
