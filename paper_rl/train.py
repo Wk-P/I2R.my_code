@@ -216,8 +216,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scen", required=True, choices=["lt", "eq", "gt"])
     ap.add_argument("--algo", required=True, choices=ALGOS)
-    ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "legacy"),
-                    choices=["legacy", "ar", "directional"])
+    ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "objective"),
+                    choices=["objective", "legacy", "ar", "directional"])
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()

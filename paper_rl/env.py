@@ -27,13 +27,24 @@ Mechanisms:
   repair    an infeasible action is replaced by the best-fit feasible ECU
             (argmax demand / capacity); if none exists the episode ends
             (dead end). Executed placements are therefore always feasible.
+  (mask)    since v4.3.1.4 a dead end ends the episode before the next
+            placement, so a masked agent never executes an infeasible one.
 
 AR (average resource utilization) is computed over feasibly executed
 placements only:  AR = sum_{legal (i, j)} n_i / e_j / |ECUs hosting a legal
 placement|. On a violation-free episode this is the usual AR; a violating
 placement adds nothing.
 
+Dead end (v4.3.1.4): mask -- the next service has no feasible ECU; repair --
+no ECU to repair to. In every reward mode the episode ends at once as a
+failure (no infeasible placement is executed); the penalty is
+-M(1 - valid/M), or -C under `directional`.
+
 Rewards (lagrange additionally gets -lambda * c_t every step):
+  objective    (v4.3.1.4 default) the objective only: r_t = 0 for t < M-1,
+               terminal M * AR_exec, where AR_exec counts every executed
+               placement, feasible or not -- no penalty for violations;
+               the mechanism alone handles the constraints. Dead end: as above.
   legacy       r_t = 0 for t < M-1; terminal  M(2AR-1) if all M services are
                placed feasibly, else -M(1 - valid/M)
   ar           same, success branch M * AR
@@ -80,7 +91,7 @@ class PlacementEnv(gym.Env):
                  reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None):
         super().__init__()
         assert mechanism in MECHANISMS, mechanism
-        assert reward_mode in ("legacy", "ar", "directional"), reward_mode
+        assert reward_mode in ("objective", "legacy", "ar", "directional"), reward_mode
         self.instances = instances
         self.mechanism = mechanism
         self.reward_mode = reward_mode
@@ -121,6 +132,8 @@ class PlacementEnv(gym.Env):
         self.t = 0
         self.legal_ru = 0.0
         self.legal_ecus: set[int] = set()
+        self.exec_ru = 0.0                                  # every executed placement (objective)
+        self.exec_ecus: set[int] = set()
         self.valid_placed = 0
         self.cap_violations = 0
         self.conflict_violations = 0
@@ -141,6 +154,11 @@ class PlacementEnv(gym.Env):
             return np.ones(self.N, dtype=bool)
         f = self._feasible(self.t)
         return f if f.any() else np.ones(self.N, dtype=bool)
+
+    @property
+    def ar_exec(self) -> float:
+        """AR over every executed placement, infeasible ones included (objective reward)."""
+        return self.exec_ru / len(self.exec_ecus) if self.exec_ecus else 0.0
 
     @property
     def ar(self) -> float:
@@ -220,6 +238,8 @@ class PlacementEnv(gym.Env):
         self.conflict_violations += conf_v
         self.remaining[a] -= self.req[i]
         self.hosted[a].add(i)
+        self.exec_ru += float(self.req[i] / self.cap[a])
+        self.exec_ecus.add(a)
         if not (cap_v or conf_v):
             self.valid_placed += 1
             self.legal_ru += float(self.req[i] / self.cap[a])
@@ -229,14 +249,18 @@ class PlacementEnv(gym.Env):
         success = done and self.valid_placed == self.M
         c_t = int(cap_v) + int(conf_v)
 
-        if directional:
+        dead = (not done and self.mechanism in ("mask", "repair")
+                and not self._feasible(self.t).any())
+        if dead:                                      # failure: stop before an infeasible placement
+            self.dead_end = True
+            done = True
+            r = -C.DIR_C * self.M if directional else self._fail_reward()
+        elif directional:
             r = objective_reward(self.ar - ar0)
             if success:
                 r += C.DIR_B * self.M
-            elif (not done and self.mechanism in ("mask", "repair")
-                  and not self._feasible(self.t).any()):
-                self.dead_end = True
-                r, done = -C.DIR_C * self.M, True
+        elif self.reward_mode == "objective":
+            r = self.M * self.ar_exec if done else 0.0
         else:
             r = (self._success_reward() if success else self._fail_reward()) if done else 0.0
         if self.mechanism == "lagrange":

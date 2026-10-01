@@ -6,6 +6,7 @@ previous per-scenario configs agreed on.
 """
 
 # ── data / split ──────────────────────────────────────────────────────────
+DATA_VERSION = "v4.3.1.4"             # data/<version>/{lt,eq,gt}.yaml; v4.3.1.3: p=0.3, v4.3.1.4: p=0.6
 TRAIN_FRACTION = 0.8                  # of the 2000 instances; split seeded by the run seed
 
 # ── PPO family (PPO, Mask-PPO, Lagrange-PPO, Repair-PPO) ───────────────────

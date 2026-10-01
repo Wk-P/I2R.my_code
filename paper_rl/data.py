@@ -15,7 +15,8 @@ Every scenario uses the same distributions; only N and M differ:
 Instances that the ILP cannot solve are redrawn. The ILP optimum (AR*) is
 stored with every instance.
 
-    python -m paper_rl.data --p 0.3 [--n 2000]   # writes data/v4.3.1.3/<scen>.yaml
+    python -m paper_rl.data --p 0.6 --version v4.3.1.4 [--n 2000]   # writes data/<version>/<scen>.yaml
+(v4.3.1.3 used p = 0.3, v4.3.1.4 uses p = 0.6; paper_rl/config.DATA_VERSION selects the set.)
 """
 from __future__ import annotations
 
@@ -33,7 +34,12 @@ SCENARIOS = {"lt": (10, 15), "eq": (10, 10), "gt": (15, 10)}   # name -> (N, M)
 K_SETS = 10
 CAP_CHOICES = list(range(50, 200, 5))
 REQ_CHOICES = list(range(10, 100, 5))
-DATA_DIR = ROOT / "data" / "v4.3.1.3"
+DATA_ROOT = ROOT / "data"
+
+
+def data_dir(version: str | None = None) -> Path:
+    from paper_rl import config as C
+    return DATA_ROOT / (version or C.DATA_VERSION)
 
 
 def q_for(p: float, k: int = K_SETS) -> float:
@@ -85,9 +91,9 @@ def generate(scen: str, p: float, n_inst: int, seed: int = 42, workers: int = 32
             "seed": seed, "instances": inst}
 
 
-def load(scen: str) -> dict:
+def load(scen: str, version: str | None = None) -> dict:
     import yaml
-    return yaml.safe_load(open(DATA_DIR / f"{scen}.yaml"))
+    return yaml.safe_load(open(data_dir(version) / f"{scen}.yaml"))
 
 
 if __name__ == "__main__":
@@ -95,10 +101,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--p", type=float, required=True)
     ap.add_argument("--n", type=int, default=2000)
+    ap.add_argument("--version", required=True)
     a = ap.parse_args()
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out = data_dir(a.version)
+    out.mkdir(parents=True, exist_ok=True)
     for scen in SCENARIOS:
         d = generate(scen, a.p, a.n)
-        yaml.safe_dump(d, open(DATA_DIR / f"{scen}.yaml", "w"), sort_keys=False)
+        yaml.safe_dump(d, open(out / f"{scen}.yaml", "w"), sort_keys=False)
         ars = [x["ar_star"] for x in d["instances"]]
         print(f"{scen}: {len(ars)} instances, mean AR* {sum(ars)/len(ars):.4f}")
