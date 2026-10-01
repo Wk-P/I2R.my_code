@@ -568,6 +568,7 @@ def _ps_snapshot() -> list[dict]:
     return [
         p for p in _ps_all()
         if re.search(r"(?:^|[\s/])\w+/run_all(_bc)?\.py", p["cmd"]) or "self_imitation_finetune_v2.py" in p["cmd"]
+        or "paper_rl.train" in p["cmd"]
     ]
 
 
@@ -682,6 +683,11 @@ def _match_scenario_algo(cmd: str, pid: int | None = None):
         only contains "<algo>/run_all.py" — the scenario is recovered from
         /proc/<pid>/cwd instead.
     """
+    # unified trainer (v4.3.1.3+): python -m paper_rl.train --scen <s> --algo <a>
+    if "paper_rl.train" in cmd:
+        ms, ma = re.search(r"--scen\s+(\w+)", cmd), re.search(r"--algo\s+(\w+)", cmd)
+        return (ms.group(1) if ms else None, ma.group(1) if ma else None)
+
     m = re.search(r"scenarios/(\w+)/(\w+)/run_all(_bc)?\.py", cmd)
     if m:
         scenario, algo, is_bc = m.group(1), m.group(2), m.group(3)

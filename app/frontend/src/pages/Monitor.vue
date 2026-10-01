@@ -56,7 +56,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
         </tr>
       </tbody>
     </table>
-    <div class="note">训练进度来自各任务日志中最近一次 [train] 记录（每 20 万步写一次），刚启动或处于 ILP / 评估阶段时显示 0%。</div>
+    <div class="note">训练进度来自各任务日志中最近一次 [train] 记录（旧实现每 20 万步、paper_rl 每 10 万步写一次），刚启动或处于 ILP / 评估阶段时显示 0%。</div>
   </section>
 
   <section class="panel">

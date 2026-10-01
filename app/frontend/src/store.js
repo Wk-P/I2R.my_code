@@ -39,9 +39,9 @@ export function startPolling() {
   setInterval(loadSystem, 5000);
 }
 
-// Live training processes = run_all.py entries in the system snapshot.
+// Live training processes: scenarios/*/run_all.py (old) or python -m paper_rl.train (v4.3.1.3+).
 export const trainingProcs = () =>
-  (store.system?.processes || []).filter((p) => /run_all/.test(p.cmd ?? p.label ?? ""));
+  (store.system?.processes || []).filter((p) => p.scenario && p.algo);
 
 export function setViewBranch(b) {
   if (!b || b === store.viewBranch) return;
