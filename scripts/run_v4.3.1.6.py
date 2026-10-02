@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""v4.3.1.4 pilot on the unified implementation (paper_rl/), p = 0.6 data.
+"""v4.3.1.6 run: 12 models x 3 scenarios x reward `legacy` x seed 1, 5M steps = 36 jobs.
 
-12 models x 3 scenarios x reward `objective` x seed 1, 1M steps = 36 jobs,
-each `python -m paper_rl.train`. objective = M * AR (all executed placements)
-for every model, constraints handled only by the mechanism; dead end =
-failure + penalty + termination. (Derived from run_v4.3.1.6_run.py.) Results: results/unified/<scen>/<algo>/<exp_id>/;
-manifest scripts/logs/v4.3.1.6_run/manifest.json; report
-paper_contents/v4.3.1/v4.3.1.6/report.md.
+Settings: p = 0.6 data; legacy reward for all 12 models (success M(2AR-1),
+otherwise -M(1-valid/M)); Lagrangian cost -lambda * total violations at the
+end, lambda_max 50; Maskable / Repair dead end = failure; PPO clip 0.1.
+Results: results/unified/<scen>/<algo>/<exp_id>/; manifest
+scripts/logs/v4.3.1.6_run/manifest.json; report paper_contents/v4.3.1/v4.3.1.6/report.md.
 
-Jobs are interleaved across scenarios so partial results cover all three.
-
-    nohup .venv/bin/python scripts/run_v4.3.1.6_run.py > scripts/logs/run_v4.3.1.6_run_driver.log 2>&1 &
-    # after stopping the driver (training processes keep running):
-    nohup .venv/bin/python scripts/run_v4.3.1.6_run.py --resume >> scripts/logs/run_v4.3.1.6_run_driver.log 2>&1 &
+    nohup .venv/bin/python scripts/run_v4.3.1.6.py > scripts/logs/run_v4.3.1.6_driver.log 2>&1 &
+    nohup .venv/bin/python scripts/run_v4.3.1.6.py --resume >> scripts/logs/run_v4.3.1.6_driver.log 2>&1 &
 """
 import csv
 import json
