@@ -42,11 +42,12 @@ failure (no infeasible placement is executed); the penalty is
 -M(1 - valid/M), or -C under `directional`.
 
 Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episode):
-  objective    (v4.3.1.4 default) the objective only: r_t = 0 for t < M-1,
+  objective    (default in v4.3.1.4-v4.3.1.5) the objective only: r_t = 0 for t < M-1,
                terminal M * AR_exec, where AR_exec counts every executed
                placement, feasible or not -- no penalty for violations;
                the mechanism alone handles the constraints. Dead end: as above.
-  legacy       r_t = 0 for t < M-1; terminal  M(2AR-1) if all M services are
+  legacy       (default since v4.3.1.6, all 12 models)
+               r_t = 0 for t < M-1; terminal  M(2AR-1) if all M services are
                placed feasibly, else -M(1 - valid/M)
   ar           same, success branch M * AR
   directional  r_t = obj(dAR_t) every step, +B on feasible completion,

@@ -17,7 +17,7 @@ PPO_BATCH_SIZE = 256
 PPO_N_EPOCHS = 10
 PPO_GAMMA = 0.99
 PPO_GAE_LAMBDA = 0.95
-PPO_CLIP_RANGE = 0.2
+PPO_CLIP_RANGE = 0.1                  # v4.3.1.6 (was 0.2): probability ratio clipped to [0.9, 1.1]
 PPO_ENT_COEF = 0.005                  # constant (no annealing)
 PPO_NET_ARCH = dict(pi=[256, 256], vf=[256, 256])
 PPO_TORCH_THREADS = 6
