@@ -39,13 +39,15 @@ DQN_NET_ARCH = [128, 128]
 DQN_TORCH_THREADS = 2
 
 # ── Lagrangian dual ascent (Lagrange-PPO / -DQN / -DDQN) ───────────────────
+# Cost charged at the end of the episode: -lambda * (capacity + privacy violations).
 # Every LAMBDA_UPDATE_WINDOW episodes after LAMBDA_WARMUP_EPISODES:
 #   lambda <- clip(lambda + LAMBDA_LR * (mean violation rate - LAMBDA_TARGET), 0, LAMBDA_MAX)
 # violation rate of an episode = (capacity + privacy violations) / M.
 LAMBDA_INIT = 0.1
 LAMBDA_LR = 0.005
 LAMBDA_TARGET = 0.0
-LAMBDA_MAX = 5.0
+LAMBDA_MAX = 50.0                     # v4.3.1.5 (was 5.0): violating "stack everything on one ECU"
+                                      # earns M*AR_exec ~ 175 in LT, so lambda must be able to exceed ~6
 LAMBDA_UPDATE_WINDOW = 20
 LAMBDA_WARMUP_EPISODES = 5000
 

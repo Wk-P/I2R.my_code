@@ -20,10 +20,11 @@ Mechanisms:
   mask      action_masks() = ECUs satisfying both constraints. If no ECU is
             feasible the mask is all-True and the executed placement is a
             violation (under `directional` the episode ends first, see below).
-  lagrange  action executed as chosen; each step is charged -lambda * c_t,
-            c_t = number of constraints the placement violates; lambda is a
-            dual variable updated by the trainer and visible in the
-            observation.
+  lagrange  action executed as chosen; the episode's constraint cost is
+            charged once at the end (v4.3.1.5): -lambda * sum_t c_t, c_t =
+            number of constraints placement t violates (v4.3.1.3-v4.3.1.4:
+            -lambda * c_t at every step). lambda is a dual variable updated by
+            the trainer and visible in the observation.
   repair    an infeasible action is replaced by the best-fit feasible ECU
             (argmax demand / capacity); if none exists the episode ends
             (dead end). Executed placements are therefore always feasible.
@@ -40,7 +41,7 @@ no ECU to repair to. In every reward mode the episode ends at once as a
 failure (no infeasible placement is executed); the penalty is
 -M(1 - valid/M), or -C under `directional`.
 
-Rewards (lagrange additionally gets -lambda * c_t every step):
+Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episode):
   objective    (v4.3.1.4 default) the objective only: r_t = 0 for t < M-1,
                terminal M * AR_exec, where AR_exec counts every executed
                placement, feasible or not -- no penalty for violations;
@@ -263,6 +264,6 @@ class PlacementEnv(gym.Env):
             r = self.M * self.ar_exec if done else 0.0
         else:
             r = (self._success_reward() if success else self._fail_reward()) if done else 0.0
-        if self.mechanism == "lagrange":
-            r -= self.lam * c_t
+        if self.mechanism == "lagrange" and done:          # terminal constraint cost (v4.3.1.5)
+            r -= self.lam * (self.cap_violations + self.conflict_violations)
         return self._obs(), float(r), done, False, self._info(cap_v, conf_v)
