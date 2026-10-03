@@ -8,7 +8,7 @@ $PAPER_VERSION still overrides it for ad-hoc/historical runs (e.g. replaying
 an old ablation tag) without editing this file.
 """
 
-CURRENT_VERSION = "4.3.1.6"
+CURRENT_VERSION = "4.3.1.7"
 
 # results/<RESULTS_SPACE>/ is where every run writes (shared/paths.py). Until
 # v4.3.1 this was the checked-out git branch name; since the old stage

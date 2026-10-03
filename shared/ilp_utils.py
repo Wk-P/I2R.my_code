@@ -69,8 +69,67 @@ def load_scenario(yaml_config: Path, scenario_idx: int, scenarios: list):
 
 # ── ILP solver ────────────────────────────────────────────────────────────────
 
+def solve_ilp_max_ar(caps, reqs, conflict_sets=None, tol: float = 1e-6, max_iter: int = 30) -> dict:
+    """Maximise AR = (sum_ij x_ij n_i / e_j) / (number of active ECUs) exactly,
+    via Dinkelbach's method (v4.3.1.7). AR is a ratio, so each iteration
+    solves the parametric ILP
+
+        max  sum_ij x_ij n_i/e_j - lam * sum_j y_j
+        s.t. sum_j x_ij = 1;  sum_i x_ij n_i <= e_j y_j;  x_ij <= y_j;
+             sum_{i in C_k} x_ij <= 1 (every conflict set k, ECU j)
+
+    and sets lam <- F/G of its solution until |dlam| < tol. Returns
+    {status, avg_utilization (= AR*), total_utilization, active_ecus,
+    iterations, allocation}. Same constraints as solve_ilp; only the
+    objective differs (solve_ilp maximises the total utilisation instead).
+    """
+    N, M = len(caps), len(reqs)
+    lam, best = 0.0, None
+    for it in range(1, max_iter + 1):
+        prob = pulp.LpProblem("max_AR", pulp.LpMaximize)
+        x = pulp.LpVariable.dicts("x", (range(M), range(N)), cat="Binary")
+        y = pulp.LpVariable.dicts("y", range(N), cat="Binary")
+        prob += (pulp.lpSum(x[i][j] * reqs[i] / caps[j] for i in range(M) for j in range(N))
+                 - lam * pulp.lpSum(y[j] for j in range(N)))
+        for i in range(M):
+            prob += pulp.lpSum(x[i][j] for j in range(N)) == 1
+        for j in range(N):
+            prob += pulp.lpSum(x[i][j] * reqs[i] for i in range(M)) <= caps[j] * y[j]
+            for i in range(M):
+                prob += x[i][j] <= y[j]
+        for cs in conflict_sets or []:
+            valid = [i for i in cs if i < M]
+            if len(valid) >= 2:
+                for j in range(N):
+                    prob += pulp.lpSum(x[i][j] for i in valid) <= 1
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        status = pulp.LpStatus[prob.status]
+        if status != "Optimal":
+            return {"status": status, "avg_utilization": 0.0, "total_utilization": 0.0,
+                    "active_ecus": 0, "iterations": it, "allocation": {}}
+        alloc = {}
+        for j in range(N):
+            svcs = [i for i in range(M) if (pulp.value(x[i][j]) or 0) > 0.5]
+            if svcs:
+                alloc[j] = svcs
+        total = sum(reqs[i] / caps[j] for j, svcs in alloc.items() for i in svcs)
+        new_lam = total / len(alloc)
+        best = {"status": status, "avg_utilization": new_lam, "total_utilization": total,
+                "active_ecus": len(alloc), "iterations": it, "allocation": alloc}
+        if abs(new_lam - lam) < tol:
+            break
+        lam = new_lam
+    return best
+
+
 def solve_ilp(ecus, services, conflict_sets=None) -> dict:
     """Solve the assignment ILP via PuLP; return avg_utilization and allocation.
+
+    NOTE (v4.3.1.7): this maximises the TOTAL utilisation sum_ij x_ij n_i/e_j
+    and only then divides by the number of active ECUs, so its
+    avg_utilization is NOT the maximum AR (it is 0.07-0.12 lower on the
+    v4.3.1.4 data). Use solve_ilp_max_ar() for the AR optimum. Kept for
+    feasibility checks and for reproducing pre-v4.3.1.7 numbers.
 
     N and M may be in any relation; multiple services may share one ECU
     (no uniqueness constraint). conflict_sets: list of lists of service
