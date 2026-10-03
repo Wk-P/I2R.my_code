@@ -67,3 +67,12 @@ AR/AR\*（成功 episode）：PPO 四种机制 LT 0.884～0.895、EQ 0.935～0.9
 
 - 单种子；正式结论需 3 种子。
 - AR/AR\* 只在成功 episode 上计算，不同方法的成功实例集合不同。
+
+
+## 正式实验（3 种子）
+
+- 12 个模型 × 3 场景 × 种子 {1, 2, 3} × 5M 步 = 108 次运行。种子 1 复用上面的单种子运行（代码与设定完全相同，commit `ede2187`），本批次补跑种子 2、3，共 72 个任务。代码未改，仍属 v4.3.1.6。
+- 脚本：`scripts/run_v4.3.1.6_campaign.py`；manifest：`scripts/logs/v4.3.1.6_campaign/manifest.json`（含种子 1 的 exp_id）；报告：`campaign_report.md`（本目录，3 种子均值 ± 样本标准差，新增"AR/AR\*×success"综合指标，失败计 0）。
+- DQN / DDQN 的 Lagrangian 保持现有设定（未单独调整），其表现差作为结果如实报告。
+
+（结果待补充）
