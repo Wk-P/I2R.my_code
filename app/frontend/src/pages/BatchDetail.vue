@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { getBatch } from "../api.js";
-import { SCENARIOS, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol } from "../labels.js";
+import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol } from "../labels.js";
 import { pct, fmt, pm, shortTime, secToHuman, steps } from "../format.js";
 
 const props = defineProps({ name: { type: String, required: true } });
@@ -40,6 +40,23 @@ const firstOfLearner = (i) =>
   firstOfScen(i) || learnerOf(rows.value[i - 1].algo) !== learnerOf(rows.value[i].algo);
 const firstOfScen = (i) => i === 0 || rows.value[i - 1].scenario !== rows.value[i].scenario;
 
+// evaluation batches (kind === "eval"): best-of-K / single deterministic re-evaluation
+const isEval = computed(() => data.value?.kind === "eval");
+const evalRows = computed(() => {
+  const rs = (data.value?.rows || []).filter((r) => scen.value === "all" || r.scenario === scen.value);
+  const idx = (a) => (a === "greedy" ? -1 : algoIndex(a));
+  return [...rs].sort((a, b) => SCENARIOS.indexOf(a.scenario) - SCENARIOS.indexOf(b.scenario) || idx(a.algo) - idx(b.algo));
+});
+const evalFirstOfScen = (i) => i === 0 || evalRows.value[i - 1].scenario !== evalRows.value[i].scenario;
+const evalLabel = (a) => (a === "greedy" ? "贪心" : algoLabel(a));
+const ks = computed(() => (data.value?.ks || [1]).map(String));
+const ilpOf = (s) => data.value?.ilp?.[s];
+const m = (r, k, key) => r.metrics?.[k]?.[key] || [null, null];
+const speedup = (r, k) => {
+  const ilp = ilpOf(r.scenario)?.ms_mean;
+  return ilp == null || r.ms[0] == null ? null : ilp / (Number(k) * r.ms[0]);
+};
+
 const gap = (r) =>
   r.ilp_ar_mean == null || r.test_ar_mean_mean == null ? null : r.ilp_ar_mean - r.test_ar_mean_mean;
 
@@ -58,9 +75,10 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
     <div class="page-head page-head--row">
       <div>
         <h1>{{ name }} <span class="badge badge--lg" :class="statusClass(data.status)">{{ statusLabel(data.status) }}</span></h1>
-        <div class="page-sub">版本 {{ data.version ?? "—" }} · 分支 {{ data.branch }} · {{ steps(data.steps) }} 步 · 开始于 {{ shortTime(data.started_at) }}</div>
+        <div class="page-sub" v-if="!isEval">版本 {{ data.version ?? "—" }} · 分支 {{ data.branch }} · {{ steps(data.steps) }} 步 · 开始于 {{ shortTime(data.started_at) }}</div>
+        <div class="page-sub" v-else>评估批次（不训练）· 版本 {{ data.version ?? "—" }} · {{ data.workers ?? "—" }} 个并行进程 · 开始于 {{ shortTime(data.started_at) }}</div>
       </div>
-      <a class="btn" :href="resultsLink">在实验结果中对比 →</a>
+      <a v-if="!isEval" class="btn" :href="resultsLink">在实验结果中对比 →</a>
     </div>
 
     <div class="kpis">
@@ -79,7 +97,67 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       </button>
     </div>
 
-    <section class="panel">
+    <section v-if="isEval" class="panel">
+      <p v-if="data.description" class="eval-desc">{{ data.description }}</p>
+      <p class="dim small">报告：<code>{{ data.report ?? "—" }}</code>（全部完成后生成）。指标在整个评估结束、写出原始结果后显示；运行中只显示各任务的状态与单次耗时。</p>
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>场景</th><th>方法</th><th>种子</th>
+            <th class="num" title="单个 episode（一个测试实例、一个解）的平均耗时，单线程">单次耗时 ms</th>
+            <th class="num k-first" title="每个测试实例取 K 个解中最好的一个；K = 1 即确定性输出">K</th>
+            <th class="num" title="K 个解中至少有一个成功的测试实例比例">成功率</th>
+            <th class="num" title="模型 AR ÷ 同一实例的最优 AR（ILP），只在成功实例上平均">相对最优 AR（成功回合）</th>
+            <th class="num" title="失败实例记为 0 再平均">相对最优 AR（失败计 0）</th>
+            <th class="num" title="K × 单次耗时（逐个运行；合并成 batch 时更低）">耗时 ms/实例</th>
+            <th class="num" title="ILP 平均耗时 ÷ 本方法耗时">比 ILP 快</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-for="(r, i) in evalRows" :key="r.scenario + r.algo">
+            <tr v-if="evalFirstOfScen(i) && ilpOf(r.scenario)" class="row-sep ilp-row">
+              <td><span class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
+              <td><b>ILP（最优）</b></td>
+              <td class="dim small" colspan="3">{{ ilpOf(r.scenario).source }}</td>
+              <td class="num">100%</td>
+              <td class="num">100%（最优 AR {{ fmt(ilpOf(r.scenario).ar_mean) }}）</td>
+              <td class="num">—</td>
+              <td class="num">{{ fmt(ilpOf(r.scenario).ms_mean, 1) }}<span class="dim small">（中位数 {{ fmt(ilpOf(r.scenario).ms_median, 1) }}）</span></td>
+              <td class="num">1×</td>
+            </tr>
+            <tr v-for="(k, j) in ks" :key="r.scenario + r.algo + k"
+                :class="{ 'row-sep': j === 0 && evalFirstOfScen(i) && !ilpOf(r.scenario), 'method-sep': j === 0 }">
+              <td><span v-if="j === 0 && evalFirstOfScen(i) && !ilpOf(r.scenario)" class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
+              <td><b v-if="j === 0">{{ evalLabel(r.algo) }}</b></td>
+              <td>
+                <template v-if="j === 0">
+                  <span class="seeds">
+                    <span v-for="s in r.seeds" :key="s.seed" class="seed" :class="`seed--${s.status}`" :title="`种子 ${s.seed} · ${statusLabel(s.status)}`">{{ s.seed }}</span>
+                  </span>
+                  <span class="dim small">{{ r.n_done }}/{{ r.n_total }}</span>
+                </template>
+              </td>
+              <td class="num"><template v-if="j === 0">{{ pm(r.ms[0], r.ms[1], (v) => fmt(v, 1)) }}</template></td>
+              <td class="num k-first">{{ k }}</td>
+              <td class="num">{{ pm(...m(r, k, "success"), pct) }}</td>
+              <td class="num">{{ pm(...m(r, k, "ratio_success"), pct) }}</td>
+              <td class="num">{{ pm(...m(r, k, "ratio_all"), pct) }}</td>
+              <td class="num">{{ r.ms[0] == null ? "—" : fmt(Number(k) * r.ms[0], 1) }}</td>
+              <td class="num" :class="{ warn: speedup(r, k) != null && speedup(r, k) < 1 }">{{ speedup(r, k) == null ? "—" : fmt(speedup(r, k), 1) + "×" }}</td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div class="legend">
+        <span><i class="seed seed--done"></i>已完成</span>
+        <span><i class="seed seed--running"></i>运行中</span>
+        <span><i class="seed seed--queued"></i>排队中</span>
+        <span v-if="data.skipped"><i class="seed seed--skipped"></i>未运行（评估已结束）</span>
+        <span>K 个解取最好：先选成功的，再选 AR 最高的；最优 AR 只用于计分。K = 1 即确定性输出（贪心为纯贪心规则）。指标为各种子的均值 ± 标准差。"比 ILP 快"小于 1× 时标红，表示比 ILP 还慢。ILP 耗时来自 v4.3.1.7，与本批次不是同一时间、同一负载下测得。</span>
+      </div>
+    </section>
+
+    <section v-else class="panel">
       <table class="grid">
         <thead>
           <tr>
@@ -123,3 +201,10 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
     </section>
   </template>
 </template>
+
+<style scoped>
+.eval-desc { margin: 0 0 6px; }
+.method-sep td { border-top: 1px solid var(--border, #e3e6ec); }
+.k-first { border-left: 1px solid var(--border, #ddd); }
+.ilp-row td { background: var(--bg-soft, rgba(127,127,127,.06)); }
+</style>

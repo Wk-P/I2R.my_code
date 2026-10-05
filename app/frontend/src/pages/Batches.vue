@@ -42,7 +42,7 @@ const groups = computed(() => {
 <template>
   <div class="page-head">
     <h1>批次管理</h1>
-    <div class="page-sub">{{ spaceLabel(store.viewBranch) }} 的训练批次（campaign），按版本分组；点击查看各任务的状态与汇总结果</div>
+    <div class="page-sub">{{ spaceLabel(store.viewBranch) }} 的训练批次与评估批次，按版本分组；点击查看各任务的状态与汇总结果</div>
   </div>
 
   <div class="tabs">
@@ -56,12 +56,12 @@ const groups = computed(() => {
     <div v-else-if="!shown.length" class="empty">没有符合条件的批次</div>
     <table v-else class="grid">
       <thead>
-        <tr><th>批次</th><th>状态</th><th>版本</th><th>分支</th><th class="num">步数</th><th class="w-progress">进度</th>
+        <tr><th>批次</th><th>类型</th><th>状态</th><th>版本</th><th>分支</th><th class="num">步数</th><th class="w-progress">进度</th>
           <th class="num">完成</th><th class="num">运行</th><th class="num">排队</th><th class="num">中断</th><th>开始</th><th>最后更新</th></tr>
       </thead>
       <tbody v-for="g in groups" :key="g.version">
         <tr class="group-row">
-          <td colspan="12">
+          <td colspan="13">
             <span class="group-title">{{ g.version }}</span>
             <span class="dim small">{{ g.items.length }} 个批次 · {{ g.done }}/{{ g.total }} 个任务完成</span>
             <a class="small" :href="`#/results?branch=${encodeURIComponent(g.items[0].branch ?? '')}&version=${encodeURIComponent(g.version)}&view=pivot`" @click.stop>查看该版本结果 →</a>
@@ -69,10 +69,11 @@ const groups = computed(() => {
         </tr>
         <tr v-for="b in g.items" :key="b.batch_name" class="clickable" @click="go(`#/batches/${b.batch_name}`)">
           <td class="indent"><a :href="`#/batches/${b.batch_name}`">{{ b.batch_name }}</a></td>
+          <td><span class="tag">{{ b.kind === "eval" ? "评估" : "训练" }}</span></td>
           <td><span class="badge" :class="statusClass(b.status)">{{ statusLabel(b.status) }}</span></td>
           <td>{{ b.version ?? "—" }}</td>
           <td class="dim">{{ b.branch ?? "—" }}</td>
-          <td class="num">{{ steps(b.steps) }}</td>
+          <td class="num">{{ b.kind === "eval" ? "—" : steps(b.steps) }}</td>
           <td>
             <div class="bar"><div class="bar-fill" :class="`bar-fill--${b.status}`" :style="{ width: b.overall_pct + '%' }"></div></div>
             <span class="bar-text">{{ b.overall_pct }}%</span>

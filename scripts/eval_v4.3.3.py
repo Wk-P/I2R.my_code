@@ -130,11 +130,28 @@ def write_report(runs):
     print(f"report -> {OUT / 'report.md'}", flush=True)
 
 
+def write_panel_manifest(jobs):
+    """Evaluation-batch manifest for the monitor panel (app/backend/main.py, _eval_batch_state)."""
+    ilp = json.loads((ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.7" / "summary.json").read_text())["scenarios"]
+    d = ROOT / "scripts" / "logs" / "eval_v4.3.3"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "manifest.json").write_text(json.dumps({
+        "kind": "eval", "version": "4.3.3", "script": "scripts/eval_v4.3.3.py", "log": "scripts/logs/eval_v4.3.3.log",
+        "workers": WORKERS, "started_at": time.time(), "raw": "paper_contents/v4.3.3/raw.jsonl",
+        "raw_format": "best_of_k", "ks": KS, "report": "paper_contents/v4.3.3/report.md",
+        "ilp": {s: {k: ilp[s]["ilp"][k] for k in ("ar_mean", "ms_mean", "ms_median")}
+                | {"source": "v4.3.1.7（CBC，单线程，16 进程并行）"} for s in SCENARIOS},
+        "jobs": [{"scenario": s, "algo": a, "seed": int(sd)} for s, a, sd, _ in jobs],
+        "description": "推理时采样 K 个解取最好（best-of-K）：v4.3.1.6 的 PPO 系列（5M）vs 随机贪心，不重新训练",
+    }, ensure_ascii=False, indent=2))
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     m = json.loads(MANIFEST.read_text())["exp_ids"]
     jobs = [(s, a, int(sd), m[sd][s][a]) for sd in m for s in SCENARIOS for a in ALGOS]
     jobs += [(s, "greedy", sd, "") for s in SCENARIOS for sd in [1, 2, 3]]
+    write_panel_manifest(jobs)
     print(f"=== v4.3.3 start {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(jobs)} runs ===", flush=True)
     with Pool(WORKERS) as pool:
         runs = pool.map(run, jobs, chunksize=1)

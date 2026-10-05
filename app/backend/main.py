@@ -915,6 +915,8 @@ def _batch_runs(log_dir: Path) -> tuple[list[dict], dict]:
     if manifest_path.is_file():
         try:
             manifest = json.loads(manifest_path.read_text())
+            if manifest.get("kind") == "eval":       # no training runs / exp_ids, see _eval_batch_state
+                return [], manifest
             return _manifest_runs(manifest), manifest
         except (json.JSONDecodeError, OSError):
             pass
@@ -959,9 +961,175 @@ def _log_train_pct(log_dir: Path, exp_id: str) -> float | None:
     return None
 
 
+def _birth_time(paths: list[Path]) -> float | None:
+    """Earliest creation time of these files. ctime is no good for a batch's start:
+    it moves on every write to a log, so it tracked the oldest *last write*."""
+    paths = [str(p) for p in paths if p.is_file()]
+    if not paths:
+        return None
+    try:
+        out = subprocess.run(["stat", "-c", "%W", *paths], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    times = [int(t) for t in out.split() if t.lstrip("-").isdigit() and int(t) > 0]
+    return float(min(times)) if times else None
+
+
+def _elapsed(st: dict) -> float:
+    end = time.time() if st["status"] == "running" else st["last_updated"]
+    return round(max(end - st["started_at"], 0.0), 1)
+
+
+# ── evaluation batches ──────────────────────────────────────────────────────
+# A batch whose manifest.json has "kind": "eval" re-evaluates saved models (no
+# training, no exp_id of its own). Its manifest lists every job up front:
+#   {"kind": "eval", "version", "script", "log", "workers", "started_at",
+#    "jobs": [{"scenario", "algo", "seed"}],
+#    "raw": "<per-run jsonl, written when the script ends>",
+#    "raw_format": "best_of_k" | "single", "ks": [...], "report", "description"}
+# A job is done once its run is in the raw file or the log has
+# "done <scen> <algo> seed<N> (<ms> ms/episode)". While the script is alive,
+# the first `workers` unfinished jobs are running (Pool.map hands jobs out in
+# order, one at a time), the rest are queued.
+EVAL_DONE_RE = re.compile(r"done (?P<scen>lt|eq|gt) (?P<algo>\S+) seed(?P<seed>\d+) \((?P<ms>[\d.]+) ms/episode\)")
+_eval_raw_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _script_alive(script: str) -> bool:
+    for pd in Path("/proc").iterdir():
+        if not pd.name.isdigit():
+            continue
+        try:
+            if script.encode() in (pd / "cmdline").read_bytes():
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _eval_raw_summary(manifest: dict) -> dict:
+    """(scen, algo, seed) -> {"ms": ms/episode, "k": {K: [success, ratio_success, ratio_all]}},
+    from the raw jsonl; cached on its mtime (it can be tens of MB)."""
+    path = PROJECT_ROOT / manifest.get("raw", "")
+    if not manifest.get("raw") or not path.is_file():
+        return {}
+    mtime = path.stat().st_mtime
+    hit = _eval_raw_cache.get(str(path))
+    if hit and hit[0] == mtime:
+        return hit[1]
+    ks = manifest.get("ks") or [1]
+    out = {}
+    with open(path) as f:
+        for line in f:
+            r = json.loads(line)
+            key = (r["scen"], r["algo"], int(r["seed"]))
+            rows = r["rows"]
+            per_k = {}
+            for k in ks:
+                succ, ratio = [], []
+                for x in rows:
+                    if manifest.get("raw_format") == "best_of_k":
+                        ok, ar = max(x["samples"][:k], key=lambda s: (s[0], s[1]))
+                    else:
+                        ok, ar = x["success"], x["ar"]
+                    succ.append(bool(ok))
+                    ratio.append(ar / x["ar_star"] if ok and x["ar_star"] else 0.0)
+                n_ok = sum(succ)
+                per_k[str(k)] = [n_ok / len(rows),
+                                 (sum(v for v, s in zip(ratio, succ) if s) / n_ok) if n_ok else None,
+                                 sum(ratio) / len(rows)]
+            ms = r.get("ms_episode")
+            if ms is None and rows and "ms" in rows[0]:
+                ms = sum(x["ms"] for x in rows) / len(rows)
+            out[key] = {"ms": ms, "k": per_k}
+    _eval_raw_cache[str(path)] = (mtime, out)
+    return out
+
+
+def _eval_batch_state(batch_name: str, manifest: dict) -> dict:
+    log_dir = LOGS_ROOT / batch_name
+    log = PROJECT_ROOT / manifest["log"] if manifest.get("log") else None
+    done_ms = {}
+    if log and log.is_file():
+        for m in EVAL_DONE_RE.finditer(log.read_text(errors="ignore")):
+            done_ms[(m["scen"], m["algo"], int(m["seed"]))] = float(m["ms"])
+    summary = _eval_raw_summary(manifest)
+    alive = bool(manifest.get("script")) and _script_alive(manifest["script"])
+    free = int(manifest.get("workers") or 1) if alive else 0
+    runs = []
+    for j in manifest.get("jobs", []):
+        key = (j["scenario"], j["algo"], int(j["seed"]))
+        if key in summary or key in done_ms:
+            status = "done"
+        elif free:
+            status, free = "running", free - 1
+        else:
+            status = "queued" if alive else "skipped"
+        runs.append({"scenario": j["scenario"], "algo": j["algo"], "seed": int(j["seed"]), "variant": "",
+                     "exp_id": None, "status": status,
+                     "ms": (summary.get(key) or {}).get("ms") or done_ms.get(key),
+                     "metrics": (summary.get(key) or {}).get("k")})
+    counts = {s: sum(1 for r in runs if r["status"] == s) for s in ("done", "running", "queued", "stopped", "skipped")}
+    total = len(runs)
+    if (log_dir / ".cancelled").is_file():
+        status = "cancelled"
+    elif alive:
+        status = "running"
+    elif total and counts["done"] == total:
+        status = "finished"
+    else:
+        status = "stopped"
+    files = [p for p in (log, PROJECT_ROOT / manifest.get("raw", "_")) if p and p.is_file()]
+    started = manifest.get("started_at") or _birth_time(files) or log_dir.stat().st_ctime
+    return {
+        "batch_name": batch_name, "kind": "eval", "status": status,
+        "version": manifest.get("version"), "branch": _active_space(), "steps": None,
+        "description": manifest.get("description"), "report": manifest.get("report"),
+        "ks": manifest.get("ks") or [1], "workers": manifest.get("workers"),
+        "total_runs": total, **counts,
+        "overall_pct": round(100.0 * counts["done"] / total, 1) if total else 0.0,
+        "started_at": started,
+        "last_updated": max([p.stat().st_mtime for p in files] or [log_dir.stat().st_mtime]),
+        "runs": runs, "results_root": None, "ilp": manifest.get("ilp"),
+    }
+
+
+def _eval_batch_progress(st: dict) -> dict:
+    import statistics
+    groups: dict[tuple, list[dict]] = {}
+    for r in st["runs"]:
+        groups.setdefault((r["scenario"], r["algo"]), []).append(r)
+
+    def agg(vals):
+        vals = [v for v in vals if v is not None]
+        if not vals:
+            return [None, None]
+        return [statistics.fmean(vals), statistics.stdev(vals) if len(vals) > 1 else 0.0]
+
+    rows = []
+    for (scenario, algo), rs in groups.items():
+        done = [r for r in rs if r["status"] == "done"]
+        metrics = {}
+        for k in map(str, st["ks"]):
+            got = [r["metrics"][k] for r in done if r["metrics"] and k in r["metrics"]]
+            metrics[k] = {"success": agg([g[0] for g in got]), "ratio_success": agg([g[1] for g in got]),
+                          "ratio_all": agg([g[2] for g in got]), "n": len(got)}
+        rows.append({"scenario": scenario, "algo": algo, "variant": "", "n_done": len(done), "n_total": len(rs),
+                     "ms": agg([r["ms"] for r in done]), "metrics": metrics,
+                     "seeds": sorted(({"seed": r["seed"], "status": r["status"], "exp_id": None,
+                                       "progress_pct": None} for r in rs), key=lambda x: x["seed"])})
+    st.pop("runs")
+    st.pop("results_root")
+    st["rows"] = rows
+    st["elapsed_seconds"] = _elapsed(st)
+    return st
+
+
 def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     log_dir = LOGS_ROOT / batch_name
     runs, manifest = _batch_runs(log_dir)
+    if manifest.get("kind") == "eval":
+        return _eval_batch_state(batch_name, manifest)
     if not runs:
         return None
     branch = manifest.get("branch") or _branch_holding(runs)
@@ -1027,7 +1195,7 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
         **counts,
         "queued": counts["queued"] + (total - len(runs)),
         "overall_pct": round(100.0 * counts["done"] / total, 1),
-        "started_at": min(ctimes),
+        "started_at": _birth_time(log_files + [log_dir / "manifest.json"]) or min(ctimes),
         "last_updated": max(mtimes),
         "runs": runs,
         "results_root": results_root,
@@ -1069,6 +1237,8 @@ def get_batch_progress(batch_name: str):
     st = _batch_state(batch_name, _live_exp_ids(_ps_snapshot()))
     if st is None:
         raise HTTPException(status_code=404, detail=f"batch {batch_name} has no runs")
+    if st.get("kind") == "eval":
+        return _eval_batch_progress(st)
     results_root = st.pop("results_root")
 
     for r in st["runs"]:
@@ -1106,7 +1276,7 @@ def get_batch_progress(batch_name: str):
     scen_order = {"lt": 0, "eq": 1, "gt": 2}
     rows.sort(key=lambda x: (scen_order.get(x["scenario"], 9), x["algo"], x["variant"]))
     st["rows"] = rows
-    st["elapsed_seconds"] = round(time.time() - st["started_at"], 1)
+    st["elapsed_seconds"] = _elapsed(st)
     return st
 
 

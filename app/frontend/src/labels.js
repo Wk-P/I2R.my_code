@@ -36,6 +36,7 @@ for (const a of ALGO_ORDER) {
   ALGO_LABEL[a] = m === "none" ? `${l}（无约束）` : `${MECH_LABEL[m]}-${l}`;
 }
 
+ALGO_LABEL.greedy = "贪心";   // evaluation batches (paper_rl/greedy.py)
 export const algoLabel = (a) => ALGO_LABEL[a] ?? a;
 export const algoIndex = (a) =>
   LEARNERS.includes(learnerOf(a))
