@@ -15,6 +15,8 @@ Time per instance = K x the mean episode time (1 torch thread).
 Outputs (paper_contents/v4.3.3/): raw.jsonl (per run), report.md.
 
     nohup .venv/bin/python scripts/eval_v4.3.3.py > scripts/logs/eval_v4.3.3.log 2>&1 &
+    nohup .venv/bin/python scripts/eval_v4.3.3.py --resume >> scripts/logs/eval_v4.3.3.log 2>&1 &   # skip runs in raw.jsonl
+    .venv/bin/python scripts/eval_v4.3.3.py --report      # regenerate report.md from raw.jsonl
 """
 import json
 import os
@@ -165,11 +167,17 @@ def main():
     jobs += [(s, "greedy", sd, "") for s in SCENARIOS for sd in [1, 2, 3]]
     write_panel_manifest(jobs)
     print(f"=== v4.3.3 start {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(jobs)} runs ===", flush=True)
-    with Pool(WORKERS) as pool:
-        runs = pool.map(run, jobs, chunksize=1)
-    with open(OUT / "raw.jsonl", "w") as f:
-        for r in runs:
+    # Append each run as soon as it finishes, so the panel shows finished jobs'
+    # metrics while the rest are running; --resume skips runs already in raw.jsonl.
+    raw = OUT / "raw.jsonl"
+    runs = [json.loads(l) for l in open(raw)] if "--resume" in sys.argv and raw.exists() else []
+    have = {(r["scen"], r["algo"], int(r["seed"])) for r in runs}
+    todo = [j for j in jobs if (j[0], j[1], int(j[2])) not in have]
+    with open(raw, "a" if runs else "w") as f, Pool(WORKERS) as pool:
+        for r in pool.imap_unordered(run, todo, chunksize=1):
             f.write(json.dumps(r) + "\n")
+            f.flush()
+            runs.append(r)
     write_report(runs)
 
 

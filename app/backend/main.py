@@ -1023,7 +1023,10 @@ def _eval_raw_summary(manifest: dict) -> dict:
     out = {}
     with open(path) as f:
         for line in f:
-            r = json.loads(line)
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:          # a run being appended right now
+                continue
             key = (r["scen"], r["algo"], int(r["seed"]))
             rows = r["rows"]
             per_k = {}
