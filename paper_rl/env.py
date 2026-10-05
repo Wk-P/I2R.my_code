@@ -4,6 +4,9 @@ One class for every model and scenario. `mechanism` selects the
 constraint-handling mechanism; the reward is selected by `reward_mode`
 (succ_first | legacy | ar | objective | directional). Nothing here depends on the scenario except
 N (ECUs) and M (services), which come from the instance data.
+`obs_mode` (v4.3.4): "base" = the observation used up to v4.3.3; "conflict"
+appends the raw conflict graph among the not-yet-placed services (fixed length
+M(M-1)/2, see _conflict_obs). Everything else is identical.
 
 Constraints (checked for the service being placed):
   capacity  -- containers already placed on the ECU + this service's demand
@@ -73,8 +76,12 @@ from paper_rl import config as C
 MECHANISMS = ("none", "mask", "lagrange", "repair")
 
 
-def obs_dim(n: int, m: int) -> int:
-    return 6 + 5 * n + 2 * m + 1
+OBS_MODES = ("base", "conflict")
+
+
+def obs_dim(n: int, m: int, obs_mode: str = "base") -> int:
+    base = 6 + 5 * n + 2 * m + 1
+    return base + (m * (m - 1) // 2 if obs_mode == "conflict" else 0)
 
 
 def mask_slice(n: int) -> slice:
@@ -94,9 +101,12 @@ class PlacementEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, instances: list[dict], mechanism: str = "none",
-                 reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None):
+                 reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None,
+                 obs_mode: str = "base"):
         super().__init__()
         assert mechanism in MECHANISMS, mechanism
+        assert obs_mode in OBS_MODES, obs_mode
+        self.obs_mode = obs_mode
         assert reward_mode in ("objective", "succ_first", "legacy", "ar", "directional"), reward_mode
         self.instances = instances
         self.mechanism = mechanism
@@ -107,7 +117,8 @@ class PlacementEnv(gym.Env):
         self.N = len(instances[0]["ECUs"])
         self.M = len(instances[0]["SVCs"])
         self.action_space = gym.spaces.Discrete(self.N)
-        self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M),), np.float32)
+        self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M, obs_mode),), np.float32)
+        self._pairs = np.triu_indices(self.M, k=1)       # (i, j), i < j, in placement order
 
     # ── setup ────────────────────────────────────────────────────────────────
     def set_lambda(self, lam: float) -> None:
@@ -133,6 +144,10 @@ class PlacementEnv(gym.Env):
         self.partners = [set().union(*(s for s in self.sets if i in s)) - {i} if any(i in s for s in self.sets)
                          else set() for i in range(self.M)]
         self.max_cap = float(self.cap.max())
+        adj = np.zeros((self.M, self.M), dtype=np.float32)
+        for i, ps in enumerate(self.partners):
+            adj[i, list(ps)] = 1.0
+        self.conflict_pairs = adj[self._pairs]           # raw conflict graph, upper triangle
         self.remaining = self.cap.copy()
         self.hosted = [set() for _ in range(self.N)]       # every executed placement
         self.t = 0
@@ -203,7 +218,17 @@ class PlacementEnv(gym.Env):
             rem_svcs,
             svc_valid,
             [lam_norm],
+            self._conflict_obs(),
         ]).astype(np.float32)
+
+    def _conflict_obs(self) -> np.ndarray:
+        """v4.3.4: raw conflict graph among the services not yet placed, fixed length
+        M(M-1)/2 (upper triangle in placement order); a pair is 1 iff the two services
+        conflict and both are still unplaced (current service included), else 0."""
+        if self.obs_mode != "conflict":
+            return np.zeros(0, dtype=np.float32)
+        i, j = self._pairs
+        return self.conflict_pairs * ((i >= self.t) & (j >= self.t))
 
     # ── step ────────────────────────────────────────────────────────────────
     def _fail_reward(self) -> float:

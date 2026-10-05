@@ -1,0 +1,151 @@
+diff --git a/paper_rl/env.py b/paper_rl/env.py
+index 44d97d2..6588abd 100644
+--- a/paper_rl/env.py
++++ b/paper_rl/env.py
+@@ -4,6 +4,9 @@ One class for every model and scenario. `mechanism` selects the
+ constraint-handling mechanism; the reward is selected by `reward_mode`
+ (succ_first | legacy | ar | objective | directional). Nothing here depends on the scenario except
+ N (ECUs) and M (services), which come from the instance data.
++`obs_mode` (v4.3.4): "base" = the observation used up to v4.3.3; "conflict"
++appends the raw conflict graph among the not-yet-placed services (fixed length
++M(M-1)/2, see _conflict_obs). Everything else is identical.
+ 
+ Constraints (checked for the service being placed):
+   capacity  -- containers already placed on the ECU + this service's demand
+@@ -73,8 +76,12 @@ from paper_rl import config as C
+ MECHANISMS = ("none", "mask", "lagrange", "repair")
+ 
+ 
+-def obs_dim(n: int, m: int) -> int:
+-    return 6 + 5 * n + 2 * m + 1
++OBS_MODES = ("base", "conflict")
++
++
++def obs_dim(n: int, m: int, obs_mode: str = "base") -> int:
++    base = 6 + 5 * n + 2 * m + 1
++    return base + (m * (m - 1) // 2 if obs_mode == "conflict" else 0)
+ 
+ 
+ def mask_slice(n: int) -> slice:
+@@ -94,9 +101,12 @@ class PlacementEnv(gym.Env):
+     metadata = {"render_modes": []}
+ 
+     def __init__(self, instances: list[dict], mechanism: str = "none",
+-                 reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None):
++                 reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None,
++                 obs_mode: str = "base"):
+         super().__init__()
+         assert mechanism in MECHANISMS, mechanism
++        assert obs_mode in OBS_MODES, obs_mode
++        self.obs_mode = obs_mode
+         assert reward_mode in ("objective", "succ_first", "legacy", "ar", "directional"), reward_mode
+         self.instances = instances
+         self.mechanism = mechanism
+@@ -107,7 +117,8 @@ class PlacementEnv(gym.Env):
+         self.N = len(instances[0]["ECUs"])
+         self.M = len(instances[0]["SVCs"])
+         self.action_space = gym.spaces.Discrete(self.N)
+-        self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M),), np.float32)
++        self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M, obs_mode),), np.float32)
++        self._pairs = np.triu_indices(self.M, k=1)       # (i, j), i < j, in placement order
+ 
+     # ── setup ────────────────────────────────────────────────────────────────
+     def set_lambda(self, lam: float) -> None:
+@@ -133,6 +144,10 @@ class PlacementEnv(gym.Env):
+         self.partners = [set().union(*(s for s in self.sets if i in s)) - {i} if any(i in s for s in self.sets)
+                          else set() for i in range(self.M)]
+         self.max_cap = float(self.cap.max())
++        adj = np.zeros((self.M, self.M), dtype=np.float32)
++        for i, ps in enumerate(self.partners):
++            adj[i, list(ps)] = 1.0
++        self.conflict_pairs = adj[self._pairs]           # raw conflict graph, upper triangle
+         self.remaining = self.cap.copy()
+         self.hosted = [set() for _ in range(self.N)]       # every executed placement
+         self.t = 0
+@@ -203,8 +218,18 @@ class PlacementEnv(gym.Env):
+             rem_svcs,
+             svc_valid,
+             [lam_norm],
++            self._conflict_obs(),
+         ]).astype(np.float32)
+ 
++    def _conflict_obs(self) -> np.ndarray:
++        """v4.3.4: raw conflict graph among the services not yet placed, fixed length
++        M(M-1)/2 (upper triangle in placement order); a pair is 1 iff the two services
++        conflict and both are still unplaced (current service included), else 0."""
++        if self.obs_mode != "conflict":
++            return np.zeros(0, dtype=np.float32)
++        i, j = self._pairs
++        return self.conflict_pairs * ((i >= self.t) & (j >= self.t))
++
+     # ── step ────────────────────────────────────────────────────────────────
+     def _fail_reward(self) -> float:
+         return -self.M * (1.0 - self.valid_placed / self.M)
+diff --git a/paper_rl/train.py b/paper_rl/train.py
+index 4e9d63d..bd687af 100644
+--- a/paper_rl/train.py
++++ b/paper_rl/train.py
+@@ -172,8 +172,8 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
+ 
+ 
+ # ── evaluation ──────────────────────────────────────────────────────────────
+-def evaluate(model, test, mech: str, reward: str, lam: float, learner: str) -> list[dict]:
+-    env = PlacementEnv(test, mech, reward, lam=lam)
++def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base") -> list[dict]:
++    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode)
+     out = []
+     for k in range(len(test)):
+         env.use_instance(k)
+@@ -229,6 +229,7 @@ def main():
+     ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "succ_first"),   # v4.3.1.9 default
+                     choices=["objective", "succ_first", "legacy", "ar", "directional"])
+     ap.add_argument("--reward-norm", default=os.environ.get("REWARD_NORM", "none"), choices=["none", "m"])
++    ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict"])   # v4.3.4
+     ap.add_argument("--steps", type=int, default=5_000_000)
+     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
+     a = ap.parse_args()
+@@ -247,12 +248,12 @@ def main():
+     run_dir = outdir / exp_id
+     run_dir.mkdir(parents=True, exist_ok=True)
+     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
+-          f"reward_norm={a.reward_norm} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
++          f"reward_norm={a.reward_norm} | obs={a.obs} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+ 
+     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
+     scale = 1.0 / m if a.reward_norm == "m" else 1.0
+     venv = DummyVecEnv([functools.partial(
+-        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s)), scale),
++        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs)), scale),
+         a.seed * 1000 + k) for k in range(n_envs)])
+     model = build_model(learner, mech, venv, a.seed, n)
+     cb = make_callback(mech, a.steps, outdir, exp_id)
+@@ -262,21 +263,24 @@ def main():
+     lam = cb.lam if mech == "lagrange" else 0.0
+     model.save(str(run_dir / f"model_{exp_id}_v{VERSION}-{a.reward}"))
+ 
+-    ev = evaluate(model, test, mech, a.reward, lam, learner)
++    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs)
+     sr = float(np.mean([e["success"] for e in ev]))
+     ars = np.array([e["ar"] for e in ev])
+     succ_ratio = [e["ar"] / e["ar_star"] for e in ev if e["success"] and e["ar_star"] > 0]
+     cap_rate = float(np.mean([e["cap_v"] > 0 for e in ev]))
+     conf_rate = float(np.mean([e["conf_v"] > 0 for e in ev]))
+     ilp_ar = float(np.mean([e["ar_star"] for e in ev]))
+-    print(f"  eval: success_rate={sr:.4f} | AR={ars.mean():.4f} | ILP AR*={ilp_ar:.4f} | "
+-          f"AR/AR* (successful)={np.mean(succ_ratio) if succ_ratio else float('nan'):.4f} | "
+-          f"cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | train {train_s / 60:.1f} min", flush=True)
++    ok = [e for e in ev if e["success"]]
++    ar_ok = float(np.mean([e["ar"] for e in ok])) if ok else float("nan")
++    ilp_ok = float(np.mean([e["ar_star"] for e in ok])) if ok else float("nan")
++    print(f"  eval: success_rate={sr:.4f} | successful instances: AR={ar_ok:.4f} ILP AR={ilp_ok:.4f} "
++          f"AR gap={ilp_ok - ar_ok:.4f} | cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | "
++          f"train {train_s / 60:.1f} min", flush=True)
+ 
+     res = {
+         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
+         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
+-        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "seed": a.seed,
++        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "seed": a.seed,
+         "train_count": len(train), "test_count": len(test),
+         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
+         "ilp": {"ar": round(ilp_ar, 6)},

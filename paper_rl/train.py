@@ -172,8 +172,8 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
 
 
 # ── evaluation ──────────────────────────────────────────────────────────────
-def evaluate(model, test, mech: str, reward: str, lam: float, learner: str) -> list[dict]:
-    env = PlacementEnv(test, mech, reward, lam=lam)
+def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base") -> list[dict]:
+    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode)
     out = []
     for k in range(len(test)):
         env.use_instance(k)
@@ -229,6 +229,7 @@ def main():
     ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "succ_first"),   # v4.3.1.9 default
                     choices=["objective", "succ_first", "legacy", "ar", "directional"])
     ap.add_argument("--reward-norm", default=os.environ.get("REWARD_NORM", "none"), choices=["none", "m"])
+    ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict"])   # v4.3.4
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
@@ -247,12 +248,12 @@ def main():
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"reward_norm={a.reward_norm} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | obs={a.obs} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
     venv = DummyVecEnv([functools.partial(
-        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s)), scale),
+        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     model = build_model(learner, mech, venv, a.seed, n)
     cb = make_callback(mech, a.steps, outdir, exp_id)
@@ -262,21 +263,24 @@ def main():
     lam = cb.lam if mech == "lagrange" else 0.0
     model.save(str(run_dir / f"model_{exp_id}_v{VERSION}-{a.reward}"))
 
-    ev = evaluate(model, test, mech, a.reward, lam, learner)
+    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs)
     sr = float(np.mean([e["success"] for e in ev]))
     ars = np.array([e["ar"] for e in ev])
     succ_ratio = [e["ar"] / e["ar_star"] for e in ev if e["success"] and e["ar_star"] > 0]
     cap_rate = float(np.mean([e["cap_v"] > 0 for e in ev]))
     conf_rate = float(np.mean([e["conf_v"] > 0 for e in ev]))
     ilp_ar = float(np.mean([e["ar_star"] for e in ev]))
-    print(f"  eval: success_rate={sr:.4f} | AR={ars.mean():.4f} | ILP AR*={ilp_ar:.4f} | "
-          f"AR/AR* (successful)={np.mean(succ_ratio) if succ_ratio else float('nan'):.4f} | "
-          f"cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | train {train_s / 60:.1f} min", flush=True)
+    ok = [e for e in ev if e["success"]]
+    ar_ok = float(np.mean([e["ar"] for e in ok])) if ok else float("nan")
+    ilp_ok = float(np.mean([e["ar_star"] for e in ok])) if ok else float("nan")
+    print(f"  eval: success_rate={sr:.4f} | successful instances: AR={ar_ok:.4f} ILP AR={ilp_ok:.4f} "
+          f"AR gap={ilp_ok - ar_ok:.4f} | cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | "
+          f"train {train_s / 60:.1f} min", flush=True)
 
     res = {
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
-        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "seed": a.seed,
+        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "seed": a.seed,
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},
