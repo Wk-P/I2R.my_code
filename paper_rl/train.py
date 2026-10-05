@@ -2,6 +2,10 @@
 
     python -m paper_rl.train --scen lt --algo mask_ppo --reward ar --steps 1000000 --seed 1
 
+--reward-norm m (v4.3.1.8) divides every reward the learner sees by M, so the
+legacy terminal reward lies in [-1, 1]; Monitor / training_curve.csv keep the
+raw reward. Default none = v4.3.1.6 behaviour.
+
 algo = <mechanism>_<learner> with mechanism in {mask, lagrange, repair} or the
 bare learner for no constraint handling: ppo, mask_ppo, lagrange_ppo,
 repair_ppo, dqn, mask_dqn, ..., repair_ddqn.
@@ -104,6 +108,12 @@ def model_class(learner: str, mech: str):
     if mech == "mask":
         return MaskableDDQN if learner == "ddqn" else MaskableDQN
     return DoubleDQN if learner == "ddqn" else DQN
+
+
+def scale_reward(env, scale: float):
+    """Multiply the learner's reward by `scale` (outside Monitor, which logs the raw reward)."""
+    import gymnasium as gym
+    return gym.wrappers.TransformReward(env, lambda r: r * scale)
 
 
 # ── training callback (logging + Lagrangian dual ascent) ────────────────────
@@ -218,6 +228,7 @@ def main():
     ap.add_argument("--algo", required=True, choices=ALGOS)
     ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "legacy"),   # v4.3.1.6 default
                     choices=["objective", "legacy", "ar", "directional"])
+    ap.add_argument("--reward-norm", default=os.environ.get("REWARD_NORM", "none"), choices=["none", "m"])
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
@@ -236,11 +247,12 @@ def main():
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
+    scale = 1.0 / m if a.reward_norm == "m" else 1.0
     venv = DummyVecEnv([functools.partial(
-        lambda s: Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s)),
+        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     model = build_model(learner, mech, venv, a.seed, n)
     cb = make_callback(mech, a.steps, outdir, exp_id)
@@ -264,7 +276,7 @@ def main():
     res = {
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
-        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "seed": a.seed,
+        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "seed": a.seed,
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},
