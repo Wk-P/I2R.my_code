@@ -107,8 +107,9 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <th class="num" title="单个 episode（一个测试实例、一个解）的平均耗时，单线程">单次耗时 ms</th>
             <th class="num k-first" title="每个测试实例取 K 个解中最好的一个；K = 1 即确定性输出">K</th>
             <th class="num" title="K 个解中至少有一个成功的测试实例比例">成功率</th>
-            <th class="num" title="模型 AR ÷ 同一实例的最优 AR（ILP），只在成功实例上平均">相对最优 AR（成功回合）</th>
-            <th class="num" title="失败实例记为 0 再平均">相对最优 AR（失败计 0）</th>
+            <th class="num" title="AR = average resource utilization，只在成功的测试实例上平均">AR</th>
+            <th class="num" title="同一批成功实例上 ILP 最优解的 AR">ILP AR</th>
+            <th class="num" title="AR gap = ILP AR − AR">AR gap</th>
             <th class="num" title="K × 单次耗时（逐个运行；合并成 batch 时更低）">耗时 ms/实例</th>
             <th class="num" title="ILP 平均耗时 ÷ 本方法耗时">比 ILP 快</th>
           </tr>
@@ -120,8 +121,9 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
               <td><b>ILP（最优）</b></td>
               <td class="dim small" colspan="3">{{ ilpOf(r.scenario).source }}</td>
               <td class="num">100%</td>
-              <td class="num">100%（最优 AR {{ fmt(ilpOf(r.scenario).ar_mean) }}）</td>
-              <td class="num">—</td>
+              <td class="num">{{ fmt(ilpOf(r.scenario).ar_mean) }}</td>
+              <td class="num">{{ fmt(ilpOf(r.scenario).ar_mean) }}</td>
+              <td class="num">0</td>
               <td class="num">{{ fmt(ilpOf(r.scenario).ms_mean, 1) }}<span class="dim small">（中位数 {{ fmt(ilpOf(r.scenario).ms_median, 1) }}）</span></td>
               <td class="num">1×</td>
             </tr>
@@ -140,8 +142,9 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
               <td class="num"><template v-if="j === 0">{{ pm(r.ms[0], r.ms[1], (v) => fmt(v, 1)) }}</template></td>
               <td class="num k-first">{{ k }}</td>
               <td class="num">{{ pm(...m(r, k, "success"), pct) }}</td>
-              <td class="num">{{ pm(...m(r, k, "ratio_success"), pct) }}</td>
-              <td class="num">{{ pm(...m(r, k, "ratio_all"), pct) }}</td>
+              <td class="num">{{ pm(...m(r, k, "ar")) }}</td>
+              <td class="num dim">{{ fmt(m(r, k, "ilp_ar")[0]) }}</td>
+              <td class="num">{{ pm(...m(r, k, "gap")) }}</td>
               <td class="num">{{ r.ms[0] == null ? "—" : fmt(Number(k) * r.ms[0], 1) }}</td>
               <td class="num" :class="{ warn: speedup(r, k) != null && speedup(r, k) < 1 }">{{ speedup(r, k) == null ? "—" : fmt(speedup(r, k), 1) + "×" }}</td>
             </tr>
@@ -153,7 +156,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <span><i class="seed seed--running"></i>运行中</span>
         <span><i class="seed seed--queued"></i>排队中</span>
         <span v-if="data.skipped"><i class="seed seed--skipped"></i>未运行（评估已结束）</span>
-        <span>K 个解取最好：先选成功的，再选 AR 最高的；最优 AR 只用于计分。K = 1 即确定性输出（贪心为纯贪心规则）。指标为各种子的均值 ± 标准差。"比 ILP 快"小于 1× 时标红，表示比 ILP 还慢。ILP 耗时来自 v4.3.1.7，与本批次不是同一时间、同一负载下测得。</span>
+        <span>K 个解取最好：先选成功的，再选 AR 最高的；ILP AR 只用于计分。K = 1 即确定性输出（贪心为纯贪心规则）。AR 与 ILP AR 都只在成功的实例上平均，AR gap = ILP AR − AR。指标为各种子的均值 ± 标准差。"比 ILP 快"小于 1× 时标红，表示比 ILP 还慢。ILP 耗时来自 v4.3.1.7，与本批次不是同一时间、同一负载下测得。</span>
       </div>
     </section>
 

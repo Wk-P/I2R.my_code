@@ -39,7 +39,7 @@ GREEDY_EPS = 0.2
 SCENARIOS = ["lt", "eq", "gt"]
 ALGOS = ["ppo", "lagrange_ppo", "mask_ppo", "repair_ppo"]
 LABEL = {"ppo": "PPO 无约束（对照）", "lagrange_ppo": "Lagrangian-PPO", "mask_ppo": "Maskable-PPO",
-         "repair_ppo": "Repair-PPO", "greedy": "随机贪心"}
+         "repair_ppo": "Repair-PPO", "greedy": "贪心（K>1 时为随机贪心）"}
 
 
 def best_of(samples, k):
@@ -94,10 +94,12 @@ def run(job):
 
 
 def summarise(r, k):
+    """success rate; AR and ILP AR over the same successful instances (best of the first k samples)."""
     best = [best_of(x["samples"], k) + (x["ar_star"],) for x in r["rows"]]
-    succ = np.array([b[0] for b in best])
-    ratio = np.array([b[1] / b[2] if b[0] else 0.0 for b in best])
-    return succ.mean(), (ratio[succ].mean() if succ.any() else np.nan), ratio.mean()
+    ok = [b for b in best if b[0]]
+    ar = np.mean([b[1] for b in ok]) if ok else np.nan
+    ilp = np.mean([b[2] for b in ok]) if ok else np.nan
+    return len(ok) / len(best), ar, ilp, ilp - ar
 
 
 def write_report(runs):
@@ -105,26 +107,33 @@ def write_report(runs):
         v = [x for x in v if not np.isnan(x)]
         return f"{f(np.mean(v))} ± {f(np.std(v, ddof=1) if len(v) > 1 else 0.0)}" if v else "—"
 
-    f3 = lambda v: f"{v:.3f}"
+    f4 = lambda v: f"{v:.4f}"
     pc = lambda v: f"{100 * v:.1f}%"
+    ilp = json.loads((ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.7" / "summary.json").read_text())["scenarios"]
     L = ["# v4.3.3 推理时采样 K 个解取最好（best-of-K）", "",
          f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；不重新训练，模型为 v4.3.1.6 的 PPO 系列（5M，种子 1–3）。",
          f"- 每个测试实例采样 {K_MAX} 个解；第 1 个为确定性输出（RL）或纯贪心，其余按策略概率采样（RL）"
          f"或每步以 {GREEDY_EPS} 的概率随机选一个可行 ECU（随机贪心）。K 个解取前 K 个。",
-         "- 挑选规则只用解本身：先要成功，再取 AR 最高；最优 AR（ILP）只用于最后计分。",
-         "- 相对最优 AR = 模型 AR ÷ 同一实例的最优 AR。「成功回合」只在成功实例上平均；「失败计 0」把失败实例记为 0。"
-         "均值 ± 样本标准差（3 种子的测试集）。耗时 = K × 单次 episode 平均耗时（单线程）。", ""]
+         "- 挑选规则只用解本身：先要成功，再取 AR 最高；ILP AR 只用于最后计分。",
+         "- AR 与 ILP AR 都只在该方法成功的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
+         "均值 ± 样本标准差（3 种子的测试集）。",
+         "- 耗时 = K × 单次 episode 平均耗时（单线程，逐个运行）。本次与 v4.3.1.10 训练同时运行，机器满载，"
+         "耗时偏高；ILP 耗时取自 v4.3.1.7，两者不是同一负载下测得，只作参考。", ""]
     for s in SCENARIOS:
-        L += [f"## {s.upper()}", "", "| 方法 | K | 成功率 | 相对最优 AR（成功回合） | 相对最优 AR（失败计 0） | 耗时 ms/实例 |",
-              "|---|---|---|---|---|---|"]
+        L += [f"## {s.upper()}", "",
+              f"ILP（v4.3.1.7）：全部测试实例平均 AR {ilp[s]['ilp']['ar_mean']:.4f}，"
+              f"平均耗时 {ilp[s]['ilp']['ms_mean']:.1f} ms/实例（中位数 {ilp[s]['ilp']['ms_median']:.1f}）。", "",
+              "| 方法 | K | 成功率 | AR | ILP AR | AR gap | 耗时 ms/实例 | 比 ILP 快 |",
+              "|---|---|---|---|---|---|---|---|"]
         for a in ["greedy"] + ALGOS:
             rs = [r for r in runs if r["scen"] == s and r["algo"] == a]
             for k in KS:
                 st = [summarise(r, k) for r in rs]
+                t = k * np.mean([r["ms_episode"] for r in rs])
                 L.append("| " + " | ".join([LABEL[a] if k == KS[0] else "", str(k),
-                                            ms([x[0] for x in st], f3), ms([x[1] for x in st], pc),
-                                            ms([x[2] for x in st], pc),
-                                            f"{k * np.mean([r['ms_episode'] for r in rs]):.1f}"]) + " |")
+                                            ms([x[0] for x in st], pc), ms([x[1] for x in st], f4),
+                                            ms([x[2] for x in st], f4), ms([x[3] for x in st], f4),
+                                            f"{t:.1f}", f"{ilp[s]['ilp']['ms_mean'] / t:.1f}×"]) + " |")
         L.append("")
     (OUT / "report.md").write_text("\n".join(L))
     print(f"report -> {OUT / 'report.md'}", flush=True)
@@ -148,6 +157,9 @@ def write_panel_manifest(jobs):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    if "--report" in sys.argv:                  # regenerate report.md from raw.jsonl
+        write_report([json.loads(l) for l in open(OUT / "raw.jsonl")])
+        return
     m = json.loads(MANIFEST.read_text())["exp_ids"]
     jobs = [(s, a, int(sd), m[sd][s][a]) for sd in m for s in SCENARIOS for a in ALGOS]
     jobs += [(s, "greedy", sd, "") for s in SCENARIOS for sd in [1, 2, 3]]

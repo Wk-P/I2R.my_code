@@ -987,6 +987,8 @@ def _elapsed(st: dict) -> float:
 #    "jobs": [{"scenario", "algo", "seed"}],
 #    "raw": "<per-run jsonl, written when the script ends>",
 #    "raw_format": "best_of_k" | "single", "ks": [...], "report", "description"}
+# Metrics per K: success rate; AR and ILP AR averaged over the same successful
+# instances; AR gap = ILP AR - AR.
 # A job is done once its run is in the raw file or the log has
 # "done <scen> <algo> seed<N> (<ms> ms/episode)". While the script is alive,
 # the first `workers` unfinished jobs are running (Pool.map hands jobs out in
@@ -1008,7 +1010,7 @@ def _script_alive(script: str) -> bool:
 
 
 def _eval_raw_summary(manifest: dict) -> dict:
-    """(scen, algo, seed) -> {"ms": ms/episode, "k": {K: [success, ratio_success, ratio_all]}},
+    """(scen, algo, seed) -> {"ms": ms/episode, "k": {K: [success rate, AR, ILP AR]}},
     from the raw jsonl; cached on its mtime (it can be tens of MB)."""
     path = PROJECT_ROOT / manifest.get("raw", "")
     if not manifest.get("raw") or not path.is_file():
@@ -1026,18 +1028,16 @@ def _eval_raw_summary(manifest: dict) -> dict:
             rows = r["rows"]
             per_k = {}
             for k in ks:
-                succ, ratio = [], []
+                n_ok, ar_sum, ilp_sum = 0, 0.0, 0.0
                 for x in rows:
                     if manifest.get("raw_format") == "best_of_k":
                         ok, ar = max(x["samples"][:k], key=lambda s: (s[0], s[1]))
                     else:
                         ok, ar = x["success"], x["ar"]
-                    succ.append(bool(ok))
-                    ratio.append(ar / x["ar_star"] if ok and x["ar_star"] else 0.0)
-                n_ok = sum(succ)
-                per_k[str(k)] = [n_ok / len(rows),
-                                 (sum(v for v, s in zip(ratio, succ) if s) / n_ok) if n_ok else None,
-                                 sum(ratio) / len(rows)]
+                    if ok:
+                        n_ok, ar_sum, ilp_sum = n_ok + 1, ar_sum + ar, ilp_sum + x["ar_star"]
+                # [success rate, AR, ILP AR] -- AR and ILP AR over the same successful instances
+                per_k[str(k)] = [n_ok / len(rows), ar_sum / n_ok if n_ok else None, ilp_sum / n_ok if n_ok else None]
             ms = r.get("ms_episode")
             if ms is None and rows and "ms" in rows[0]:
                 ms = sum(x["ms"] for x in rows) / len(rows)
@@ -1112,8 +1112,9 @@ def _eval_batch_progress(st: dict) -> dict:
         metrics = {}
         for k in map(str, st["ks"]):
             got = [r["metrics"][k] for r in done if r["metrics"] and k in r["metrics"]]
-            metrics[k] = {"success": agg([g[0] for g in got]), "ratio_success": agg([g[1] for g in got]),
-                          "ratio_all": agg([g[2] for g in got]), "n": len(got)}
+            metrics[k] = {"success": agg([g[0] for g in got]), "ar": agg([g[1] for g in got]),
+                          "ilp_ar": agg([g[2] for g in got]),
+                          "gap": agg([g[2] - g[1] for g in got if g[1] is not None]), "n": len(got)}
         rows.append({"scenario": scenario, "algo": algo, "variant": "", "n_done": len(done), "n_total": len(rs),
                      "ms": agg([r["ms"] for r in done]), "metrics": metrics,
                      "seeds": sorted(({"seed": r["seed"], "status": r["status"], "exp_id": None,

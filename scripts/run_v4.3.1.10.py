@@ -77,14 +77,54 @@ def launch(seed, scen, algo, exp_ids):
     return proc, log
 
 
-def result(scen, algo, exp_id):
-    p = RESULTS / scen / algo / exp_id / "results.json"
-    return json.loads(p.read_text())[algo] if p.exists() else None
+def eval_run(job):
+    """Deterministic re-evaluation of one saved model, per test instance (same as v4.3.1.7)."""
+    import torch
+    torch.set_num_threads(1)
+    from paper_rl.train import evaluate, model_class, split_algo, split_instances
+    scen, algo, seed, exp_id = job
+    run_dir = RESULTS / scen / algo / exp_id
+    if not (run_dir / "results.json").exists():
+        return job, None
+    mech, learner = split_algo(algo)
+    model = model_class(learner, mech).load(str(next(run_dir.glob("model_*"))), device="cpu")
+    lam = json.loads((run_dir / "results.json").read_text())["training"].get("final_lambda", 0.0)
+    _, _, test = split_instances(scen, seed)
+    return job, evaluate(model, test, mech, REWARD, lam, learner)
+
+
+def stats(ev):
+    """success rate, AR / ILP AR over the same successful instances, AR gap, dead-end rate."""
+    ok = [e for e in ev if e["success"]]
+    ar = float(np.mean([e["ar"] for e in ok])) if ok else None
+    ilp = float(np.mean([e["ar_star"] for e in ok])) if ok else None
+    return {"success": len(ok) / len(ev), "ar": ar, "ilp_ar": ilp,
+            "gap": None if ar is None else ilp - ar, "dead_end": float(np.mean([e["dead_end"] for e in ev]))}
 
 
 def write_report(exp_ids):
-    from paper_rl.greedy import evaluate
+    from multiprocessing import Pool
+    from paper_rl.greedy import greedy_action
+    from paper_rl.env import PlacementEnv
+    from paper_rl.train import split_instances
     base = json.loads(BASELINE.read_text())["scenarios"]
+    jobs = [(s, a, sd, exp_ids[str(sd)][s][a]) for sd in SEEDS for s in SCENARIOS for a in ALGOS
+            if exp_ids.get(str(sd), {}).get(s, {}).get(a)]
+    with Pool(16) as pool:
+        got = {(s, a, sd): stats(ev) for (s, a, sd, _), ev in pool.map(eval_run, jobs, chunksize=1) if ev}
+
+    def greedy_stats(scen, seed):
+        _, _, test = split_instances(scen, seed)
+        env, ev = PlacementEnv(test, "mask", REWARD), []
+        for k in range(len(test)):
+            env.use_instance(k)
+            env.reset()
+            done = False
+            while not done:
+                _, _, done, _, info = env.step(greedy_action(env))
+            ev.append({"success": info["valid_placed"] == env.M, "ar": info["ar"], "ar_star": test[k]["ar_star"],
+                       "dead_end": info["dead_end"]})
+        return stats(ev)
 
     def ms(vals, f):
         vals = [v for v in vals if v is not None]
@@ -93,43 +133,39 @@ def write_report(exp_ids):
         sd = np.std(vals, ddof=1) if len(vals) > 1 else 0.0
         return f"{f(np.mean(vals))} ± {f(sd)}" + ("" if len(vals) == 3 else f" (n={len(vals)})")
 
-    def bs(b, k, f):
-        return f"{f(b[k][0])} ± {f(b[k][1])}" if b and k in b else "—"
+    def row(label, mech, steps_, st):
+        return "| " + " | ".join([label, mech, steps_, ms([x["success"] for x in st], pc),
+                                  ms([x["ar"] for x in st], f4), ms([x["ilp_ar"] for x in st], f4),
+                                  ms([x["gap"] for x in st], f4), ms([x["dead_end"] for x in st], pc)]) + " |"
 
-    f3 = lambda v: f"{v:.3f}"
+    f4 = lambda v: f"{v:.4f}"
     pc = lambda v: f"{100 * v:.1f}%"
     lines = [f"# v{VERSION} 训练步数 5M → 10M", "",
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              "- 唯一改动：训练步数 10M（DQN 的 ε 衰减随之变为前 5M 步）；其余与 v4.3.1.6 相同"
              "（legacy 奖励、不归一化、p = 0.6 数据、同一划分与超参、3 种子）。",
-             "- 「5M」= v4.3.1.6 的模型，取自 v4.3.1.7 重评；「10M」= 本版本；「贪心」= `paper_rl/greedy.py`"
-             "（可行 ECU 中先选已开的，再选需求/容量最大的；不违规，无可行 ECU 即失败）。",
-             "- 相对最优 AR = 模型 AR ÷ 同一实例的最优 AR（ILP 求得）。「成功回合」只在成功的 episode 上平均；"
-             "「失败计 0」把失败 episode 记为 0 再平均。均值 ± 样本标准差（3 种子的测试集）。",
+             "- 「5M」= v4.3.1.6 的模型，取自 v4.3.1.7 重评；「10M」= 本版本，生成报告时重新评估；「贪心」= `paper_rl/greedy.py`"
+             "（可行 ECU 中先选已开的，再选需求/容量最大的；不违规，无可行 ECU 即失败）。均为每个测试实例 1 次确定性输出。",
+             "- AR 与 ILP AR 都只在该方法成功的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
+             "均值 ± 样本标准差（3 种子的测试集）。",
              f"- manifest：`scripts/logs/v{VERSION}/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
-        g = [evaluate(s, sd) for sd in SEEDS]
         lines += [f"## {s.upper()}", "",
-                  "| 模型 | 约束处理 | 步数 | 成功率 | 相对最优 AR（成功回合） | 相对最优 AR（失败计 0） | 死局率 |",
-                  "|---|---|---|---|---|---|---|",
-                  "| 贪心 | — | — | " + " | ".join([ms([x["success"] for x in g], f3),
-                                                      ms([x["ratio_success"] for x in g], pc),
-                                                      ms([x["ratio_all"] for x in g], pc),
-                                                      ms([x["dead_end"] for x in g], f3)]) + " |"]
+                  "| 模型 | 约束处理 | 步数 | 成功率 | AR | ILP AR | AR gap | 死局率 |",
+                  "|---|---|---|---|---|---|---|---|",
+                  row("贪心", "—", "—", [greedy_stats(s, sd) for sd in SEEDS])]
         for a in order:
             mech, learner = split(a)
             b = base[s]["models"].get(a)
-            lines.append("| " + " | ".join([learner.upper(), MECH_LABEL[mech], "5M", bs(b, "success", f3),
-                                             bs(b, "ratio_success", pc), bs(b, "ratio_all", pc),
-                                             bs(b, "dead_end", f3)]) + " |")
-            rs = [result(s, a, exp_ids.get(str(sd), {}).get(s, {}).get(a, "")) for sd in SEEDS]
-            rs = [r for r in rs if r]
-            col = lambda k: [r.get(k) for r in rs]
-            comb = [(r["ar_ratio_successful"] or 0.0) * r["success_rate"] for r in rs]
-            lines.append("| " + " | ".join(["", "", "**10M**", ms(col("success_rate"), f3),
-                                             ms(col("ar_ratio_successful"), pc), ms(comb, pc),
-                                             ms(col("dead_end_rate"), f3)]) + " |")
+            if b:
+                ar, gap = b["ar_success"], b["gap_success"]
+                lines.append("| " + " | ".join([learner.upper(), MECH_LABEL[mech], "5M",
+                                                 f"{pc(b['success'][0])} ± {pc(b['success'][1])}",
+                                                 f"{f4(ar[0])} ± {f4(ar[1])}", f4(ar[0] + gap[0]),
+                                                 f"{f4(gap[0])} ± {f4(gap[1])}",
+                                                 f"{pc(b['dead_end'][0])} ± {pc(b['dead_end'][1])}"]) + " |")
+            lines.append(row("", "", "**10M**", [got[(s, a, sd)] for sd in SEEDS if (s, a, sd) in got]))
         lines.append("")
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text("\n".join(lines))
