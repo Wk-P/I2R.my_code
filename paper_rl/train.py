@@ -3,7 +3,7 @@
     python -m paper_rl.train --scen lt --algo mask_ppo --reward ar --steps 1000000 --seed 1
 
 --reward-norm m (v4.3.1.8) divides every reward the learner sees by M, so the
-legacy terminal reward lies in [-1, 1]; Monitor / training_curve.csv keep the
+legacy terminal reward lies in [-1, 1] (succ_first: [-1, 3]); Monitor / training_curve.csv keep the
 raw reward. Default none = v4.3.1.6 behaviour.
 
 algo = <mechanism>_<learner> with mechanism in {mask, lagrange, repair} or the
@@ -226,8 +226,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scen", required=True, choices=["lt", "eq", "gt"])
     ap.add_argument("--algo", required=True, choices=ALGOS)
-    ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "legacy"),   # v4.3.1.6 default
-                    choices=["objective", "legacy", "ar", "directional"])
+    ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "succ_first"),   # v4.3.1.9 default
+                    choices=["objective", "succ_first", "legacy", "ar", "directional"])
     ap.add_argument("--reward-norm", default=os.environ.get("REWARD_NORM", "none"), choices=["none", "m"])
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))

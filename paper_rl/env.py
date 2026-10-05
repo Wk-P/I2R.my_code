@@ -2,7 +2,7 @@
 
 One class for every model and scenario. `mechanism` selects the
 constraint-handling mechanism; the reward is selected by `reward_mode`
-(legacy | ar | directional). Nothing here depends on the scenario except
+(succ_first | legacy | ar | objective | directional). Nothing here depends on the scenario except
 N (ECUs) and M (services), which come from the instance data.
 
 Constraints (checked for the service being placed):
@@ -46,7 +46,11 @@ Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episod
                terminal M * AR_exec, where AR_exec counts every executed
                placement, feasible or not -- no penalty for violations;
                the mechanism alone handles the constraints. Dead end: as above.
-  legacy       (default since v4.3.1.6, all 12 models)
+  succ_first   (default since v4.3.1.9, all 12 models) as legacy, but the
+               success branch is M(1 + kappa AR), kappa = C.SUCC_KAPPA = 2,
+               i.e. legacy + 2M: the same AR slope 2M, and every feasible
+               completion (>= M) scores above every failure (<= 0)
+  legacy       (default in v4.3.1.6 - v4.3.1.8)
                r_t = 0 for t < M-1; terminal  M(2AR-1) if all M services are
                placed feasibly, else -M(1 - valid/M)
   ar           same, success branch M * AR
@@ -55,7 +59,7 @@ Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episod
                the next service; repair: no ECU to repair to);
                obj(d) = 1 + beta d (d > eps), beta d (|d| <= eps),
                -lam_d + beta d (d < -eps)
-A repair dead end under legacy / ar ends the episode with -M(1 - valid/M).
+A repair dead end under succ_first / legacy / ar ends the episode with -M(1 - valid/M).
 """
 from __future__ import annotations
 
@@ -93,7 +97,7 @@ class PlacementEnv(gym.Env):
                  reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None):
         super().__init__()
         assert mechanism in MECHANISMS, mechanism
-        assert reward_mode in ("objective", "legacy", "ar", "directional"), reward_mode
+        assert reward_mode in ("objective", "succ_first", "legacy", "ar", "directional"), reward_mode
         self.instances = instances
         self.mechanism = mechanism
         self.reward_mode = reward_mode
@@ -208,6 +212,8 @@ class PlacementEnv(gym.Env):
     def _success_reward(self) -> float:
         if self.reward_mode == "ar":
             return self.M * self.ar
+        if self.reward_mode == "succ_first":
+            return self.M * (1.0 + C.SUCC_KAPPA * self.ar)
         return self.M * (2.0 * self.ar - 1.0)
 
     def _info(self, cap_v=False, conf_v=False) -> dict:

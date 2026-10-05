@@ -51,6 +51,9 @@ LAMBDA_MAX = 50.0                     # v4.3.1.5 (was 5.0): violating "stack eve
 LAMBDA_UPDATE_WINDOW = 20
 LAMBDA_WARMUP_EPISODES = 5000
 
+# ── succ_first reward (default since v4.3.1.9) ─────────────────────────────
+SUCC_KAPPA = 2.0                      # success branch M(1 + kappa AR); kappa = 2 keeps legacy's AR slope 2M
+
 # ── directional reward (REWARD_MODE=directional) ──────────────────────────
 DIR_BETA = 10.0
 DIR_LAMBDA = 1.0                      # discrete penalty for an AR decrease
