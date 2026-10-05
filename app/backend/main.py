@@ -149,8 +149,10 @@ def _algo_key(data: dict) -> str | None:
                 "feasibility", "created_at", "bc", "exp_id",
                 # paper_rl (v4.3.1.3+) metadata
                 "version", "commit", "algo", "mechanism", "learner", "reward_mode",
-                "seed", "data")
-    return next((k for k in data.keys() if k not in reserved), None)
+                "reward_norm", "seed", "data")
+    # The algo block is always a dict; skipping scalars keeps a newly added
+    # metadata field from taking down /api/experiments again.
+    return next((k for k, v in data.items() if k not in reserved and isinstance(v, dict)), None)
 
 
 def _nan_to_none(v):

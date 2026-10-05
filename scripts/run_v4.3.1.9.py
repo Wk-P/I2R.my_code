@@ -104,13 +104,13 @@ def write_report(exp_ids):
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              "- 唯一改动：成功分支 M(2AR-1) → M(1+2AR)（= 旧公式 + 2M，AR 斜率不变，任何成功严格高于任何失败）；"
              "失败分支 -M(1-M_v/M) 不变；其余与 v4.3.1.6 相同（p = 0.6 数据、同一划分与超参、无奖励归一化）。",
-             "- 「旧」= v4.3.1.6 模型，取自 v4.3.1.7 重评（真正 AR 最优 AR*）；「新」= 本版本。",
-             "- AR/AR* 只在成功 episode 上算；AR/AR*×success 中失败 episode 计 0。均值 ± 样本标准差（3 种子）。",
+             "- 「旧」= v4.3.1.6 模型，取自 v4.3.1.7 重评（最优 AR 由 ILP 求得）；「新」= 本版本。",
+             "- 相对最优 AR = 模型 AR ÷ 同一实例的最优 AR（ILP 求得）。「成功回合」只在成功的 episode 上平均；「失败计 0」把失败 episode 记为 0 再平均。均值 ± 样本标准差（3 种子）。",
              "- manifest：`scripts/logs/v4.3.1.9/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",
-                  "| 模型 | 约束处理 | 奖励 | success_rate | AR/AR* | AR/AR*×success | 死局率 |",
+                  "| 模型 | 约束处理 | 奖励 | success_rate | 相对最优 AR（成功回合） | 相对最优 AR（失败计 0） | 死局率 |",
                   "|---|---|---|---|---|---|---|"]
         for a in order:
             mech, learner = split(a)

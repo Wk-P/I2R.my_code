@@ -255,7 +255,7 @@ class PlacementEnv(gym.Env):
         self.t += 1
         done = self.t >= self.M
         success = done and self.valid_placed == self.M
-        c_t = int(cap_v) + int(conf_v)
+        # c_t = int(cap_v) + int(conf_v) # removed from v4.3.1.5+
 
         dead = (not done and self.mechanism in ("mask", "repair")
                 and not self._feasible(self.t).any())
