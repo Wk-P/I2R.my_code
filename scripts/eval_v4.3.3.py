@@ -97,7 +97,7 @@ def run(job):
 
 def summarise(r, k):
     """success rate; AR and ILP AR over the same successful instances (best of the first k samples)."""
-    best = [best_of(x["samples"], k) + (x["ar_star"],) for x in r["rows"]]
+    best = [tuple(best_of(x["samples"], k)) + (x["ar_star"],) for x in r["rows"]]
     ok = [b for b in best if b[0]]
     ar = np.mean([b[1] for b in ok]) if ok else np.nan
     ilp = np.mean([b[2] for b in ok]) if ok else np.nan
