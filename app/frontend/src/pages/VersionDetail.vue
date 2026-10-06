@@ -1,16 +1,17 @@
 <script setup>
 import { ref, watch } from "vue";
 import { getTags, getTagDoc } from "../api.js";
+import { langRef } from "../i18n.js";
 
 const props = defineProps({ tag: { type: String, required: true } });
 const meta = ref(null);
 const doc = ref(null);
 const loading = ref(true);
 
-watch(() => props.tag, async (tag) => {
+watch([() => props.tag, langRef], async ([tag, lang]) => {
   loading.value = true;
   meta.value = (await getTags()).find((t) => t.tag === tag) ?? null;
-  doc.value = meta.value?.has_doc ? await getTagDoc(tag) : null;
+  doc.value = meta.value?.has_doc ? await getTagDoc(tag, lang) : null;
   loading.value = false;
 }, { immediate: true });
 </script>

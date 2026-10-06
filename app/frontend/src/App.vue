@@ -11,6 +11,9 @@ import RunDetail from "./pages/RunDetail.vue";
 import Versions from "./pages/Versions.vue";
 import VersionDetail from "./pages/VersionDetail.vue";
 import PaperDraft from "./components/PaperDraft.vue";
+import PaperDraftEn from "./components/PaperDraftEn.vue";
+import { langRef as curLang, setLang } from "./i18n.js";
+const toggleLang = () => setLang(curLang.value === "en" ? "zh" : "en");
 
 // Hash routes:
 //   #/                       总览
@@ -116,6 +119,7 @@ const updated = computed(() =>
             CPU 负载 <b>{{ loadPct === null ? "—" : loadPct + "%" }}</b>
           </span>
           <span class="chip chip--plain">更新 {{ updated }}</span>
+          <button class="chip" title="中文 / English" @click="toggleLang">{{ curLang === "en" ? "中文" : "EN" }}</button>
         </div>
       </header>
 
@@ -128,6 +132,7 @@ const updated = computed(() =>
         <RunDetail v-else-if="route.page === 'run'" v-bind="route.props" />
         <Versions v-else-if="route.page === 'versions'" />
         <VersionDetail v-else-if="route.page === 'version'" v-bind="route.props" />
+        <PaperDraftEn v-else-if="route.page === 'paper' && curLang === 'en'" />
         <PaperDraft v-else-if="route.page === 'paper'" />
       </main>
     </div>

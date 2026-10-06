@@ -22,7 +22,7 @@ export const getBatch = (name) => get(`/api/batch_progress/${encodeURIComponent(
 export const getExperiments = (branch) => get(`/api/experiments${q(branch)}`, []);
 export const getHistory = (scenario, algo, branch) => get(`/api/history/${scenario}/${algo}${q(branch)}`, []);
 export const getTags = () => get("/api/tags", []);
-export const getTagDoc = (tag) => get(`/api/tags/${encodeURIComponent(tag)}/doc`);
+export const getTagDoc = (tag, lang = "zh") => get(`/api/tags/${encodeURIComponent(tag)}/doc?lang=${lang}`);
 export const resultFile = (branch, scenario, algo, run, file) =>
   `/api/results/${scenario}/${algo}/${run}/${file}${q(branch)}`;
 export const getResults = (branch) => get(`/api/results${q(branch)}`, []);

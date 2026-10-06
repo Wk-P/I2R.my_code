@@ -417,10 +417,14 @@ def get_tags():
 
 
 @app.get("/api/tags/{tag}/doc")
-def get_tag_doc(tag: str):
+def get_tag_doc(tag: str, lang: str = "zh"):
     path = _tag_doc_path(tag)
     if path is None:
         raise HTTPException(404)
+    if lang == "en":                                   # English copy next to the doc: <name>.en.md
+        en = path.with_name(path.stem + ".en.md")
+        if en.is_file():
+            path = en
     return {"tag": tag, "doc_file": str(path.relative_to(PROJECT_ROOT)), "content": path.read_text(encoding="utf-8")}
 
 
