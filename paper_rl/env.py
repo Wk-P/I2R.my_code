@@ -93,13 +93,18 @@ OBS_MODES = ("base", "conflict", "feas")
 REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional")
 
 
-def obs_dim(n: int, m: int, obs_mode: str = "base") -> int:
+def obs_dim(n: int, m: int, obs_mode: str = "base", action_mode: str = "ecu") -> int:
+    if action_mode == "joint":
+        return 4 + 3 * n + 4 * m + m * n + 1
     base = 6 + 5 * n + 2 * m + 1
     return base + {"conflict": m * (m - 1) // 2, "feas": m * n}.get(obs_mode, 0)
 
 
-def mask_slice(n: int) -> slice:
-    """Position of the feasible-ECU flags in the observation (MaskableDQN)."""
+def mask_slice(n: int, m: int = 0, action_mode: str = "ecu") -> slice:
+    """Position of the feasible-ECU flags in the observation (MaskableDQN); for the joint
+    action, the M x N (service, ECU) feasibility block."""
+    if action_mode == "joint":
+        return slice(4 + 3 * n + 4 * m, 4 + 3 * n + 4 * m + m * n)
     return slice(6 + 4 * n, 6 + 5 * n)
 
 
@@ -116,7 +121,8 @@ class PlacementEnv(gym.Env):
 
     def __init__(self, instances: list[dict], mechanism: str = "none",
                  reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None,
-                 obs_mode: str = "base", full_episode: bool = False, exit_action: bool = False):
+                 obs_mode: str = "base", full_episode: bool = False, exit_action: bool = False,
+                 action_mode: str = "ecu"):
         super().__init__()
         # v4.3.7 (professor's comment 1-②): never stop early -- every episode places all M
         # services; a mask / repair dead end executes the agent's own (infeasible) choice and
@@ -126,6 +132,11 @@ class PlacementEnv(gym.Env):
         # feasible and is the only valid action when none is, so Mask never violates; EXIT
         # ends the episode with the failure reward and the agent must learn to avoid it.
         self.exit_action = exit_action and mechanism == "mask"
+        # v4.4.0: action_mode "joint" -- the agent picks (service, ECU), action = k * N + j
+        # (+ EXIT = M * N); no fixed service order. Implemented for Mask (full episode).
+        assert action_mode in ("ecu", "joint"), action_mode
+        assert action_mode == "ecu" or (mechanism == "mask" and full_episode), "joint: Mask + full episode only"
+        self.joint = action_mode == "joint"
         assert mechanism in MECHANISMS, mechanism
         assert obs_mode in OBS_MODES, obs_mode
         self.obs_mode = obs_mode
@@ -138,8 +149,8 @@ class PlacementEnv(gym.Env):
         self._fixed = None           # instance index forced by the next reset (evaluation)
         self.N = len(instances[0]["ECUs"])
         self.M = len(instances[0]["SVCs"])
-        self.action_space = gym.spaces.Discrete(self.N + self.exit_action)
-        self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M, obs_mode),), np.float32)
+        self.action_space = gym.spaces.Discrete((self.M * self.N if self.joint else self.N) + self.exit_action)
+        self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M, obs_mode, action_mode),), np.float32)
         self._pairs = np.triu_indices(self.M, k=1)       # (i, j), i < j, in placement order
 
     # ── setup ────────────────────────────────────────────────────────────────
@@ -173,6 +184,7 @@ class PlacementEnv(gym.Env):
         self.remaining = self.cap.copy()
         self.hosted = [set() for _ in range(self.N)]       # every executed placement
         self.t = 0
+        self.placed = np.zeros(self.M, dtype=bool)
         self.legal_ru = 0.0
         self.legal_ecus: set[int] = set()
         self.exec_ru = 0.0                                  # every executed placement (objective)
@@ -196,10 +208,20 @@ class PlacementEnv(gym.Env):
     def action_masks(self) -> np.ndarray:
         if self.t >= self.M or self.mechanism != "mask":
             return np.ones(self.action_space.n, dtype=bool)
+        if self.joint:
+            f = self._joint_feasible().ravel()
+            return np.append(f, not f.any()) if self.exit_action else f
         f = self._feasible(self.t)
         if self.exit_action:
             return np.append(f, not f.any())
         return f if f.any() else np.ones(self.N, dtype=bool)
+
+    def _joint_feasible(self) -> np.ndarray:
+        """M x N: unplaced service k can be placed on ECU j without violating anything."""
+        f = np.zeros((self.M, self.N), dtype=bool)
+        for k in np.flatnonzero(~self.placed):
+            f[k] = self._feasible(k)
+        return f
 
     @property
     def ar_exec(self) -> float:
@@ -211,7 +233,32 @@ class PlacementEnv(gym.Env):
         return self.legal_ru / len(self.legal_ecus) if self.legal_ecus else 0.0
 
     # ── observation ─────────────────────────────────────────────────────────
+    def _obs_joint(self) -> np.ndarray:
+        """Joint action (v4.4.0): no current service. Global (4) | per ECU: capacity, remaining,
+        allowance (3N) | per service: demand if unplaced, placed flag, feasible-ECU share,
+        conflicts with other unplaced services / M (4M) | (service, ECU) feasibility = the
+        action mask (M x N, read by MaskableDQN) | lambda (1)."""
+        n, m, mc = self.N, self.M, self.max_cap
+        total_cap = float(self.cap.sum())
+        un = ~self.placed
+        F = self._joint_feasible()
+        allowed = np.array([1.0 - len(set().union(*(self.partners[h] for h in self.hosted[j])) - self.hosted[j]) / m
+                            if self.hosted[j] else 1.0 for j in range(n)], dtype=np.float32)
+        conf = np.array([len(self.partners[k] & set(np.flatnonzero(un))) / m if un[k] else 0.0
+                         for k in range(m)], dtype=np.float32)
+        lam_norm = min(self.lam / C.LAMBDA_MAX, 1.0) if self.mechanism == "lagrange" else 0.0
+        return np.concatenate([
+            [self.ar, np.clip(self.remaining, 0, None).sum() / total_cap,
+             self.req[un].sum() / total_cap, un.sum() / m],
+            self.cap / mc, np.clip(self.remaining / mc, -1.0, 1.0), allowed,
+            np.where(un, self.req / mc, 0.0), self.placed.astype(np.float32), F.mean(axis=1), conf,
+            F.ravel().astype(np.float32),
+            [lam_norm],
+        ]).astype(np.float32)
+
     def _obs(self) -> np.ndarray:
+        if self.joint:
+            return self._obs_joint()
         n, m, mc = self.N, self.M, self.max_cap
         total_cap = float(self.cap.sum())
         if self.t < m:
@@ -296,9 +343,13 @@ class PlacementEnv(gym.Env):
         i, a = self.t, int(action)
         ar0 = self.ar
         directional = self.reward_mode == "directional"
-        if self.exit_action and a == self.N:                 # EXIT: no feasible ECU left
+        n_place = self.M * self.N if self.joint else self.N
+        if self.exit_action and a == n_place:                # EXIT: no feasible ECU left
             self.exited = True
             return self._obs(), float(self._fail_reward()), True, False, self._info()
+        if self.joint:
+            i, a = divmod(a, self.N)
+            assert not self.placed[i], "service already placed"
 
         if self.full_episode and self.mechanism == "mask" and not self._feasible(i).any():
             self.dead_end = True                          # all-True mask: placement will violate
@@ -328,6 +379,7 @@ class PlacementEnv(gym.Env):
             self.valid_placed += 1
             self.legal_ru += float(self.req[i] / self.cap[a])
             self.legal_ecus.add(a)
+        self.placed[i] = True
         self.t += 1
         done = self.t >= self.M
         success = done and self.valid_placed == self.M
