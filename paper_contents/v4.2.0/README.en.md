@@ -63,7 +63,7 @@ Numbers in parentheses are speed-ups relative to the ILP. ILP: the 400 seed-1 te
 ## Files
 
 - `formula.md`: MDP, reward, learning algorithm, hyper-parameters, evaluation and timing formulas for every cell of v4.2.0
-- `各算法伪代码.md` / `Algorithm-Pseudocode-EN.md`: pseudocode in Chinese and English
+- `Algorithm-Pseudocode-EN.md`: pseudocode in English (a Chinese version is in the same directory)
 - `manifest.json`: model list
 - `final_summary_data.json`: final data (including timing)
 - `figs/`: `{ar,success,violation,timing}_{lt,eq,gt}.png`, `summary_table.png`, `timing_table.png`
