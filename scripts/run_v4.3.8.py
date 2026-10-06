@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""v4.3.7: v4.3.6 (unified reward without M) + never stop early (professor's comment 1-②).
+"""v4.3.8: v4.3.7 + EXIT action for Mask.
+
+Mask's action space is [ECU_1..ECU_N, EXIT]. EXIT is masked while any ECU is feasible and is
+the only valid action when none is, so Mask never violates a constraint; EXIT ends the
+episode with the failure reward -(1 - valid/M) and the agent has to learn the earlier
+placements that avoid it. Reported for Mask: EXIT rate (its capacity / privacy violation
+rates are 0 by construction). All other mechanisms are unchanged from v4.3.7.
+--pilot trains only mask_ppo / mask_dqn (3 scenarios x seed 1 x 1M) and reuses the other
+four pilot models of v4.3.7, whose training is identical.
+
+v4.3.7 notes:
 
 Every episode places all M services (--full-episode): where no ECU is feasible the agent's
 choice is executed and counted as a capacity and/or privacy violation. Reported: capacity
@@ -18,10 +28,10 @@ The report compares with the same models on the base observation (v4.3.1.6, re-e
 in v4.3.1.7, legacy reward) and the greedy baseline; every model is evaluated deterministically,
 once per test instance.
 
-    nohup .venv/bin/python scripts/run_v4.3.7.py > scripts/logs/run_v4.3.7_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.7.py --pilot > scripts/logs/run_v4.3.7_pilot_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.7.py --resume >> scripts/logs/run_v4.3.7_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.3.7.py --report
+    nohup .venv/bin/python scripts/run_v4.3.8.py > scripts/logs/run_v4.3.8_driver.log 2>&1 &
+    nohup .venv/bin/python scripts/run_v4.3.8.py --pilot > scripts/logs/run_v4.3.8_pilot_driver.log 2>&1 &
+    nohup .venv/bin/python scripts/run_v4.3.8.py --resume >> scripts/logs/run_v4.3.8_driver.log 2>&1 &
+    .venv/bin/python scripts/run_v4.3.8.py --report
 """
 import json
 import os
@@ -35,7 +45,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 PY = str(ROOT / ".venv" / "bin" / "python")
-VERSION = "4.3.7"
+VERSION = "4.3.8"
 LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
@@ -57,10 +67,12 @@ PILOT = "--pilot" in sys.argv
 if PILOT:
     ALGOS = ["ppo", "lagrange_ppo", "mask_ppo", "repair_ppo", "mask_dqn", "repair_dqn"]
     SEEDS, STEPS = [1], 1_000_000
+    REUSE = ROOT / "scripts" / "logs" / "v4.3.7_pilot" / "manifest.json"    # non-Mask models: unchanged
     LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     MANIFEST = LOG_DIR / "manifest.json"
     REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "pilot_report.md"
+TRAIN_ALGOS = [a for a in ALGOS if a.startswith("mask")] if PILOT else ALGOS
 MECH_LABEL = {"": "无约束（对照）", "lagrange": "Lagrangian", "mask": "Maskable", "repair": "Repair"}
 
 
@@ -77,7 +89,7 @@ def write_manifest(exp_ids):
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     tmp = MANIFEST.with_suffix(".tmp")
     tmp.write_text(json.dumps({"version": VERSION, "commit": commit, "steps": STEPS, "reward": REWARD,
-                               "reward_norm": NORM, "obs": OBS, "gamma": GAMMA, "full_episode": True, "scenarios": SCENARIOS, "algos": ALGOS, "seeds": SEEDS,
+                               "reward_norm": NORM, "obs": OBS, "gamma": GAMMA, "full_episode": True, "exit_action": True, "scenarios": SCENARIOS, "algos": ALGOS, "seeds": SEEDS,
                                "exp_ids": exp_ids}, indent=2))
     tmp.replace(MANIFEST)
 
@@ -88,7 +100,7 @@ def launch(seed, scen, algo, exp_ids):
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "EXP_ID": exp_id, "TRAIN_SEED": str(seed),
            "PAPER_VERSION": VERSION}
     proc = subprocess.Popen([PY, "-u", "-m", "paper_rl.train", "--scen", scen, "--algo", algo, "--reward", REWARD,
-                             "--reward-norm", NORM, "--obs", OBS, "--gamma", str(GAMMA), "--full-episode", "--steps", str(STEPS), "--seed", str(seed)],
+                             "--reward-norm", NORM, "--obs", OBS, "--gamma", str(GAMMA), "--full-episode", "--exit-action", "--steps", str(STEPS), "--seed", str(seed)],
                             cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
                             stdin=subprocess.DEVNULL, start_new_session=True)
     exp_ids.setdefault(str(seed), {}).setdefault(scen, {})[algo] = exp_id
@@ -110,16 +122,18 @@ def eval_run(job):
     model = model_class(learner, mech).load(str(next(run_dir.glob("model_*"))), device="cpu")
     lam = json.loads((run_dir / "results.json").read_text())["training"].get("final_lambda", 0.0)
     _, _, test = split_instances(scen, seed)
-    return job, evaluate(model, test, mech, REWARD, lam, learner, OBS, full_episode=True)
+    return job, evaluate(model, test, mech, REWARD, lam, learner, OBS, full_episode=True,
+                         exit_action=mech == "mask")
 
 
 def stats(ev):
     """capacity / privacy violation rates; AR / ILP AR / AR gap over the violation-free instances."""
-    ok = [e for e in ev if e["cap_v"] == 0 and e["conf_v"] == 0]
+    ok = [e for e in ev if e["cap_v"] == 0 and e["conf_v"] == 0 and not e.get("exited", False)]
     ar = float(np.mean([e["ar"] for e in ok])) if ok else None
     ilp = float(np.mean([e["ar_star"] for e in ok])) if ok else None
     return {"cap": float(np.mean([e["cap_v"] > 0 for e in ev])), "conf": float(np.mean([e["conf_v"] > 0 for e in ev])),
-            "ar": ar, "ilp_ar": ilp, "gap": None if ar is None else ilp - ar}
+            "ar": ar, "ilp_ar": ilp, "gap": None if ar is None else ilp - ar,
+            "exit": float(np.mean([e.get("exited", False) for e in ev]))}
 
 
 def write_report(exp_ids):
@@ -154,29 +168,32 @@ def write_report(exp_ids):
         return f"{f(np.mean(vals))} ± {f(sd)}" + ("" if len(vals) == 3 else f" (n={len(vals)})")
 
     def row(label, mech, st):
-        return "| " + " | ".join([label, mech, ms([x["cap"] for x in st], pc), ms([x["conf"] for x in st], pc),
+        ex = ms([x["exit"] for x in st], pc) if mech == "Maskable" else "—"
+        return "| " + " | ".join([label, mech, ms([x["cap"] for x in st], pc), ms([x["conf"] for x in st], pc), ex,
                                   ms([x["ar"] for x in st], f4), ms([x["ilp_ar"] for x in st], f4),
                                   ms([x["gap"] for x in st], f4)]) + " |"
 
     f4 = lambda v: f"{v:.4f}"
     pc = lambda v: f"{100 * v:.1f}%"
-    lines = [f"# v{VERSION} 统一奖励 + 不提前结束（每回合放满 M 个服务）", "",
+    lines = [f"# v{VERSION} Maskable 加 EXIT 动作（其余同 v4.3.7）", "",
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+             "- 本版本改动：Maskable 的动作为 [ECU1, …, ECUn, EXIT]。有合法 ECU 时 EXIT 被屏蔽；一个合法 ECU 都没有时 EXIT 是唯一合法动作，"
+             "选后回合结束，得失败奖励 −(1 − valid/M)。因此 Maskable 永不违约（两种违约率恒为 0），报 EXIT 率 = 选了 EXIT 的测试实例比例。其他机制与 v4.3.7 完全相同。",
              "- 唯一改动：奖励。终局 r = AR ∈ (0, 1]（M 个服务全部合法放置），否则 r = −(1 − valid/M) ∈ [−1, 0)，中间步 0，不乘 M；"
              "所有学习器 γ = 1（Lagrangian 照旧终局减 λΣc_t）；每回合放满 M 个服务，没有可行 ECU 时照样执行并记为 capacity / privacy 违约。其余与 v4.3.1.6 相同（原观测、需求降序、p = 0.6 数据、同一划分与其余超参、5M 步、3 种子）。",
-             "- 违约率 = 至少出现一次该类违约的测试实例比例；AR、ILP AR 只在无违约的测试实例上平均。「AR」= 本版本，生成报告时重新评估；「贪心」= `paper_rl/greedy.py`"
+             "- 违约率 = 至少出现一次该类违约的测试实例比例；AR、ILP AR 只在无违约（Maskable：未 EXIT）的测试实例上平均。「AR」= 本版本，生成报告时重新评估；「贪心」= `paper_rl/greedy.py`"
              "（可行 ECU 中先选已开的，再选需求/容量最大的；无可行 ECU 时强放到无 privacy 冲突、剩余容量最大的 ECU，记为违约）。均为每个测试实例 1 次确定性输出。",
-             "- AR 与 ILP AR 都只在该方法无违约的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
+             "- AR 与 ILP AR 都只在该方法无违约且未 EXIT 的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
              "均值 ± 样本标准差（3 种子的测试集）。",
              f"- manifest：`{MANIFEST.relative_to(ROOT)}`"]
     if PILOT:
-        lines.append("- **试跑**：6 个模型 × 种子 1 × 1M 步。")
+        lines.append("- **试跑**：6 个模型 × 种子 1 × 1M 步；只重训 Maskable PPO / DQN，其余 4 个模型取自 v4.3.7 试跑（训练完全相同）。")
     lines.append("")
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",
-                  "| 模型 | 约束处理 | capacity 违约率 | privacy 违约率 | AR | ILP AR | AR gap |",
-                  "|---|---|---|---|---|---|---|",
+                  "| 模型 | 约束处理 | capacity 违约率 | privacy 违约率 | EXIT 率 | AR | ILP AR | AR gap |",
+                  "|---|---|---|---|---|---|---|---|",
                   row("贪心", "—", [greedy_stats(s, sd) for sd in SEEDS])]
         for a in order:
             mech, learner = split(a)
@@ -207,8 +224,12 @@ def main():
         write_report(json.loads(MANIFEST.read_text())["exp_ids"])
         return
     exp_ids = {}
+    if PILOT:
+        old = json.loads(REUSE.read_text())["exp_ids"]
+        exp_ids = {sd: {sc: {a: e for a, e in d2.items() if a not in TRAIN_ALGOS} for sc, d2 in d.items()}
+                   for sd, d in old.items()}
     # PPO first: they are the longest jobs, so the DQN ones fill in the tail.
-    queue = [(sd, s, a) for sd in SEEDS for a in ALGOS for s in SCENARIOS]
+    queue = [(sd, s, a) for sd in SEEDS for a in TRAIN_ALGOS for s in SCENARIOS]
     queue.sort(key=lambda j: not j[2].endswith("ppo"))
     adopted = []
     if "--resume" in sys.argv and MANIFEST.exists():

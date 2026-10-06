@@ -73,7 +73,8 @@ def split_instances(scen: str, seed: int):
 
 
 # ── learners ────────────────────────────────────────────────────────────────
-def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | None = None):
+def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | None = None,
+                exit_action: bool = False):
     if learner == "ppo":
         kw = dict(policy="MlpPolicy", env=env, learning_rate=C.PPO_LR, n_steps=C.PPO_N_STEPS,
                   batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS, gamma=C.PPO_GAMMA if gamma is None else gamma,
@@ -94,7 +95,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
               policy_kwargs=dict(net_arch=C.DQN_NET_ARCH), device="cpu", verbose=0, seed=seed)
     if mech == "mask":
         cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
-        return cls(mask_start=mask_slice(n).start, **kw)
+        return cls(mask_start=mask_slice(n).start, exit_action=exit_action, **kw)
     return (DoubleDQN if learner == "ddqn" else DQN)(**kw)
 
 
@@ -175,8 +176,9 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
 
 # ── evaluation ──────────────────────────────────────────────────────────────
 def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base",
-             full_episode: bool = False) -> list[dict]:
-    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode, full_episode=full_episode)
+             full_episode: bool = False, exit_action: bool = False) -> list[dict]:
+    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode, full_episode=full_episode,
+                       exit_action=exit_action)
     out = []
     for k in range(len(test)):
         env.use_instance(k)
@@ -190,7 +192,7 @@ def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_
             obs, _, done, _, info = env.step(int(a))
         out.append({"ar": info["ar"], "ar_star": info["ar_star"], "success": info["valid_placed"] == env.M,
                     "valid_placed": info["valid_placed"], "cap_v": info["capacity_violations"],
-                    "conf_v": info["conflict_violations"], "dead_end": info["dead_end"],
+                    "conf_v": info["conflict_violations"], "dead_end": info["dead_end"], "exited": info["exited"],
                     "ecus_used": info["ecus_used"]})
     return out
 
@@ -237,6 +239,8 @@ def main():
                     help="discount factor for every learner (ar_raw uses 1, so the return is AR * 1{feasible})")
     ap.add_argument("--full-episode", action="store_true",      # v4.3.7: never stop early, always M steps
                     default=os.environ.get("FULL_EPISODE", "0") == "1")
+    ap.add_argument("--exit-action", action="store_true",       # Mask only: EXIT action, valid iff no ECU is feasible
+                    default=os.environ.get("EXIT_ACTION", "0") == "1")
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
@@ -261,10 +265,10 @@ def main():
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
     venv = DummyVecEnv([functools.partial(
         lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs,
-                                             full_episode=a.full_episode)), scale),
+                                             full_episode=a.full_episode, exit_action=a.exit_action)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
-    model = build_model(learner, mech, venv, a.seed, n, gamma)
+    model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action)
     cb = make_callback(mech, a.steps, outdir, exp_id)
     t0 = time.time()
     model.learn(total_timesteps=a.steps, callback=cb)
@@ -272,7 +276,7 @@ def main():
     lam = cb.lam if mech == "lagrange" else 0.0
     model.save(str(run_dir / f"model_{exp_id}_v{VERSION}-{a.reward}"))
 
-    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode)
+    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode, a.exit_action)
     sr = float(np.mean([e["success"] for e in ev]))
     ars = np.array([e["ar"] for e in ev])
     succ_ratio = [e["ar"] / e["ar_star"] for e in ev if e["success"] and e["ar_star"] > 0]
@@ -284,12 +288,13 @@ def main():
     ilp_ok = float(np.mean([e["ar_star"] for e in ok])) if ok else float("nan")
     print(f"  eval: violation-free={sr:.4f} | violation-free instances: AR={ar_ok:.4f} ILP AR={ilp_ok:.4f} "
           f"AR gap={ilp_ok - ar_ok:.4f} | cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | "
+          f"EXIT={np.mean([e['exited'] for e in ev]):.4f} | "
           f"train {train_s / 60:.1f} min", flush=True)
 
     res = {
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
-        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "seed": a.seed,
+        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "seed": a.seed,
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},
@@ -301,6 +306,7 @@ def main():
             "cap_viol_total": int(sum(e["cap_v"] for e in ev)),
             "conflict_viol_total": int(sum(e["conf_v"] for e in ev)),
             "dead_end_rate": round(float(np.mean([e["dead_end"] for e in ev])), 6),
+            "exit_rate": round(float(np.mean([e["exited"] for e in ev])), 6),
         },
         "training": {"total_steps": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,

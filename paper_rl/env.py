@@ -116,12 +116,16 @@ class PlacementEnv(gym.Env):
 
     def __init__(self, instances: list[dict], mechanism: str = "none",
                  reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None,
-                 obs_mode: str = "base", full_episode: bool = False):
+                 obs_mode: str = "base", full_episode: bool = False, exit_action: bool = False):
         super().__init__()
         # v4.3.7 (professor's comment 1-②): never stop early -- every episode places all M
         # services; a mask / repair dead end executes the agent's own (infeasible) choice and
         # the violation is recorded instead of ending the episode.
         self.full_episode = full_episode
+        # Mask gets an extra EXIT action (index N). It is masked while any ECU is
+        # feasible and is the only valid action when none is, so Mask never violates; EXIT
+        # ends the episode with the failure reward and the agent must learn to avoid it.
+        self.exit_action = exit_action and mechanism == "mask"
         assert mechanism in MECHANISMS, mechanism
         assert obs_mode in OBS_MODES, obs_mode
         self.obs_mode = obs_mode
@@ -134,7 +138,7 @@ class PlacementEnv(gym.Env):
         self._fixed = None           # instance index forced by the next reset (evaluation)
         self.N = len(instances[0]["ECUs"])
         self.M = len(instances[0]["SVCs"])
-        self.action_space = gym.spaces.Discrete(self.N)
+        self.action_space = gym.spaces.Discrete(self.N + self.exit_action)
         self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M, obs_mode),), np.float32)
         self._pairs = np.triu_indices(self.M, k=1)       # (i, j), i < j, in placement order
 
@@ -178,6 +182,7 @@ class PlacementEnv(gym.Env):
         self.conflict_violations = 0
         self.repairs = 0
         self.dead_end = False
+        self.exited = False
         return self._obs(), {}
 
     # ── constraints ─────────────────────────────────────────────────────────
@@ -190,8 +195,10 @@ class PlacementEnv(gym.Env):
 
     def action_masks(self) -> np.ndarray:
         if self.t >= self.M or self.mechanism != "mask":
-            return np.ones(self.N, dtype=bool)
+            return np.ones(self.action_space.n, dtype=bool)
         f = self._feasible(self.t)
+        if self.exit_action:
+            return np.append(f, not f.any())
         return f if f.any() else np.ones(self.N, dtype=bool)
 
     @property
@@ -269,7 +276,7 @@ class PlacementEnv(gym.Env):
         return {"ar": self.ar, "ar_star": self.ar_star, "valid_placed": self.valid_placed,
                 "services_placed": self.t, "capacity_violations": self.cap_violations,
                 "conflict_violations": self.conflict_violations, "repairs": self.repairs,
-                "cap_violated": cap_v, "conflict_violated": conf_v, "dead_end": self.dead_end,
+                "cap_violated": cap_v, "conflict_violated": conf_v, "dead_end": self.dead_end, "exited": self.exited,
                 "ecus_used": len(self.legal_ecus), "inst_idx": self.inst_idx,
                 "viol_rate_ep": (self.cap_violations + self.conflict_violations) / self.M}
 
@@ -277,6 +284,9 @@ class PlacementEnv(gym.Env):
         i, a = self.t, int(action)
         ar0 = self.ar
         directional = self.reward_mode == "directional"
+        if self.exit_action and a == self.N:                 # EXIT: no feasible ECU left
+            self.exited = True
+            return self._obs(), float(self._fail_reward()), True, False, self._info()
 
         if self.full_episode and self.mechanism == "mask" and not self._feasible(i).any():
             self.dead_end = True                          # all-True mask: placement will violate

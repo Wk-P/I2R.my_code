@@ -70,25 +70,26 @@ class DoubleDQN(DQN):
 class MaskableDQN(DQN):
     """DQN with a hard action mask read from obs[mask_start : mask_start+N]."""
 
-    def __init__(self, *args, mask_start: int | None = None, **kwargs):
+    def __init__(self, *args, mask_start: int | None = None, exit_action: bool = False, **kwargs):
         # mask_start defaults to None only so that DQN.load() (which calls
         # __init__ without it and then restores attributes from the zip)
         # works; training always passes it explicitly.
         self.mask_start = mask_start
+        self.exit_action = exit_action      # last action = EXIT, valid iff no ECU is feasible
         super().__init__(*args, **kwargs)
 
     # ── mask helpers ─────────────────────────────────────────────────────────
     def _mask_np(self, obs: np.ndarray) -> np.ndarray:
-        n = self.action_space.n
+        n = self.action_space.n - getattr(self, "exit_action", False)
         m = obs[..., self.mask_start:self.mask_start + n] > 0.5
         empty = ~m.any(axis=-1, keepdims=True)
-        return m | empty
+        return np.concatenate([m, empty], axis=-1) if getattr(self, "exit_action", False) else m | empty
 
     def _mask_th(self, obs: th.Tensor) -> th.Tensor:
-        n = self.action_space.n
+        n = self.action_space.n - getattr(self, "exit_action", False)
         m = obs[:, self.mask_start:self.mask_start + n] > 0.5
         empty = ~m.any(dim=1, keepdim=True)
-        return m | empty
+        return th.cat([m, empty], dim=1) if getattr(self, "exit_action", False) else m | empty
 
     def _masked_q(self, net, obs: th.Tensor) -> th.Tensor:
         return net(obs).masked_fill(~self._mask_th(obs), -th.inf)
