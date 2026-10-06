@@ -89,13 +89,13 @@ from paper_rl import config as C
 MECHANISMS = ("none", "mask", "lagrange", "repair")
 
 
-OBS_MODES = ("base", "conflict")
+OBS_MODES = ("base", "conflict", "feas")
 REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional")
 
 
 def obs_dim(n: int, m: int, obs_mode: str = "base") -> int:
     base = 6 + 5 * n + 2 * m + 1
-    return base + (m * (m - 1) // 2 if obs_mode == "conflict" else 0)
+    return base + {"conflict": m * (m - 1) // 2, "feas": m * n}.get(obs_mode, 0)
 
 
 def mask_slice(n: int) -> slice:
@@ -244,7 +244,19 @@ class PlacementEnv(gym.Env):
             svc_valid,
             [lam_norm],
             self._conflict_obs(),
+            self._feas_obs(),
         ]).astype(np.float32)
+
+    def _feas_obs(self) -> np.ndarray:
+        """v4.3.9: remaining-service x ECU feasibility matrix F (M x N, row-major, placement
+        order); F[k, j] = 1 iff service k is not placed yet and could be placed on ECU j now
+        without violating capacity or privacy, else 0."""
+        if self.obs_mode != "feas":
+            return np.zeros(0, dtype=np.float32)
+        f = np.zeros((self.M, self.N), dtype=np.float32)
+        for k in range(self.t, self.M):
+            f[k] = self._feasible(k)
+        return f.ravel()
 
     def _conflict_obs(self) -> np.ndarray:
         """v4.3.4: raw conflict graph among the services not yet placed, fixed length

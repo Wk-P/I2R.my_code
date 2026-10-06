@@ -234,7 +234,7 @@ def main():
     ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "succ_first"),   # v4.3.1.9 default
                     choices=list(REWARD_MODES))
     ap.add_argument("--reward-norm", default=os.environ.get("REWARD_NORM", "none"), choices=["none", "m"])
-    ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict"])   # v4.3.4
+    ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict", "feas"])   # v4.3.4 / v4.3.9
     ap.add_argument("--gamma", type=float, default=None,     # v4.3.5; default: PPO_GAMMA / DQN_GAMMA in config
                     help="discount factor for every learner (ar_raw uses 1, so the return is AR * 1{feasible})")
     ap.add_argument("--full-episode", action="store_true",      # v4.3.7: never stop early, always M steps
