@@ -61,13 +61,17 @@ Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episod
                AR if all M services are placed feasibly, else 0 (dead ends
                included); no scaling by M. Trained with gamma = 1, so the return
                is exactly AR * 1{feasible}.
+  ar_pen       (v4.3.6, professor's spec) as ar_raw but a failure is penalised:
+               terminal AR in (0, 1] if all M services are placed feasibly, else
+               -(1 - valid/M) in [-1, 0) (dead ends included); no scaling by M,
+               reward > 0 on success and < 0 on failure. gamma = 1.
   directional  r_t = obj(dAR_t) every step, +B on feasible completion,
                -C and termination at a dead end (mask: no feasible ECU for
                the next service; repair: no ECU to repair to);
                obj(d) = 1 + beta d (d > eps), beta d (|d| <= eps),
                -lam_d + beta d (d < -eps)
 A repair dead end under succ_first / legacy / ar ends the episode with -M(1 - valid/M)
-(ar_raw: 0).
+(ar_raw: 0; ar_pen: -(1 - valid/M)).
 """
 from __future__ import annotations
 
@@ -82,7 +86,7 @@ MECHANISMS = ("none", "mask", "lagrange", "repair")
 
 
 OBS_MODES = ("base", "conflict")
-REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "directional")
+REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional")
 
 
 def obs_dim(n: int, m: int, obs_mode: str = "base") -> int:
@@ -240,10 +244,12 @@ class PlacementEnv(gym.Env):
     def _fail_reward(self) -> float:
         if self.reward_mode == "ar_raw":
             return 0.0
+        if self.reward_mode == "ar_pen":
+            return -(1.0 - self.valid_placed / self.M)
         return -self.M * (1.0 - self.valid_placed / self.M)
 
     def _success_reward(self) -> float:
-        if self.reward_mode == "ar_raw":
+        if self.reward_mode in ("ar_raw", "ar_pen"):
             return self.ar
         if self.reward_mode == "ar":
             return self.M * self.ar
