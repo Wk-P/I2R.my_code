@@ -6,7 +6,10 @@ previous per-scenario configs agreed on.
 """
 
 # ── data / split ──────────────────────────────────────────────────────────
-DATA_VERSION = "v4.3.1.4"             # data/<version>/{lt,eq,gt}.yaml; v4.3.1.3: p=0.3, v4.3.1.4: p=0.6
+import os as _os
+# data/<version>/{lt,eq,gt}.yaml; v4.3.1.3: p=0.3, v4.3.1.4: p=0.6, v4.4.1: p ~ U[0,1) per instance.
+# The DATA_VERSION environment variable overrides it (v4.4.1), so older runs keep v4.3.1.4.
+DATA_VERSION = _os.environ.get("DATA_VERSION", "v4.3.1.4")
 TRAIN_FRACTION = 0.8                  # of the 2000 instances; split seeded by the run seed
 
 # ── PPO family (PPO, Mask-PPO, Lagrange-PPO, Repair-PPO) ───────────────────
