@@ -57,12 +57,17 @@ Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episod
                r_t = 0 for t < M-1; terminal  M(2AR-1) if all M services are
                placed feasibly, else -M(1 - valid/M)
   ar           same, success branch M * AR
+  ar_raw       (v4.3.5) the objective itself: r_t = 0 for t < M-1, terminal
+               AR if all M services are placed feasibly, else 0 (dead ends
+               included); no scaling by M. Trained with gamma = 1, so the return
+               is exactly AR * 1{feasible}.
   directional  r_t = obj(dAR_t) every step, +B on feasible completion,
                -C and termination at a dead end (mask: no feasible ECU for
                the next service; repair: no ECU to repair to);
                obj(d) = 1 + beta d (d > eps), beta d (|d| <= eps),
                -lam_d + beta d (d < -eps)
-A repair dead end under succ_first / legacy / ar ends the episode with -M(1 - valid/M).
+A repair dead end under succ_first / legacy / ar ends the episode with -M(1 - valid/M)
+(ar_raw: 0).
 """
 from __future__ import annotations
 
@@ -77,6 +82,7 @@ MECHANISMS = ("none", "mask", "lagrange", "repair")
 
 
 OBS_MODES = ("base", "conflict")
+REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "directional")
 
 
 def obs_dim(n: int, m: int, obs_mode: str = "base") -> int:
@@ -107,7 +113,7 @@ class PlacementEnv(gym.Env):
         assert mechanism in MECHANISMS, mechanism
         assert obs_mode in OBS_MODES, obs_mode
         self.obs_mode = obs_mode
-        assert reward_mode in ("objective", "succ_first", "legacy", "ar", "directional"), reward_mode
+        assert reward_mode in REWARD_MODES, reward_mode
         self.instances = instances
         self.mechanism = mechanism
         self.reward_mode = reward_mode
@@ -232,9 +238,13 @@ class PlacementEnv(gym.Env):
 
     # ── step ────────────────────────────────────────────────────────────────
     def _fail_reward(self) -> float:
+        if self.reward_mode == "ar_raw":
+            return 0.0
         return -self.M * (1.0 - self.valid_placed / self.M)
 
     def _success_reward(self) -> float:
+        if self.reward_mode == "ar_raw":
+            return self.ar
         if self.reward_mode == "ar":
             return self.M * self.ar
         if self.reward_mode == "succ_first":

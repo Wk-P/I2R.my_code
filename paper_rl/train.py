@@ -2,6 +2,8 @@
 
     python -m paper_rl.train --scen lt --algo mask_ppo --reward ar --steps 1000000 --seed 1
 
+--gamma (v4.3.5) overrides the discount factor of every learner (ar_raw runs use 1).
+
 --reward-norm m (v4.3.1.8) divides every reward the learner sees by M, so the
 legacy terminal reward lies in [-1, 1] (succ_first: [-1, 3]); Monitor / training_curve.csv keep the
 raw reward. Default none = v4.3.1.6 behaviour.
@@ -38,7 +40,7 @@ import numpy as np
 
 from paper_rl import config as C
 from paper_rl.data import load
-from paper_rl.env import PlacementEnv, mask_slice
+from paper_rl.env import REWARD_MODES, PlacementEnv, mask_slice
 
 LEARNERS = ("ppo", "dqn", "ddqn")
 MECH_PREFIX = {"mask": "mask", "lagrange": "lagrange", "repair": "repair"}
@@ -71,10 +73,10 @@ def split_instances(scen: str, seed: int):
 
 
 # ── learners ────────────────────────────────────────────────────────────────
-def build_model(learner: str, mech: str, env, seed: int, n: int):
+def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | None = None):
     if learner == "ppo":
         kw = dict(policy="MlpPolicy", env=env, learning_rate=C.PPO_LR, n_steps=C.PPO_N_STEPS,
-                  batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS, gamma=C.PPO_GAMMA,
+                  batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS, gamma=C.PPO_GAMMA if gamma is None else gamma,
                   gae_lambda=C.PPO_GAE_LAMBDA, clip_range=C.PPO_CLIP_RANGE, ent_coef=C.PPO_ENT_COEF,
                   policy_kwargs=dict(net_arch=C.PPO_NET_ARCH), device="cpu", verbose=0, seed=seed)
         if mech == "mask":
@@ -86,7 +88,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int):
     from shared.dqn_variants import DoubleDQN, MaskableDQN, MaskableDDQN
     kw = dict(policy="MlpPolicy", env=env, learning_rate=C.DQN_LR, buffer_size=C.DQN_BUFFER_SIZE,
               learning_starts=C.DQN_LEARNING_STARTS, batch_size=C.DQN_BATCH_SIZE, tau=C.DQN_TAU,
-              gamma=C.DQN_GAMMA, train_freq=C.DQN_TRAIN_FREQ, gradient_steps=C.DQN_GRADIENT_STEPS,
+              gamma=C.DQN_GAMMA if gamma is None else gamma, train_freq=C.DQN_TRAIN_FREQ, gradient_steps=C.DQN_GRADIENT_STEPS,
               target_update_interval=C.DQN_TARGET_UPDATE, exploration_fraction=C.DQN_EXPLORATION_FRACTION,
               exploration_final_eps=C.DQN_EXPLORATION_FINAL_EPS,
               policy_kwargs=dict(net_arch=C.DQN_NET_ARCH), device="cpu", verbose=0, seed=seed)
@@ -227,9 +229,11 @@ def main():
     ap.add_argument("--scen", required=True, choices=["lt", "eq", "gt"])
     ap.add_argument("--algo", required=True, choices=ALGOS)
     ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "succ_first"),   # v4.3.1.9 default
-                    choices=["objective", "succ_first", "legacy", "ar", "directional"])
+                    choices=list(REWARD_MODES))
     ap.add_argument("--reward-norm", default=os.environ.get("REWARD_NORM", "none"), choices=["none", "m"])
     ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict"])   # v4.3.4
+    ap.add_argument("--gamma", type=float, default=None,     # v4.3.5; default: PPO_GAMMA / DQN_GAMMA in config
+                    help="discount factor for every learner (ar_raw uses 1, so the return is AR * 1{feasible})")
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
@@ -248,14 +252,15 @@ def main():
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"reward_norm={a.reward_norm} | obs={a.obs} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
     venv = DummyVecEnv([functools.partial(
         lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
-    model = build_model(learner, mech, venv, a.seed, n)
+    gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
+    model = build_model(learner, mech, venv, a.seed, n, gamma)
     cb = make_callback(mech, a.steps, outdir, exp_id)
     t0 = time.time()
     model.learn(total_timesteps=a.steps, callback=cb)
@@ -280,7 +285,7 @@ def main():
     res = {
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
-        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "seed": a.seed,
+        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "seed": a.seed,
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},
