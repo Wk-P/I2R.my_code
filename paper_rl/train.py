@@ -174,8 +174,9 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
 
 
 # ── evaluation ──────────────────────────────────────────────────────────────
-def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base") -> list[dict]:
-    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode)
+def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base",
+             full_episode: bool = False) -> list[dict]:
+    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode, full_episode=full_episode)
     out = []
     for k in range(len(test)):
         env.use_instance(k)
@@ -234,6 +235,8 @@ def main():
     ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict"])   # v4.3.4
     ap.add_argument("--gamma", type=float, default=None,     # v4.3.5; default: PPO_GAMMA / DQN_GAMMA in config
                     help="discount factor for every learner (ar_raw uses 1, so the return is AR * 1{feasible})")
+    ap.add_argument("--full-episode", action="store_true",      # v4.3.7: never stop early, always M steps
+                    default=os.environ.get("FULL_EPISODE", "0") == "1")
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
@@ -252,12 +255,13 @@ def main():
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
     venv = DummyVecEnv([functools.partial(
-        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs)), scale),
+        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs,
+                                             full_episode=a.full_episode)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
     model = build_model(learner, mech, venv, a.seed, n, gamma)
@@ -268,7 +272,7 @@ def main():
     lam = cb.lam if mech == "lagrange" else 0.0
     model.save(str(run_dir / f"model_{exp_id}_v{VERSION}-{a.reward}"))
 
-    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs)
+    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode)
     sr = float(np.mean([e["success"] for e in ev]))
     ars = np.array([e["ar"] for e in ev])
     succ_ratio = [e["ar"] / e["ar_star"] for e in ev if e["success"] and e["ar_star"] > 0]
@@ -278,14 +282,14 @@ def main():
     ok = [e for e in ev if e["success"]]
     ar_ok = float(np.mean([e["ar"] for e in ok])) if ok else float("nan")
     ilp_ok = float(np.mean([e["ar_star"] for e in ok])) if ok else float("nan")
-    print(f"  eval: success_rate={sr:.4f} | successful instances: AR={ar_ok:.4f} ILP AR={ilp_ok:.4f} "
+    print(f"  eval: violation-free={sr:.4f} | violation-free instances: AR={ar_ok:.4f} ILP AR={ilp_ok:.4f} "
           f"AR gap={ilp_ok - ar_ok:.4f} | cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | "
           f"train {train_s / 60:.1f} min", flush=True)
 
     res = {
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
-        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "seed": a.seed,
+        "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "seed": a.seed,
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},

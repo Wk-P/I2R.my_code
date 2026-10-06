@@ -33,6 +33,10 @@ Mechanisms:
             (dead end). Executed placements are therefore always feasible.
   (mask)    since v4.3.1.4 a dead end ends the episode before the next
             placement, so a masked agent never executes an infeasible one.
+  full_episode=True (v4.3.7): no early stop for any mechanism. Mask: at a dead end the
+            mask is all-True and the chosen placement is executed; repair: with nothing to
+            repair to, the chosen action is executed. Violations are recorded; the episode
+            always has M steps. dead_end then means "a dead end occurred".
 
 AR (average resource utilization) is computed over feasibly executed
 placements only:  AR = sum_{legal (i, j)} n_i / e_j / |ECUs hosting a legal
@@ -112,8 +116,12 @@ class PlacementEnv(gym.Env):
 
     def __init__(self, instances: list[dict], mechanism: str = "none",
                  reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None,
-                 obs_mode: str = "base"):
+                 obs_mode: str = "base", full_episode: bool = False):
         super().__init__()
+        # v4.3.7 (professor's comment 1-②): never stop early -- every episode places all M
+        # services; a mask / repair dead end executes the agent's own (infeasible) choice and
+        # the violation is recorded instead of ending the episode.
+        self.full_episode = full_episode
         assert mechanism in MECHANISMS, mechanism
         assert obs_mode in OBS_MODES, obs_mode
         self.obs_mode = obs_mode
@@ -270,16 +278,21 @@ class PlacementEnv(gym.Env):
         ar0 = self.ar
         directional = self.reward_mode == "directional"
 
+        if self.full_episode and self.mechanism == "mask" and not self._feasible(i).any():
+            self.dead_end = True                          # all-True mask: placement will violate
         if self.mechanism == "repair":
             feas = self._feasible(i)
             if not feas[a]:
-                if not feas.any():                       # nothing to repair to: dead end
+                if not feas.any() and self.full_episode:  # nothing to repair to: keep the action
+                    self.dead_end = True
+                elif not feas.any():                     # nothing to repair to: dead end
                     self.dead_end = True
                     r = -C.DIR_C * self.M if directional else self._fail_reward()
                     return self._obs(), r, True, False, self._info()
-                cand = np.flatnonzero(feas)
-                a = int(cand[np.argmax(self.req[i] / self.cap[cand])])
-                self.repairs += 1
+                if feas.any():
+                    cand = np.flatnonzero(feas)
+                    a = int(cand[np.argmax(self.req[i] / self.cap[cand])])
+                    self.repairs += 1
 
         cap_v = bool(self.remaining[a] < self.req[i])
         conf_v = self._conflict(a, i)
@@ -298,7 +311,7 @@ class PlacementEnv(gym.Env):
         success = done and self.valid_placed == self.M
         # c_t = int(cap_v) + int(conf_v) # removed from v4.3.1.5+
 
-        dead = (not done and self.mechanism in ("mask", "repair")
+        dead = (not done and not self.full_episode and self.mechanism in ("mask", "repair")
                 and not self._feasible(self.t).any())
         if dead:                                      # failure: stop before an infeasible placement
             self.dead_end = True
