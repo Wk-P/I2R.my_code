@@ -136,7 +136,7 @@ def train_attn(scen, size):
         opt.step()
         sched.step()
         if step % 5000 == 0:
-            print(f"  {scen} attn {size} step {step} loss {float(loss):.3f} ({(time.time() - t0) / 60:.1f} min)", flush=True)
+            print(f"  {scen} attn {size} step {step} loss {float(loss.detach()):.3f} ({(time.time() - t0) / 60:.1f} min)", flush=True)
     model.eval()
     sub = torch.as_tensor(np.random.default_rng(0).choice(size, min(size, 2000), replace=False))
     tr_acc, tr_t = attn_eval(model, tuple(x[sub] for x in tr), M)
