@@ -69,7 +69,8 @@ def load_scenario(yaml_config: Path, scenario_idx: int, scenarios: list):
 
 # ── ILP solver ────────────────────────────────────────────────────────────────
 
-def solve_ilp_max_ar(caps, reqs, conflict_sets=None, tol: float = 1e-6, max_iter: int = 30) -> dict:
+def solve_ilp_max_ar(caps, reqs, conflict_sets=None, tol: float = 1e-6, max_iter: int = 30,
+                     fixed: dict | None = None) -> dict:
     """Maximise AR = (sum_ij x_ij n_i / e_j) / (number of active ECUs) exactly,
     via Dinkelbach's method (v4.3.1.7). AR is a ratio, so each iteration
     solves the parametric ILP
@@ -78,7 +79,8 @@ def solve_ilp_max_ar(caps, reqs, conflict_sets=None, tol: float = 1e-6, max_iter
         s.t. sum_j x_ij = 1;  sum_i x_ij n_i <= e_j y_j;  x_ij <= y_j;
              sum_{i in C_k} x_ij <= 1 (every conflict set k, ECU j)
 
-    and sets lam <- F/G of its solution until |dlam| < tol. Returns
+    and sets lam <- F/G of its solution until |dlam| < tol. fixed = {service: ECU}
+    pins those placements (regret diagnostic: optimum completion of a prefix). Returns
     {status, avg_utilization (= AR*), total_utilization, active_ecus,
     iterations, allocation}. Same constraints as solve_ilp; only the
     objective differs (solve_ilp maximises the total utilisation instead).
@@ -93,6 +95,8 @@ def solve_ilp_max_ar(caps, reqs, conflict_sets=None, tol: float = 1e-6, max_iter
                  - lam * pulp.lpSum(y[j] for j in range(N)))
         for i in range(M):
             prob += pulp.lpSum(x[i][j] for j in range(N)) == 1
+        for i, j in (fixed or {}).items():
+            prob += x[i][j] == 1
         for j in range(N):
             prob += pulp.lpSum(x[i][j] * reqs[i] for i in range(M)) <= caps[j] * y[j]
             for i in range(M):
