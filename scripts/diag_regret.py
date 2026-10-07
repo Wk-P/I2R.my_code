@@ -105,6 +105,7 @@ def main():
     # v4.4.3: any Mask PPO run (manifest) or the supervised reference (--ref <dir with attn_<scen>_50000.pt>)
     ap.add_argument("--manifest", default=MANIFEST)
     ap.add_argument("--ref", default=None)
+    ap.add_argument("--key", default=ALGO, help="manifest key of the run (v4.4.3: mask_ppo_mlp = MLP control)")
     ap.add_argument("--label", default="v4.3.8 试跑的从零训练 Mask PPO（MLP，种子 1、1M 步，p = 0.6 数据）")
     ap.add_argument("--out", default=str(REPORT))
     a = ap.parse_args()
@@ -112,7 +113,7 @@ def main():
     if a.ref:
         ids = {s: {ALGO: f"ref:{Path(a.ref) / f'attn_{s}_50000.pt'}"} for s in SCENARIOS}
     else:
-        ids = json.loads((ROOT / a.manifest).read_text())["exp_ids"][str(SEED)]
+        ids = {s: {ALGO: d[a.key]} for s, d in json.loads((ROOT / a.manifest).read_text())["exp_ids"][str(SEED)].items()}
     chunks = [(s, ids[s][ALGO], list(range(c, min(c + 25, a.n)))) for s in SCENARIOS for c in range(0, a.n, 25)]
     with Pool(a.workers) as pool:
         traj = {}

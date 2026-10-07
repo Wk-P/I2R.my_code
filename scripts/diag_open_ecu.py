@@ -81,7 +81,7 @@ def replay(job):
             ilp = test[k]["ar_star"]
             insts.append({"ar": info["ar"], "ilp": ilp, "gap": ilp - info["ar"], "rel": (ilp - info["ar"]) / ilp,
                           "act": len([j for j in range(env.N) if env.hosted[j]]), "ilp_act": test[k]["ilp_active_ecus"],
-                          "n_vol": n_vol, "sum_du": sum_du})
+                          "n_vol": n_vol, "sum_du": sum_du, "k": k})
     return job, opens, insts, len(test)
 
 
