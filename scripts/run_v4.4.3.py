@@ -55,6 +55,8 @@ if "--seeds" in sys.argv:                              # e.g. --seeds 1  (later 
 # full run: the structure-aware model plus an MLP control with the same 5M budget (key mask_ppo_mlp)
 KEYS = {"mask_ppo": "graph", "mask_ppo_mlp": "mlp"}
 PILOT_MANIFEST = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot" / "manifest.json"
+GPU = "--gpu" in sys.argv          # structure-aware runs on CUDA (.venv-gpu), one GPU per scenario; MLP stays on CPU
+PY_GPU = str(ROOT / ".venv-gpu" / "bin" / "python")
 if PILOT:
     KEYS = {"mask_ppo": "graph"}
     SEEDS, STEPS = [1], 1_000_000
@@ -85,7 +87,10 @@ def launch(seed, scen, key, exp_ids):
     log = open(LOG_DIR / f"seed{seed}_{scen}_{key}_{exp_id}.log", "w")
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "EXP_ID": exp_id, "TRAIN_SEED": str(seed),
            "PAPER_VERSION": VERSION, "DATA_VERSION": DATA}
-    proc = subprocess.Popen([PY, "-u", "-m", "paper_rl.train", "--scen", scen, "--algo", ALGO, "--reward", REWARD,
+    gpu = GPU and KEYS[key] == "graph"
+    if gpu:
+        env["CUDA_VISIBLE_DEVICES"] = str(SCENARIOS.index(scen) % 3)
+    proc = subprocess.Popen([PY_GPU if gpu else PY, "-u", "-m", "paper_rl.train", *(["--device", "cuda"] if gpu else []), "--scen", scen, "--algo", ALGO, "--reward", REWARD,
                              "--reward-norm", NORM, "--obs", OBS, "--gamma", str(GAMMA), "--full-episode", "--exit-action",
                              "--net", KEYS[key], "--steps", str(STEPS), "--seed", str(seed)],
                             cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
