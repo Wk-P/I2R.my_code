@@ -40,4 +40,5 @@ conference-report/
 log_sources.json
 monitor_state.json
 
+notion/.venv-gpu/
 notion/

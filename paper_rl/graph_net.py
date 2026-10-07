@@ -26,11 +26,12 @@ def build(caps, reqs, adj, assign, t):
     """Raw state -> (node features: glob [B,4], ecu [B,N,6], svc [B,M,5]), relations [B,R,L,L], mask [B,N+1], ar [B]."""
     B, N = caps.shape
     M = reqs.shape[1]
-    ar_idx = torch.arange(B)
+    dev = caps.device
+    ar_idx = torch.arange(B, device=dev)
     cmax = caps.max(1, keepdim=True).values
     placed = assign >= 0
     unpl = ~placed
-    host = assign.unsqueeze(-1) == torch.arange(N)                          # [B,M,N]
+    host = assign.unsqueeze(-1) == torch.arange(N, device=dev)              # [B,M,N]
     hostf = host.float()
     load = (hostf * reqs.unsqueeze(-1)).sum(1)                              # [B,N]
     free = caps - load
@@ -42,7 +43,7 @@ def build(caps, reqs, adj, assign, t):
     fits = reqs.unsqueeze(-1) <= free.unsqueeze(1)
     feas = fits & ~conf_ecu & unpl.unsqueeze(-1)                            # [B,M,N]
     tc = t.clamp(max=M - 1)
-    cur = torch.arange(M) == tc.unsqueeze(1)
+    cur = torch.arange(M, device=dev) == tc.unsqueeze(1)
     m_ecu = feas[ar_idx, tc] & (t < M).unsqueeze(1)
     mask = torch.cat([m_ecu, ~m_ecu.any(1, keepdim=True)], 1)
     tot = caps.sum(1)
@@ -53,7 +54,7 @@ def build(caps, reqs, adj, assign, t):
     svc = torch.stack([reqs / cmax, placed.float(), cur.float(), feas.float().sum(-1) / N,
                        (adj & uu).float().sum(-1) / M * unpl], -1)
     L = 1 + N + M
-    rel = torch.zeros(B, N_REL, L, L)
+    rel = torch.zeros(B, N_REL, L, L, device=dev)
     s, e = slice(1 + N, L), slice(1, 1 + N)
     rel[:, 0, s, s] = (adj & uu).float()
     for r, x in ((1, hostf), (2, (conf_ecu & unpl.unsqueeze(-1)).float()), (3, (fits & unpl.unsqueeze(-1)).float())):
