@@ -69,3 +69,9 @@ export function zeroRepairViol(obj) {
     for (const k of Object.keys(obj)) if (VIOL_KEYS.test(k) && obj[k] != null) obj[k] = 0;
   return obj;
 }
+
+// v4.4.3: a run's variant is its reward mode (older pilots) or its policy network
+const VARIANT_LABEL = { graph: "结构感知网络", mlp: "MLP" };
+export const variantLabel = (v) => VARIANT_LABEL[v] ?? v;
+export const netLabel = (n) => (n ? VARIANT_LABEL[n] ?? n : "—");
+export const deviceLabel = (d) => (!d ? "—" : d.startsWith("cuda") ? "GPU" : d === "cpu" ? "CPU" : d);

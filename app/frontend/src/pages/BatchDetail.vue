@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { getBatch } from "../api.js";
-import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol } from "../labels.js";
+import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel } from "../labels.js";
 import { pct, fmt, pm, shortTime, secToHuman, steps } from "../format.js";
 
 const props = defineProps({ name: { type: String, required: true } });
@@ -59,6 +59,8 @@ const speedup = (r, k) => {
 
 const gap = (r) =>
   r.ilp_ar_mean == null || r.test_ar_mean_mean == null ? null : r.ilp_ar_mean - r.test_ar_mean_mean;
+const relGap = (r) => (gap(r) == null || !r.ilp_ar_mean ? null : gap(r) / r.ilp_ar_mean);
+const hasNet = computed(() => (data.value?.rows || []).some((r) => r.net));
 
 const seedTitle = (s) =>
   `种子 ${s.seed ?? "—"} · ${statusLabel(s.status)}${s.progress_pct != null ? ` ${s.progress_pct}%` : ""}${s.exp_id ? " · " + s.exp_id : ""}`;
@@ -164,9 +166,10 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       <table class="grid">
         <thead>
           <tr>
-            <th>场景</th><th>模型</th><th>约束处理</th><th v-if="hasVariant">奖励模式</th><th>种子</th>
+            <th>场景</th><th>模型</th><th>约束处理</th><th v-if="hasVariant" title="奖励模式（早期试跑）或策略网络（v4.4.3）">变体</th><th v-if="hasNet">网络 / 设备</th><th>种子</th>
             <th class="num" title="success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例">success_rate</th><th class="num" title="AR = average resource utilization（平均资源利用率，优化目标）">AR</th><th class="num">ILP AR</th><th class="num" title="AR gap = ILP AR − AR">AR gap</th>
-            <th class="num">容量违规</th><th class="num">冲突违规</th>
+            <th class="num" title="相对 gap = (ILP AR − AR) / ILP AR">相对 gap</th>
+            <th class="num">容量违规</th><th class="num">冲突违规</th><th class="num" title="Maskable 选了 EXIT 的测试实例比例">EXIT 率</th>
           </tr>
         </thead>
         <tbody>
@@ -174,7 +177,8 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <td><span v-if="firstOfScen(i)" class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
             <td><b v-if="firstOfLearner(i)">{{ learnerLabel(r.algo) }}</b></td>
             <td :class="{ dim: mechLabel(r.algo) === '无约束' }">{{ mechLabel(r.algo) }}</td>
-            <td v-if="hasVariant"><span v-if="r.variant" class="tag">{{ r.variant }}</span></td>
+            <td v-if="hasVariant"><span v-if="r.variant" class="tag">{{ variantLabel(r.variant) }}</span></td>
+            <td v-if="hasNet">{{ netLabel(r.net) }}<span v-if="r.device" class="dim small"> · {{ r.device.toUpperCase() }}</span></td>
             <td>
               <span class="seeds">
                 <component :is="runLink(r, s) ? 'a' : 'span'" v-for="s in r.seeds" :key="`${s.seed}-${s.exp_id}`" :href="runLink(r, s)"
@@ -188,8 +192,10 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <td class="num">{{ pm(r.test_ar_mean_mean, r.test_ar_mean_std) }}</td>
             <td class="num dim">{{ fmt(r.ilp_ar_mean) }}</td>
             <td class="num">{{ fmt(gap(r)) }}</td>
+            <td class="num">{{ pct(relGap(r)) }}</td>
               <td class="num" :class="{ warn: r.test_cap_viol_rate_mean }">{{ pct(r.test_cap_viol_rate_mean) }}</td>
               <td class="num" :class="{ warn: r.test_conflict_viol_rate_mean }">{{ pct(r.test_conflict_viol_rate_mean) }}</td>
+            <td class="num" :class="{ warn: r.test_exit_rate_mean }">{{ pct(r.test_exit_rate_mean) }}</td>
           </tr>
         </tbody>
       </table>
@@ -199,7 +205,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <span><i class="seed seed--queued"></i>排队中</span>
         <span v-if="data.skipped"><i class="seed seed--skipped"></i>未运行（批次已结束）</span>
         <span><i class="seed seed--stopped"></i>已中断</span>
-        <span>指标为已完成种子的均值 ± 标准差；AR = average resource utilization；AR gap = ILP AR − AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例</span>
+        <span>指标为已完成种子的均值 ± 标准差；AR = average resource utilization；AR gap = ILP AR − AR；相对 gap = (ILP AR − AR) / ILP AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例</span>
       </div>
     </section>
   </template>

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { store } from "../store.js";
 import { getBatches, getBatch } from "../api.js";
-import { algoLabel, algoIndex, scenarioIndex } from "../labels.js";
+import { algoLabel, algoIndex, scenarioIndex, variantLabel, netLabel } from "../labels.js";
 import { secToClock } from "../format.js";
 
 const procs = computed(() => store.system?.processes || []);
@@ -40,6 +40,7 @@ const queuedByBatch = computed(() => {
   return [...m.entries()];
 });
 
+const gpus = computed(() => store.system?.gpus || []);
 const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_percent || 0), 0));
 </script>
 
@@ -54,6 +55,11 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
     <div class="kpi"><div class="kpi-label">训练占用 CPU</div><div class="kpi-value">{{ (totalCpu / 100).toFixed(1) }}</div><div class="kpi-foot">核（共 {{ store.system?.cpu_count ?? "—" }}）</div></div>
     <div class="kpi"><div class="kpi-label">系统负载 1/5/15 分钟</div>
       <div class="kpi-value kpi-value--sm">{{ store.system ? ["1m", "5m", "15m"].map((k) => store.system.load_avg[k]?.toFixed(1)).join(" / ") : "—" }}</div></div>
+    <div v-for="g in gpus" :key="g.index" class="kpi" :title="g.name">
+      <div class="kpi-label">GPU {{ g.index }} 利用率</div>
+      <div class="kpi-value">{{ g.util ?? "—" }}%</div>
+      <div class="kpi-foot">显存 {{ g.mem_used != null ? (g.mem_used / 1024).toFixed(1) : "—" }} / {{ g.mem_total != null ? (g.mem_total / 1024).toFixed(0) : "—" }} GB · {{ g.temp ?? "—" }}°C</div>
+    </div>
   </div>
 
   <section class="panel">
@@ -61,21 +67,24 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
     <div v-if="!training.length" class="empty">当前没有训练任务在运行</div>
     <table v-else class="grid">
       <thead>
-        <tr><th>批次</th><th>场景</th><th>算法</th><th>奖励模式</th><th>种子</th><th>exp_id</th>
-          <th class="w-progress">训练进度</th><th class="num">CPU</th><th class="num">已运行</th><th class="num">PID</th></tr>
+        <tr><th>批次</th><th>场景</th><th>算法</th><th title="奖励模式（早期试跑）或策略网络（v4.4.3）">变体</th><th>网络</th><th>设备</th><th>种子</th><th>exp_id</th>
+          <th class="w-progress">训练进度</th><th class="num" title="日志里最近一次 [train] 记录的平均速度（自启动以来）">步/秒</th><th class="num">CPU</th><th class="num">已运行</th><th class="num">PID</th></tr>
       </thead>
       <tbody>
         <tr v-for="p in training" :key="p.pid">
           <td><a v-if="p.batch" :href="`#/batches/${p.batch}`">{{ p.batch }}</a><span v-else class="dim">手动启动</span></td>
           <td><span class="scen" :class="`scen--${p.scenario}`">{{ p.scenario.toUpperCase() }}</span></td>
           <td>{{ algoLabel(p.algo) }}</td>
-          <td><span v-if="p.variant" class="tag">{{ p.variant }}</span><span v-else class="dim">—</span></td>
+          <td><span v-if="p.variant" class="tag">{{ variantLabel(p.variant) }}</span><span v-else class="dim">—</span></td>
+          <td>{{ netLabel(p.net) }}</td>
+          <td :class="{ dim: p.device === 'CPU' }">{{ p.device ?? "—" }}</td>
           <td>{{ p.seed ?? "—" }}</td>
           <td class="mono dim">{{ p.exp_id ?? "—" }}</td>
           <td>
             <div class="bar"><div class="bar-fill" :style="{ width: (p.progress_pct ?? 0) + '%' }"></div></div>
             <span class="bar-text">{{ p.progress_pct ?? 0 }}%</span>
           </td>
+          <td class="num">{{ p.steps_per_sec?.toLocaleString() ?? "—" }}</td>
           <td class="num">{{ p.cpu_percent.toFixed(0) }}%</td>
           <td class="num">{{ secToClock(p.elapsed_seconds) }}</td>
           <td class="num mono dim">{{ p.pid }}</td>
@@ -93,7 +102,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
       <div class="queue-chips">
         <span v-for="(q, k) in items" :key="k" class="queue-chip">
           <span class="scen" :class="`scen--${q.scenario}`">{{ q.scenario.toUpperCase() }}</span>
-          {{ algoLabel(q.algo) }}<span v-if="q.variant" class="tag">{{ q.variant }}</span><span v-if="q.seed != null" class="dim small"> s{{ q.seed }}</span>
+          {{ algoLabel(q.algo) }}<span v-if="q.variant" class="tag">{{ variantLabel(q.variant) }}</span><span v-if="q.seed != null" class="dim small"> s{{ q.seed }}</span>
         </span>
       </div>
     </template>

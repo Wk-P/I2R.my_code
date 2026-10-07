@@ -6,7 +6,7 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import { store, setViewBranch, spaceLabel } from "../store.js";
 import { getExperiments } from "../api.js";
-import { SCENARIOS, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, mechOf, LEARNERS, MECHANISMS, MECH_LABEL, scenarioIndex, zeroRepairViol } from "../labels.js";
+import { SCENARIOS, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, mechOf, LEARNERS, MECHANISMS, MECH_LABEL, scenarioIndex, zeroRepairViol, variantLabel, netLabel, deviceLabel } from "../labels.js";
 import { pct, fmt, shortTime, steps } from "../format.js";
 
 const NO_VERSION = "未标注版本";
@@ -119,27 +119,34 @@ const activeFilters = computed(() =>
 
 // ── detail list: sorting + paging ──────────────────────────────────────
 const gap = (r) => (r.ilp_ar == null || r.test_ar_mean == null ? null : r.ilp_ar - r.test_ar_mean);
+// relative gap = (ILP AR − AR) / ILP AR (v4.4.3: both gaps are reported)
+const relGap = (r) => (gap(r) == null || !r.ilp_ar ? null : gap(r) / r.ilp_ar);
 const COLS = [
   { key: "created_at", label: "完成时间", get: (r) => r.created_at ?? "" },
   { key: "batch", label: "批次", get: (r) => vOf(r) + bOf(r) },
   { key: "scenario", label: "场景", get: (r) => scenarioIndex(r.scenario) },
   { key: "algo", label: "模型", get: (r) => algoIndex(r.algo) },
-  { key: "mech", label: "约束处理", get: (r) => algoIndex(r.algo) % 10 },
-  { key: "variant", label: "奖励模式", get: (r) => r.variant ?? "" },
-  { key: "seed", label: "种子", get: (r) => r.seed ?? 0, num: true },
-  { key: "train_steps", label: "步数", get: (r) => r.train_steps ?? 0, num: true },
+  { key: "variant", label: "变体", get: (r) => r.variant ?? "", optional: true },
+  { key: "net", label: "网络 · 设备", get: (r) => (r.net ?? "") + (r.device ?? "") },
+  { key: "seed", label: "种子 · 步数", get: (r) => (r.seed ?? 0) * 1e9 + (r.train_steps ?? 0), num: true },
   { key: "test_success_rate", label: "success_rate", get: (r) => r.test_success_rate ?? -1, num: true },
   { key: "test_ar_mean", label: "AR", get: (r) => r.test_ar_mean ?? -1, num: true },
   { key: "ilp_ar", label: "ILP AR", get: (r) => r.ilp_ar ?? -1, num: true },
-  { key: "gap", label: "AR gap", get: (r) => gap(r) ?? 9, num: true },
+  { key: "gap", label: "AR gap · 相对", get: (r) => gap(r) ?? 9, num: true },
   { key: "test_cap_viol_rate", label: "容量违规", get: (r) => r.test_cap_viol_rate ?? -1, num: true },
   { key: "test_conflict_viol_rate", label: "冲突违规", get: (r) => r.test_conflict_viol_rate ?? -1, num: true },
+  { key: "test_exit_rate", label: "EXIT 率", get: (r) => r.test_exit_rate ?? -1, num: true },
 ];
 const TIPS = {
   test_ar_mean: "AR = average resource utilization（平均资源利用率，优化目标）",
   test_success_rate: "success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例",
-  gap: "AR gap = ILP AR − AR",
+  gap: "AR gap = ILP AR − AR；相对 gap = (ILP AR − AR) / ILP AR",
+  test_exit_rate: "Maskable 选了 EXIT（无合法 ECU，回合结束）的测试实例比例；v4.3.8 之前没有 EXIT 动作",
+  variant: "奖励模式（早期试跑）或策略网络（v4.4.3：结构感知网络 / MLP）",
 };
+// the variant column only when some row in view has one (keeps every column on screen)
+const showVariant = computed(() => filtered.value.some((r) => r.variant));
+const cols = computed(() => COLS.filter((c) => !c.optional || showVariant.value));
 const sort = reactive({ key: "created_at", dir: -1 });
 function sortBy(c) {
   if (sort.key === c.key) sort.dir = -sort.dir;
@@ -164,6 +171,8 @@ const METRICS = {
   success: { label: "success_rate", get: (r) => r.test_success_rate, f: (v) => pct(v), better: 1 },
   ar: { label: "AR", get: (r) => r.test_ar_mean, f: (v) => fmt(v), better: 1 },
   gap: { label: "AR gap", get: gap, f: (v) => fmt(v), better: -1 },
+  rel_gap: { label: "相对 gap", get: relGap, f: (v) => pct(v), better: -1 },
+  exit: { label: "EXIT 率", get: (r) => r.test_exit_rate, f: (v) => pct(v), better: -1 },
   cap: { label: "容量违规", get: (r) => r.test_cap_viol_rate, f: (v) => pct(v), better: -1 },
   conflict: { label: "冲突违规", get: (r) => r.test_conflict_viol_rate, f: (v) => pct(v), better: -1 },
 };
@@ -246,8 +255,8 @@ function drill(row, s) {
         </div>
         <div class="filter-row">
           <template v-if="variantsAvail.length">
-            <span class="filter-label">奖励模式</span>
-            <select v-model="f.variant"><option value="">全部</option><option v-for="v in variantsAvail" :key="v" :value="v">{{ v }}</option></select>
+            <span class="filter-label">变体</span>
+            <select v-model="f.variant"><option value="">全部</option><option v-for="v in variantsAvail" :key="v" :value="v">{{ variantLabel(v) }}</option></select>
             <span class="filter-sep"></span>
           </template>
           <span class="filter-label">搜索</span>
@@ -273,10 +282,10 @@ function drill(row, s) {
       <!-- detail list -->
       <section v-else-if="f.view === 'list'" class="panel">
         <div class="table-scroll">
-          <table class="grid">
+          <table class="grid grid--compact">
             <thead>
               <tr>
-                <th v-for="c in COLS" :key="c.key" :class="[{ num: c.num }, 'sortable', { sorted: sort.key === c.key }]" :title="TIPS[c.key]" @click="sortBy(c)">
+                <th v-for="c in cols" :key="c.key" :class="[{ num: c.num }, 'sortable', { sorted: sort.key === c.key }]" :title="TIPS[c.key]" @click="sortBy(c)">
                   {{ c.label }}<span class="sort-ind">{{ sort.key === c.key ? (sort.dir > 0 ? "▲" : "▼") : "" }}</span>
                 </th>
               </tr>
@@ -286,17 +295,17 @@ function drill(row, s) {
                 <td>{{ shortTime(r.created_at) }}</td>
                 <td :title="`版本 ${vOf(r)}`">{{ bOf(r) }}</td>
                 <td><span class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
-                <td>{{ learnerLabel(r.algo) }}<span v-if="r.is_bc" class="tag">BC</span></td>
-                <td>{{ mechLabel(r.algo) }}</td>
-                <td><span v-if="r.variant" class="tag">{{ r.variant }}</span></td>
-                <td class="num">{{ r.seed ?? "—" }}</td>
-                <td class="num">{{ steps(r.train_steps) }}</td>
+                <td>{{ algoLabel(r.algo) }}<span v-if="r.is_bc" class="tag">BC</span></td>
+                <td v-if="showVariant"><span v-if="r.variant" class="tag">{{ variantLabel(r.variant) }}</span></td>
+                <td>{{ netLabel(r.net) }}<span class="dim small"> · {{ deviceLabel(r.device) }}</span></td>
+                <td class="num">{{ r.seed ?? "—" }}<span class="dim small"> · {{ steps(r.train_steps) }}</span></td>
                 <td class="num">{{ pct(r.test_success_rate) }}</td>
                 <td class="num">{{ fmt(r.test_ar_mean) }}</td>
                 <td class="num dim">{{ fmt(r.ilp_ar) }}</td>
-                <td class="num">{{ fmt(gap(r)) }}</td>
+                <td class="num">{{ fmt(gap(r)) }}<span class="dim small"> · {{ pct(relGap(r)) }}</span></td>
                   <td class="num" :class="{ warn: r.test_cap_viol_rate }">{{ pct(r.test_cap_viol_rate) }}</td>
                   <td class="num" :class="{ warn: r.test_conflict_viol_rate }">{{ pct(r.test_conflict_viol_rate) }}</td>
+                <td class="num" :class="{ warn: r.test_exit_rate }">{{ pct(r.test_exit_rate) }}</td>
               </tr>
             </tbody>
           </table>
@@ -318,13 +327,13 @@ function drill(row, s) {
         </div>
         <table class="grid pivot">
           <thead>
-            <tr><th>模型</th><th>约束处理</th><th v-if="pivot.hasVariant">奖励模式</th><th v-for="s in pivot.scens" :key="s" class="num">{{ s.toUpperCase() }}</th></tr>
+            <tr><th>模型</th><th>约束处理</th><th v-if="pivot.hasVariant">变体</th><th v-for="s in pivot.scens" :key="s" class="num">{{ s.toUpperCase() }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="(row, k) in pivot.body" :key="row.algo + row.variant" :class="{ 'row-sep': k && learnerLabel(pivot.body[k - 1].algo) !== learnerLabel(row.algo) }">
               <td><b v-if="!k || learnerLabel(pivot.body[k - 1].algo) !== learnerLabel(row.algo)">{{ learnerLabel(row.algo) }}</b></td>
               <td>{{ mechLabel(row.algo) }}</td>
-              <td v-if="pivot.hasVariant"><span v-if="row.variant" class="tag">{{ row.variant }}</span></td>
+              <td v-if="pivot.hasVariant"><span v-if="row.variant" class="tag">{{ variantLabel(row.variant) }}</span></td>
               <td v-for="s in pivot.scens" :key="s" class="num" :class="{ best: row.stats[s] && row.stats[s].m === pivot.best[s] }">
                 <a v-if="row.stats[s]" class="cell-link" @click="drill(row, s)" title="查看这些运行">
                   {{ pivot.M.f(row.stats[s].m) }}<span v-if="row.stats[s].n > 1" class="sd"> ± {{ pivot.M.f(row.stats[s].sd) }}</span>

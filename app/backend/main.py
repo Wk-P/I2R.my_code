@@ -149,7 +149,9 @@ def _algo_key(data: dict) -> str | None:
                 "feasibility", "created_at", "bc", "exp_id",
                 # paper_rl (v4.3.1.3+) metadata
                 "version", "commit", "algo", "mechanism", "learner", "reward_mode",
-                "reward_norm", "obs", "gamma", "full_episode", "exit_action", "action_mode", "seed", "data")
+                "reward_norm", "obs", "gamma", "full_episode", "exit_action", "action_mode", "seed", "data",
+                # v4.4.3: policy network / torch device
+                "net", "device")
     # The algo block is always a dict; skipping scalars keeps a newly added
     # metadata field from taking down /api/experiments again.
     return next((k for k, v in data.items() if k not in reserved and isinstance(v, dict)), None)
@@ -210,6 +212,11 @@ def _row_from_run(scenario: str, algo: str, run_dir: Path) -> dict | None:
         "test_conflict_viol_rate":  _nan_to_none(algo_eval.get("conflict_viol_rate")),
         "test_cap_viol_total":      algo_eval.get("cap_viol_total"),
         "test_conflict_viol_total": algo_eval.get("conflict_viol_total"),
+        "test_exit_rate":  _nan_to_none(algo_eval.get("exit_rate")),
+        "net":             data.get("net") or "mlp",
+        "device":          data.get("device") or "cpu",
+        "obs":             data.get("obs"),
+        "train_seconds":   training.get("train_seconds"),
         "train_ar_last50": _nan_to_none(training.get("ar_last50")),
         "train_steps":     training.get("total_steps"),
         "train_episodes":  training.get("n_episodes"),
@@ -782,13 +789,21 @@ def get_progress():
 def _training_proc_info(pid: int) -> dict:
     """exp_id / seed / reward mode (from the launcher-provided environment),
     owning batch (log directory) and training progress (log tail)."""
-    info = {"exp_id": None, "seed": None, "variant": None, "batch": None, "progress_pct": None}
+    info = {"exp_id": None, "seed": None, "variant": None, "batch": None, "progress_pct": None,
+            "net": None, "device": None, "steps_per_sec": None}
     try:
         env = dict(kv.split(b"=", 1) for kv in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0") if b"=" in kv)
         info["exp_id"] = env.get(b"EXP_ID", b"").decode() or None
         info["seed"] = env.get(b"TRAIN_SEED", b"").decode() or None
         info["variant"] = env.get(b"REWARD_MODE", b"").decode() or None
-    except OSError:
+        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        arg = lambda flag: cmd[cmd.index(flag) + 1].decode() if flag in cmd and cmd.index(flag) + 1 < len(cmd) else None
+        if b"paper_rl.train" in cmd:                       # v4.4.3: policy network and torch device
+            info["net"] = arg(b"--net") or "mlp"
+            dev = arg(b"--device") or "cpu"
+            gpu = env.get(b"CUDA_VISIBLE_DEVICES", b"").decode()
+            info["device"] = f"GPU {gpu}" if dev.startswith("cuda") and gpu else ("GPU" if dev.startswith("cuda") else "CPU")
+    except (OSError, ValueError):
         pass
     log_path = _proc_stdout_log_path(pid)
     if log_path:
@@ -799,8 +814,11 @@ def _training_proc_info(pid: int) -> dict:
             with open(lp, "rb") as fh:
                 fh.seek(0, 2)
                 fh.seek(max(0, fh.tell() - 8192))
-                hits = _TRAIN_PCT_RE.findall(fh.read().decode(errors="ignore"))
+                tail = fh.read().decode(errors="ignore")
+            hits = _TRAIN_PCT_RE.findall(tail)
             info["progress_pct"] = float(hits[-1]) if hits else 0.0
+            sps = re.findall(r"steps/s=([\d,]+)", tail)
+            info["steps_per_sec"] = int(sps[-1].replace(",", "")) if sps else None
         except OSError:
             pass
     return info
@@ -826,8 +844,26 @@ def get_system():
     return {
         "cpu_count": os.cpu_count(),
         "load_avg": {"1m": load1, "5m": load5, "15m": load15},
+        "gpus": _gpu_status(),
         "processes": procs,
     }
+
+
+def _gpu_status() -> list[dict]:
+    """v4.4.3: one entry per GPU from nvidia-smi (read-only); [] if there is none."""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    gpus = []
+    for line in out.strip().splitlines():
+        f = [x.strip() for x in line.split(",")]
+        if len(f) == 6:
+            num = lambda x: float(x) if x.replace(".", "", 1).isdigit() else None
+            gpus.append({"index": int(f[0]), "name": f[1], "util": num(f[2]), "mem_used": num(f[3]),
+                         "mem_total": num(f[4]), "temp": num(f[5])})
+    return gpus
 
 
 def _live_exp_ids(procs: list[dict]) -> set[str]:
@@ -869,6 +905,10 @@ def _manifest_runs(manifest: dict) -> list[dict]:
     a member of manifest["algos"] is the algo, a bare integer is the seed,
     and anything else is a variant label (e.g. a reward mode)."""
     algos = set(manifest.get("algos") or [])
+    # v4.4.3: "keys" maps a manifest key to a variant of the (single) algo, e.g.
+    # {"mask_ppo": "graph", "mask_ppo_mlp": "mlp"}; the results live under the algo.
+    keys = manifest.get("keys") if isinstance(manifest.get("keys"), dict) else {}
+    key_algo = (manifest.get("algos") or [None])[0]
     runs = []
 
     def walk(node, path):
@@ -883,6 +923,9 @@ def _manifest_runs(manifest: dict) -> list[dict]:
         for k in path:
             if k in SCENARIOS and run["scenario"] is None:
                 run["scenario"] = k
+            elif k in keys and run["algo"] is None:
+                run["algo"] = key_algo
+                variant.append(keys[k])
             elif k in algos and run["algo"] is None:
                 run["algo"] = k
             elif k.isdigit() and run["seed"] is None:
@@ -902,7 +945,7 @@ def _manifest_runs(manifest: dict) -> list[dict]:
     # (exp_id None) -- otherwise queued jobs are invisible until they start.
     scens = manifest.get("scenarios") or []
     seeds = manifest.get("seeds") or ([manifest["seed"]] if manifest.get("seed") is not None else [None])
-    modes = manifest.get("modes") or [""]
+    modes = list(keys.values()) if keys else (manifest.get("modes") or [""])
     if scens and algos:
         have = {(r["scenario"], r["algo"], r["variant"], r["seed"]) for r in runs}
         for mode, scen, algo, seed in itertools.product(modes, scens, manifest["algos"], seeds):
@@ -1169,8 +1212,8 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     # A manifest only lists runs launched so far; the planned total is the
     # product of its scenarios / algos / seeds / modes lists.
     total = 1
-    for k in ("scenarios", "algos", "seeds", "modes"):
-        if isinstance(manifest.get(k), list) and manifest[k]:
+    for k in ("scenarios", "algos", "seeds", "modes", "keys"):
+        if isinstance(manifest.get(k), (list, dict)) and manifest[k]:
             total *= len(manifest[k])
     total = max(total if manifest else 0, len(runs))
     if (log_dir / ".cancelled").is_file():
@@ -1256,7 +1299,7 @@ def get_batch_progress(batch_name: str):
             row = _row_from_run(r["scenario"], r["algo"], run_dir)
             if row:
                 for k in ("test_success_rate", "test_ar_mean", "ilp_ar",
-                          "test_cap_viol_rate", "test_conflict_viol_rate"):
+                          "test_cap_viol_rate", "test_conflict_viol_rate", "test_exit_rate", "device", "net"):
                     r[k] = row[k]
         elif r["status"] == "running":
             r["progress_pct"] = _log_train_pct(LOGS_ROOT / batch_name, r["exp_id"])
@@ -1274,11 +1317,14 @@ def get_batch_progress(batch_name: str):
     for (scenario, algo, variant), rs in groups.items():
         done = [r for r in rs if r["status"] == "done"]
         row = {"scenario": scenario, "algo": algo, "variant": variant,
+               "net": next((r.get("net") for r in done if r.get("net")), None),
+               "device": "/".join(sorted({r["device"] for r in done if r.get("device")})) or None,
                "n_done": len(done), "n_total": len(rs),
                "seeds": sorted(({"seed": r["seed"], "status": r["status"], "exp_id": r["exp_id"],
                                  "progress_pct": r["progress_pct"]} for r in rs),
                                key=lambda x: (x["seed"] is None, x["seed"] or 0))}
-        for k in ("test_success_rate", "test_ar_mean", "ilp_ar", "test_cap_viol_rate", "test_conflict_viol_rate"):
+        for k in ("test_success_rate", "test_ar_mean", "ilp_ar", "test_cap_viol_rate", "test_conflict_viol_rate",
+                  "test_exit_rate"):
             row[k + "_mean"], row[k + "_std"] = agg([r.get(k) for r in done])
         rows.append(row)
     scen_order = {"lt": 0, "eq": 1, "gt": 2}
