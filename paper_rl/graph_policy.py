@@ -1,0 +1,55 @@
+"""v4.4.3: MaskablePPO policy built on the structure-aware network (paper_rl/graph_net.py).
+
+Shared encoder, separate heads: every ECU token is scored by the same actor head (ECU-
+permutation equivariant), EXIT by the global token, and the value V(s) comes from the global
+token plus the mean of all tokens (permutation invariant). Needs PlacementEnv(obs_mode="raw").
+Everything else (distribution, masking, PPO update) is MaskablePPO's own.
+"""
+from __future__ import annotations
+
+from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
+
+from paper_rl.graph_net import GraphPolicyNet, decode_raw
+
+
+class GraphMaskablePolicy(MaskableActorCriticPolicy):
+    def __init__(self, observation_space, action_space, lr_schedule, n_ecu: int = 0, n_svc: int = 0,
+                 d: int = 128, heads: int = 4, layers: int = 3, **kwargs):
+        self.n_ecu, self.n_svc, self.gkw = n_ecu, n_svc, dict(d=d, heads=heads, layers=layers)
+        super().__init__(observation_space, action_space, lr_schedule, **kwargs)
+
+    def _build(self, lr_schedule) -> None:
+        self.gnet = GraphPolicyNet(**self.gkw)
+        self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
+
+    def _get_constructor_parameters(self):
+        data = super()._get_constructor_parameters()
+        data.update(n_ecu=self.n_ecu, n_svc=self.n_svc, **self.gkw)
+        return data
+
+    def _run(self, obs):
+        logits, value, _, _ = self.gnet(*decode_raw(obs.float(), self.n_ecu, self.n_svc))
+        return logits, value.unsqueeze(-1)
+
+    def _dist(self, logits, action_masks):
+        dist = self.action_dist.proba_distribution(action_logits=logits)
+        if action_masks is not None:
+            dist.apply_masking(action_masks)
+        return dist
+
+    def forward(self, obs, deterministic: bool = False, action_masks=None):
+        logits, values = self._run(obs)
+        dist = self._dist(logits, action_masks)
+        actions = dist.get_actions(deterministic=deterministic)
+        return actions, values, dist.log_prob(actions)
+
+    def evaluate_actions(self, obs, actions, action_masks=None):
+        logits, values = self._run(obs)
+        dist = self._dist(logits, action_masks)
+        return values, dist.log_prob(actions), dist.entropy()
+
+    def get_distribution(self, obs, action_masks=None):
+        return self._dist(self._run(obs)[0], action_masks)
+
+    def predict_values(self, obs):
+        return self._run(obs)[1]

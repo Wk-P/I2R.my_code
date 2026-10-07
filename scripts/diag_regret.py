@@ -43,11 +43,11 @@ def rollout(args):
     import torch
     torch.set_num_threads(1)
     from paper_rl.env import PlacementEnv
-    from paper_rl.train import model_class
+    from paper_rl.policy_io import load_policy
     scen, exp_id, ks = args
-    model = model_class("ppo", "mask").load(str(next((RESULTS / scen / ALGO / exp_id).glob("model_*"))), device="cpu")
     test = test_split(scen)
-    env = PlacementEnv(test, "mask", "ar_pen", full_episode=True, exit_action=True)
+    predict, obs_mode = load_policy(scen, ALGO, exp_id, "model_*", len(test[0]["ECUs"]), len(test[0]["SVCs"]))
+    env = PlacementEnv(test, "mask", "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode)
     out = []
     for k in ks:
         env.use_instance(k)
@@ -56,8 +56,7 @@ def rollout(args):
         steps, done = [], False
         while not done:
             mask = env.action_masks()
-            a, _ = model.predict(obs, deterministic=True, action_masks=mask)
-            a = int(a)
+            a = predict(obs, mask)
             if a == env.N:                                     # EXIT
                 obs, _, done, _, info = env.step(a)
                 break
@@ -103,9 +102,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=400)
     ap.add_argument("--workers", type=int, default=48)
+    # v4.4.3: any Mask PPO run (manifest) or the supervised reference (--ref <dir with attn_<scen>_50000.pt>)
+    ap.add_argument("--manifest", default=MANIFEST)
+    ap.add_argument("--ref", default=None)
+    ap.add_argument("--label", default="v4.3.8 试跑的从零训练 Mask PPO（MLP，种子 1、1M 步，p = 0.6 数据）")
+    ap.add_argument("--out", default=str(REPORT))
     a = ap.parse_args()
     t0 = time.time()
-    ids = json.loads((ROOT / MANIFEST).read_text())["exp_ids"][str(SEED)]
+    if a.ref:
+        ids = {s: {ALGO: f"ref:{Path(a.ref) / f'attn_{s}_50000.pt'}"} for s in SCENARIOS}
+    else:
+        ids = json.loads((ROOT / a.manifest).read_text())["exp_ids"][str(SEED)]
     chunks = [(s, ids[s][ALGO], list(range(c, min(c + 25, a.n)))) for s in SCENARIOS for c in range(0, a.n, 25)]
     with Pool(a.workers) as pool:
         traj = {}
@@ -127,11 +134,12 @@ def main():
     f4 = lambda v: f"{v:.4f}"
     lines = ["# 逐步 regret 分解（用 ILP 测量，不训练）", "",
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `scripts/diag_regret.py`；耗时 {(time.time() - t0) / 60:.1f} 分钟。",
-             f"- 模型：v4.3.8 试跑的从零训练 Mask PPO（种子 1、1M 步，p = 0.6 数据），在种子 1 测试集的前 {a.n} 个实例上确定性回放。",
+             f"- 模型：{a.label}，在种子 1 测试集的前 {a.n} 个实例上确定性回放。",
              "- V*(s_t) = 固定已做的放置、其余由 ILP（Dinkelbach）最优完成时能达到的最终 AR；Regret(s_t, a) = V*(s_t) − V*(执行 a 之后)。"
              "沿策略自己的轨迹逐步相加，恰好等于该实例的绝对 gap（ILP AR − AR）。",
              f"- 最优动作 = Regret ≤ {EPS:g} 的合法动作（容差防 ILP 数值误差）。同容量的空 ECU 互换等价，只求一次但各算一个动作。",
              "- EXIT 实例单独统计：第一次把状态推进到「ILP 已无可行完成」的步号。", ""]
+    summary = {}
     for s in SCENARIOS:
         ok, ex = [], []
         for (sc, k), e in sorted(traj.items()):
@@ -161,6 +169,10 @@ def main():
         tele = max(abs(sum(r["regs"]) - r["gap"]) for r in ok) if ok else float("nan")
         all_regs = [x for r in ok for x in r["regs"]]
         tot = sum(sum(r["regs"]) for r in ok)
+        summary[s] = {"opt_rate": float(np.mean([p for r in ok for p in r["picked"]])),
+                      "opt_rate_t": [float(np.mean([r["picked"][t] for r in ok if len(r["picked"]) > t])) for t in range(M)],
+                      "regret_share_t": [sum(r["regs"][t] for r in ok if len(r["regs"]) > t) / tot if tot else 0.0 for t in range(M)],
+                      "n_ok": len(ok), "n_ex": len(ex)}
         lines += [f"## {s.upper()}（M = {M}）", "",
                   f"完成的实例 {len(ok)} 个，EXIT / 中途无可行完成 {len(ex)} 个。逐步 regret 之和与绝对 gap 的最大偏差 {tele:.1e}（核对 telescoping）。", "",
                   "| 指标 | 值 |", "|---|---|",
@@ -197,9 +209,11 @@ def main():
                          f"{np.mean([r['nleg'][t] for r in ok]):.2f} | {np.mean([r['nopt'][t] for r in ok]):.2f} | "
                          f"{pc(np.mean([r['picked'][t] for r in ok]))} |")
         lines.append("")
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.write_text("\n".join(lines))
-    print(f"report -> {REPORT}")
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines))
+    out.with_suffix(".json").write_text(json.dumps(summary))
+    print(f"report -> {out}")
 
 
 if __name__ == "__main__":

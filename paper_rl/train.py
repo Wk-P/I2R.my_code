@@ -74,12 +74,16 @@ def split_instances(scen: str, seed: int):
 
 # ── learners ────────────────────────────────────────────────────────────────
 def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | None = None,
-                exit_action: bool = False, m: int = 0, action_mode: str = "ecu"):
+                exit_action: bool = False, m: int = 0, action_mode: str = "ecu", net: str = "mlp"):
     if learner == "ppo":
         kw = dict(policy="MlpPolicy", env=env, learning_rate=C.PPO_LR, n_steps=C.PPO_N_STEPS,
                   batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS, gamma=C.PPO_GAMMA if gamma is None else gamma,
                   gae_lambda=C.PPO_GAE_LAMBDA, clip_range=C.PPO_CLIP_RANGE, ent_coef=C.PPO_ENT_COEF,
                   policy_kwargs=dict(net_arch=C.PPO_NET_ARCH), device="cpu", verbose=0, seed=seed)
+        if net == "graph":                              # v4.4.3: structure-aware policy, PPO settings unchanged
+            assert mech == "mask" and action_mode == "ecu", "--net graph: Mask PPO, ECU action only"
+            from paper_rl.graph_policy import GraphMaskablePolicy
+            kw.update(policy=GraphMaskablePolicy, policy_kwargs=dict(n_ecu=n, n_svc=m))
         if mech == "mask":
             from sb3_contrib import MaskablePPO
             return MaskablePPO(**kw)
@@ -234,7 +238,7 @@ def main():
     ap.add_argument("--reward", default=os.environ.get("REWARD_MODE", "succ_first"),   # v4.3.1.9 default
                     choices=list(REWARD_MODES))
     ap.add_argument("--reward-norm", default=os.environ.get("REWARD_NORM", "none"), choices=["none", "m"])
-    ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict", "feas"])   # v4.3.4 / v4.3.9
+    ap.add_argument("--obs", default=os.environ.get("OBS_MODE", "base"), choices=["base", "conflict", "feas", "raw"])   # v4.3.4 / v4.3.9
     ap.add_argument("--gamma", type=float, default=None,     # v4.3.5; default: PPO_GAMMA / DQN_GAMMA in config
                     help="discount factor for every learner (ar_raw uses 1, so the return is AR * 1{feasible})")
     ap.add_argument("--full-episode", action="store_true",      # v4.3.7: never stop early, always M steps
@@ -243,6 +247,8 @@ def main():
                     help="v4.4.0: 'joint' = the agent picks (service, ECU); Mask + --full-episode only")
     ap.add_argument("--exit-action", action="store_true",       # Mask only: EXIT action, valid iff no ECU is feasible
                     default=os.environ.get("EXIT_ACTION", "0") == "1")
+    ap.add_argument("--net", default=os.environ.get("POLICY_NET", "mlp"), choices=["mlp", "graph"],
+                    help="v4.4.3: 'graph' = structure-aware policy (paper_rl/graph_policy.py); forces --obs raw")
     ap.add_argument("--bc", action="store_true",                # v4.4.2: ILP-demonstration warm start (Mask PPO only)
                     default=os.environ.get("BC_WARMSTART", "0") == "1")
     ap.add_argument("--steps", type=int, default=5_000_000)
@@ -254,6 +260,8 @@ def main():
     from stable_baselines3.common.vec_env import DummyVecEnv
     from shared.paths import VERSION, resolve_exp_id, results_dir
 
+    if a.net == "graph":
+        a.obs = "raw"
     mech, learner = split_algo(a.algo)
     torch.set_num_threads(C.PPO_TORCH_THREADS if learner == "ppo" else C.DQN_TORCH_THREADS)
     data, train, test = split_instances(a.scen, a.seed)
@@ -273,7 +281,7 @@ def main():
                                              action_mode=a.action)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
-    model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action)
+    model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net)
     bc_info = None
     if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
         assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
@@ -318,7 +326,7 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
-        "bc": bc_info,
+        "net": a.net, "bc": bc_info,
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},

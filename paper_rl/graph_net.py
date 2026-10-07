@@ -117,3 +117,13 @@ def state_from_env(env):
             assign[i] = j
     return (torch.as_tensor(env.cap[None], dtype=torch.float32), torch.as_tensor(env.req[None], dtype=torch.float32),
             torch.as_tensor(adj[None]), torch.as_tensor(assign[None]), torch.as_tensor([env.t]))
+
+
+def decode_raw(obs, n: int, m: int):
+    """PlacementEnv raw observation [B, N+M+M*M+M+1] -> (caps, reqs, adj, assign, t)."""
+    caps = obs[:, :n]
+    reqs = obs[:, n:n + m]
+    adj = obs[:, n + m:n + m + m * m].reshape(-1, m, m) > 0.5
+    assign = obs[:, n + m + m * m:n + 2 * m + m * m].round().long() - 1
+    t = obs[:, -1].round().long()
+    return caps, reqs, adj, assign, t

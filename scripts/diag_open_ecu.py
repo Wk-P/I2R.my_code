@@ -46,26 +46,22 @@ def replay(job):
     import torch
     torch.set_num_threads(1)
     from paper_rl.env import PlacementEnv
-    from paper_rl.train import model_class, split_algo
+    from paper_rl.policy_io import load_policy
+    from paper_rl.train import split_algo
     label, version, scen, algo, exp_id = job[:5]
     pattern = job[5] if len(job) > 5 else "model_*"          # v4.4.2: "bc_only_*" = the BC warm start alone
-    run_dir = RESULTS / scen / algo / exp_id
     mech, learner = split_algo(algo)
-    model = model_class(learner, mech).load(str(next(run_dir.glob(pattern))), device="cpu")
     test = test_split(scen, version, SEED)
-    env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True)
+    n, m = len(test[0]["ECUs"]), len(test[0]["SVCs"])
+    predict, obs_mode = load_policy(scen, algo, exp_id, pattern, n, m)   # v4.4.3: any policy / observation
+    env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode)
     opens, insts = [], []
     for k in range(len(test)):
         env.use_instance(k)
         obs, _ = env.reset()
         done, n_vol, sum_du = False, 0, 0.0
         while not done:
-            mask = env.action_masks()
-            if learner == "ppo":
-                a, _ = model.predict(obs, deterministic=True, action_masks=mask)
-            else:
-                a, _ = model.predict(obs, deterministic=True)
-            a = int(a)
+            a = predict(obs, env.action_masks())
             if a < env.N:
                 i = env.t
                 active = [j for j in range(env.N) if env.hosted[j]]

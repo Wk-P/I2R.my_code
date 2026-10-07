@@ -89,13 +89,15 @@ from paper_rl import config as C
 MECHANISMS = ("none", "mask", "lagrange", "repair")
 
 
-OBS_MODES = ("base", "conflict", "feas")
+OBS_MODES = ("base", "conflict", "feas", "raw")   # raw: v4.4.3, state for paper_rl/graph_net
 REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional")
 
 
 def obs_dim(n: int, m: int, obs_mode: str = "base", action_mode: str = "ecu") -> int:
     if action_mode == "joint":
         return 4 + 3 * n + 4 * m + m * n + 1
+    if obs_mode == "raw":                    # caps N | demands M | conflict graph M*M | assignment+1 M | t
+        return n + m + m * m + m + 1
     base = 6 + 5 * n + 2 * m + 1
     return base + {"conflict": m * (m - 1) // 2, "feas": m * n}.get(obs_mode, 0)
 
@@ -150,7 +152,8 @@ class PlacementEnv(gym.Env):
         self.N = len(instances[0]["ECUs"])
         self.M = len(instances[0]["SVCs"])
         self.action_space = gym.spaces.Discrete((self.M * self.N if self.joint else self.N) + self.exit_action)
-        self.observation_space = gym.spaces.Box(-1.0, 1.0, (obs_dim(self.N, self.M, obs_mode, action_mode),), np.float32)
+        self.observation_space = gym.spaces.Box(-1.0, 1.0 if obs_mode != "raw" else 1e4,
+                                                (obs_dim(self.N, self.M, obs_mode, action_mode),), np.float32)
         self._pairs = np.triu_indices(self.M, k=1)       # (i, j), i < j, in placement order
 
     # ── setup ────────────────────────────────────────────────────────────────
@@ -259,6 +262,8 @@ class PlacementEnv(gym.Env):
     def _obs(self) -> np.ndarray:
         if self.joint:
             return self._obs_joint()
+        if self.obs_mode == "raw":
+            return self._raw_obs()
         n, m, mc = self.N, self.M, self.max_cap
         total_cap = float(self.cap.sum())
         if self.t < m:
@@ -304,6 +309,19 @@ class PlacementEnv(gym.Env):
         for k in range(self.t, self.M):
             f[k] = self._feasible(k)
         return f.ravel()
+
+    def _raw_obs(self) -> np.ndarray:
+        """v4.4.3: raw state for the structure-aware policy (paper_rl/graph_net.decode_raw):
+        capacities (N), demands in placement order (M), conflict graph (M x M), ECU of every
+        placed service + 1 (0 = not placed, M), current step t (1)."""
+        adj = np.zeros((self.M, self.M), dtype=np.float32)
+        for i, ps in enumerate(self.partners):
+            adj[i, list(ps)] = 1.0
+        assign = np.zeros(self.M, dtype=np.float32)
+        for j, hs in enumerate(self.hosted):
+            for i in hs:
+                assign[i] = j + 1
+        return np.concatenate([self.cap, self.req, adj.ravel(), assign, [self.t]]).astype(np.float32)
 
     def _conflict_obs(self) -> np.ndarray:
         """v4.3.4: raw conflict graph among the services not yet placed, fixed length
