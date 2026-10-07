@@ -243,6 +243,8 @@ def main():
                     help="v4.4.0: 'joint' = the agent picks (service, ECU); Mask + --full-episode only")
     ap.add_argument("--exit-action", action="store_true",       # Mask only: EXIT action, valid iff no ECU is feasible
                     default=os.environ.get("EXIT_ACTION", "0") == "1")
+    ap.add_argument("--bc", action="store_true",                # v4.4.2: ILP-demonstration warm start (Mask PPO only)
+                    default=os.environ.get("BC_WARMSTART", "0") == "1")
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
@@ -272,6 +274,24 @@ def main():
         a.seed * 1000 + k) for k in range(n_envs)])
     gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
     model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action)
+    bc_info = None
+    if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
+        assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
+        from paper_rl.bc import alloc_path, expert_dataset, pretrain
+        allocs_all = json.loads(alloc_path(a.scen).read_text())
+        pos = {id(x): k for k, x in enumerate(data["instances"])}
+        t_bc = time.time()
+        demo = expert_dataset(dict(mechanism=mech, reward_mode=a.reward, obs_mode=a.obs, full_episode=a.full_episode,
+                                   exit_action=a.exit_action), train, [allocs_all[pos[id(x)]] for x in train])
+        bc_info = pretrain(model, demo, seed=a.seed)
+        model.save(str(run_dir / f"bc_only_{exp_id}"))
+        ev_bc = evaluate(model, test, mech, a.reward, 0.0, learner, a.obs, a.full_episode, a.exit_action, a.action)
+        ok_bc = [e for e in ev_bc if not e["exited"] and e["cap_v"] == 0 and e["conf_v"] == 0]
+        bc_info.update({"bc_seconds": round(time.time() - t_bc, 1),
+                        "bc_only_exit_rate": round(float(np.mean([e["exited"] for e in ev_bc])), 6),
+                        "bc_only_ar": round(float(np.mean([e["ar"] for e in ok_bc])), 6) if ok_bc else None,
+                        "bc_only_ilp_ar": round(float(np.mean([e["ar_star"] for e in ok_bc])), 6) if ok_bc else None})
+        print(f"  [bc] {bc_info}", flush=True)
     cb = make_callback(mech, a.steps, outdir, exp_id)
     t0 = time.time()
     model.learn(total_timesteps=a.steps, callback=cb)
@@ -298,6 +318,7 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
+        "bc": bc_info,
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},

@@ -47,10 +47,11 @@ def replay(job):
     torch.set_num_threads(1)
     from paper_rl.env import PlacementEnv
     from paper_rl.train import model_class, split_algo
-    label, version, scen, algo, exp_id = job
+    label, version, scen, algo, exp_id = job[:5]
+    pattern = job[5] if len(job) > 5 else "model_*"          # v4.4.2: "bc_only_*" = the BC warm start alone
     run_dir = RESULTS / scen / algo / exp_id
     mech, learner = split_algo(algo)
-    model = model_class(learner, mech).load(str(next(run_dir.glob("model_*"))), device="cpu")
+    model = model_class(learner, mech).load(str(next(run_dir.glob(pattern))), device="cpu")
     test = test_split(scen, version, SEED)
     env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True)
     opens, insts = [], []
