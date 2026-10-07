@@ -172,6 +172,8 @@ def main():
         tot = sum(sum(r["regs"]) for r in ok)
         summary[s] = {"opt_rate": float(np.mean([p for r in ok for p in r["picked"]])),
                       "opt_rate_t": [float(np.mean([r["picked"][t] for r in ok if len(r["picked"]) > t])) for t in range(M)],
+                      # v4.4.4: mean absolute regret per step (sums to the mean gap over completed instances)
+                      "regret_t": [float(np.mean([r["regs"][t] for r in ok if len(r["regs"]) > t])) for t in range(M)],
                       "regret_share_t": [sum(r["regs"][t] for r in ok if len(r["regs"]) > t) / tot if tot else 0.0 for t in range(M)],
                       "n_ok": len(ok), "n_ex": len(ex)}
         lines += [f"## {s.upper()}（M = {M}）", "",
