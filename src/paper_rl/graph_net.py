@@ -7,6 +7,7 @@ serves supervised tests and (later) PPO.
 
 Tokens: 1 global + N ECUs + M services. Node features:
   global : AR so far, unplaced share, unplaced demand / total capacity, free capacity / total capacity
+           [+ 2 sigma_util with glob_std (v4.4.6): std of u_j / c_j over the active ECUs, scaled to [0, 1]]
   ECU j  : c_j / c_max, free_j / c_max, active, feasible for the current service, hosted / M, load_j / c_j
   svc k  : d_k / c_max, placed, is current, feasible ECUs / N, conflicts with other unplaced / M
 Relations (added to the attention logits through a learned weight per relation, layer and head):
@@ -22,8 +23,8 @@ import torch.nn as nn
 N_REL = 4
 
 
-def build(caps, reqs, adj, assign, t):
-    """Raw state -> (node features: glob [B,4], ecu [B,N,6], svc [B,M,5]), relations [B,R,L,L], mask [B,N+1], ar [B]."""
+def build(caps, reqs, adj, assign, t, glob_std: bool = False):
+    """Raw state -> (node features: glob [B,4 or 5], ecu [B,N,6], svc [B,M,5]), relations [B,R,L,L], mask [B,N+1], ar [B]."""
     B, N = caps.shape
     M = reqs.shape[1]
     dev = caps.device
@@ -47,7 +48,11 @@ def build(caps, reqs, adj, assign, t):
     m_ecu = feas[ar_idx, tc] & (t < M).unsqueeze(1)
     mask = torch.cat([m_ecu, ~m_ecu.any(1, keepdim=True)], 1)
     tot = caps.sum(1)
-    glob = torch.stack([ar, unpl.float().mean(1), (reqs * unpl).sum(1) / tot, free.clamp(min=0).sum(1) / tot], 1)
+    gl = [ar, unpl.float().mean(1), (reqs * unpl).sum(1) / tot, free.clamp(min=0).sum(1) / tot]
+    if glob_std:                                    # v4.4.6: spread of utilisation over the active ECUs
+        var = (((util - ar.unsqueeze(1)) ** 2) * active).sum(1) / active.sum(1).clamp(min=1)
+        gl.append(2 * var.clamp(min=0).sqrt())
+    glob = torch.stack(gl, 1)
     ecu = torch.stack([caps / cmax, free.clamp(min=0) / cmax, active.float(), m_ecu.float(),
                        hostf.sum(1) / M, util], -1)
     uu = unpl.unsqueeze(1) & unpl.unsqueeze(2)
@@ -82,9 +87,10 @@ class Block(nn.Module):
 
 
 class GraphPolicyNet(nn.Module):
-    def __init__(self, d: int = 128, heads: int = 4, layers: int = 3):
+    def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False):
         super().__init__()
-        self.inp = nn.ModuleList([nn.Linear(4, d), nn.Linear(6, d), nn.Linear(5, d)])
+        self.glob_std = glob_std
+        self.inp = nn.ModuleList([nn.Linear(5 if glob_std else 4, d), nn.Linear(6, d), nn.Linear(5, d)])
         self.type_emb = nn.Parameter(torch.zeros(3, d))
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
         self.ln = nn.LayerNorm(d)
@@ -94,7 +100,7 @@ class GraphPolicyNet(nn.Module):
 
     def forward(self, caps, reqs, adj, assign, t):
         """-> masked logits [B,N+1], value [B], mask [B,N+1], ar [B]"""
-        (glob, ecu, svc), rel, mask, ar = build(caps, reqs, adj, assign, t)
+        (glob, ecu, svc), rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std)
         N = caps.shape[1]
         x = torch.cat([self.inp[0](glob).unsqueeze(1) + self.type_emb[0], self.inp[1](ecu) + self.type_emb[1],
                        self.inp[2](svc) + self.type_emb[2]], 1)
