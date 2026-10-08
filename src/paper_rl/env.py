@@ -87,6 +87,21 @@ import numpy as np
 from paper_rl import config as C
 
 MECHANISMS = ("none", "mask", "lagrange", "repair")
+ORDERS = ("desc", "asc", "random")
+
+
+def service_order(inst: dict, mode: str = "desc", seed: int = 0) -> list[int]:
+    """Placement order of the services (v4.4.7): desc / asc demand (stable), or a fixed random
+    permutation per instance (seeded by the instance content and `seed`)."""
+    m = len(inst["SVCs"])
+    if mode == "desc":
+        return sorted(range(m), key=lambda i: -inst["SVCs"][i])
+    if mode == "asc":
+        return sorted(range(m), key=lambda i: inst["SVCs"][i])
+    import hashlib
+    import json
+    key = json.dumps([inst["ECUs"], inst["SVCs"], inst["conflict_sets"], seed]).encode()
+    return [int(i) for i in np.random.default_rng(int.from_bytes(hashlib.sha256(key).digest()[:8], "little")).permutation(m)]
 
 
 OBS_MODES = ("base", "conflict", "feas", "raw")   # raw: v4.4.3, state for src/paper_rl/graph_net
@@ -124,8 +139,13 @@ class PlacementEnv(gym.Env):
     def __init__(self, instances: list[dict], mechanism: str = "none",
                  reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None,
                  obs_mode: str = "base", full_episode: bool = False, exit_action: bool = False,
-                 action_mode: str = "ecu"):
+                 action_mode: str = "ecu", order: str = "desc", order_seed: int = 0):
         super().__init__()
+        # v4.4.7: order in which the services are presented -- desc / asc (demand, stable) or
+        # random: one fixed permutation per instance, from its content and order_seed, so an
+        # instance keeps the same order in training and evaluation regardless of the split.
+        assert order in ORDERS, order
+        self.order_mode, self.order_seed = order, order_seed
         # v4.3.7 (professor's comment 1-②): never stop early -- every episode places all M
         # services; a mask / repair dead end executes the agent's own (infeasible) choice and
         # the violation is recorded instead of ending the episode.
@@ -172,7 +192,8 @@ class PlacementEnv(gym.Env):
         inst = self.instances[idx]
         self.inst_idx = idx
         self.ar_star = float(inst.get("ar_star", 0.0))
-        order = sorted(range(self.M), key=lambda i: -inst["SVCs"][i])   # descending demand
+        order = service_order(inst, self.order_mode, self.order_seed)
+        self.order = order                                  # placement position -> original service index
         pos = {old: new for new, old in enumerate(order)}
         self.cap = np.array(inst["ECUs"], dtype=np.float32)
         self.req = np.array([inst["SVCs"][i] for i in order], dtype=np.float32)

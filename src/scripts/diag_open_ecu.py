@@ -46,7 +46,7 @@ def replay(job):
     import torch
     torch.set_num_threads(1)
     from paper_rl.env import PlacementEnv
-    from paper_rl.policy_io import load_policy
+    from paper_rl.policy_io import env_order, load_policy
     from paper_rl.train import split_algo
     label, version, scen, algo, exp_id = job[:5]
     pattern = job[5] if len(job) > 5 else "model_*"          # v4.4.2: "bc_only_*" = the BC warm start alone
@@ -55,7 +55,8 @@ def replay(job):
     test = test_split(scen, version, seed)
     n, m = len(test[0]["ECUs"]), len(test[0]["SVCs"])
     predict, obs_mode = load_policy(scen, algo, exp_id, pattern, n, m)   # v4.4.3: any policy / observation
-    env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode)
+    env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode,
+                       **env_order(scen, algo, exp_id))
     opens, insts = [], []
     for k in range(len(test)):
         env.use_instance(k)

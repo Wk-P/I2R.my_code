@@ -43,16 +43,17 @@ def rollout(args):
     import torch
     torch.set_num_threads(1)
     from paper_rl.env import PlacementEnv
-    from paper_rl.policy_io import load_policy
+    from paper_rl.policy_io import env_order, load_policy
     scen, exp_id, ks = args
     test = test_split(scen)
     predict, obs_mode = load_policy(scen, ALGO, exp_id, "model_*", len(test[0]["ECUs"]), len(test[0]["SVCs"]))
-    env = PlacementEnv(test, "mask", "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode)
+    env = PlacementEnv(test, "mask", "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode,
+                       **env_order(scen, ALGO, exp_id))
     out = []
     for k in ks:
         env.use_instance(k)
         obs, _ = env.reset()
-        order = sorted(range(env.M), key=lambda i: -test[k]["SVCs"][i])
+        order = env.order                                      # v4.4.7: the run's own service order
         steps, done = [], False
         while not done:
             mask = env.action_masks()

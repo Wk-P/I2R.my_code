@@ -41,3 +41,12 @@ def load_policy(scen: str, algo: str, exp_id: str, pattern: str = "model_*", n: 
             a, _ = model.predict(obs, deterministic=True)
         return int(a)
     return predict, obs_mode
+
+
+def env_order(scen: str, algo: str, exp_id: str) -> dict:
+    """PlacementEnv order kwargs a run was trained with (v4.4.7; older runs and the supervised
+    reference: descending demand)."""
+    if exp_id.startswith("ref:"):
+        return {"order": "desc", "order_seed": 0}
+    res = json.loads((RESULTS / scen / algo / exp_id / "results.json").read_text())
+    return {"order": res.get("order", "desc"), "order_seed": res.get("order_seed", 0)}

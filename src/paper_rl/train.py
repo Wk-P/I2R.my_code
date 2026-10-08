@@ -182,8 +182,9 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
 
 # ── evaluation ──────────────────────────────────────────────────────────────
 def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base",
-             full_episode: bool = False, exit_action: bool = False, action_mode: str = "ecu") -> list[dict]:
-    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode, full_episode=full_episode,
+             full_episode: bool = False, exit_action: bool = False, action_mode: str = "ecu",
+             order: str = "desc", order_seed: int = 0) -> list[dict]:
+    env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode, full_episode=full_episode, order=order, order_seed=order_seed,
                        exit_action=exit_action, action_mode=action_mode)
     out = []
     for k in range(len(test)):
@@ -257,6 +258,9 @@ def main():
                     help="GAE lambda for PPO (1 = Monte-Carlo return minus V(s))")
     ap.add_argument("--lr", type=float, default=None, help="v4.4.5: PPO learning rate (default PPO_LR in config)")
     ap.add_argument("--ent-coef", type=float, default=None, help="v4.4.5: PPO entropy coefficient (default PPO_ENT_COEF)")
+    ap.add_argument("--order", default="desc", choices=["desc", "asc", "random"],
+                    help="v4.4.7: service placement order (random = one fixed permutation per instance)")
+    ap.add_argument("--order-seed", type=int, default=0, help="v4.4.7: seed of the random order")
     ap.add_argument("--glob-std", action="store_true",
                     help="v4.4.6: --net graph only; add the utilisation std of the active ECUs to the global token")
     ap.add_argument("--bc", action="store_true",                # v4.4.2: ILP-demonstration warm start (Mask PPO only)
@@ -281,20 +285,21 @@ def main():
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
     venv = DummyVecEnv([functools.partial(
         lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs,
                                              full_episode=a.full_episode, exit_action=a.exit_action,
-                                             action_mode=a.action)), scale),
+                                             action_mode=a.action, order=a.order, order_seed=a.order_seed)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
     model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std)
     bc_info = None
     if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
         assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
+        assert a.order == "desc", "--bc: demonstrations are built in descending order (paper_rl.bc)"
         from paper_rl.bc import alloc_path, expert_dataset, pretrain
         allocs_all = json.loads(alloc_path(a.scen).read_text())
         pos = {id(x): k for k, x in enumerate(data["instances"])}
@@ -317,7 +322,7 @@ def main():
     lam = cb.lam if mech == "lagrange" else 0.0
     model.save(str(run_dir / f"model_{exp_id}_v{VERSION}-{a.reward}"))
 
-    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode, a.exit_action, a.action)
+    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode, a.exit_action, a.action, a.order, a.order_seed)
     sr = float(np.mean([e["success"] for e in ev]))
     ars = np.array([e["ar"] for e in ev])
     succ_ratio = [e["ar"] / e["ar_star"] for e in ev if e["success"] and e["ar_star"] > 0]
@@ -336,7 +341,7 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
-        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std,
+        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "order": a.order, "order_seed": a.order_seed,
         **({"gae_lambda": C.PPO_GAE_LAMBDA if a.gae_lambda is None else a.gae_lambda,
             "lr": C.PPO_LR if a.lr is None else a.lr,
             "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef} if learner == "ppo" else {}),
