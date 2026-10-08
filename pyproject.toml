@@ -2,7 +2,6 @@
 name = "my-code"
 version = "0.1.0"
 description = "Add your description here"
-readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "annotated-doc==0.0.4",
@@ -54,6 +53,15 @@ dependencies = [
     "watchfiles==1.2.0",
     "websockets==16.0",
 ]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# src layout: experiment code lives in src/ (paper_rl, shared; scripts/ are run as files)
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["paper_rl*", "shared*"]
 
 [tool.uv]
 environments = ["sys_platform == 'linux'"]
