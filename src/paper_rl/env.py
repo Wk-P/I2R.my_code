@@ -69,6 +69,11 @@ Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episod
                terminal AR in (0, 1] if all M services are placed feasibly, else
                -(1 - valid/M) in [-1, 0) (dead ends included); no scaling by M,
                reward > 0 on success and < 0 on failure. gamma = 1.
+  ar_tel       (v4.4.9) ar_pen redistributed in time, return-preserving per trajectory: every
+               non-terminal step pays r_t = AR_t - AR_{t-1} (AR_0 = 0); the terminal step pays the
+               ar_pen terminal reward minus everything paid so far, so the undiscounted return of every
+               trajectory equals ar_pen's exactly (success: the last step is just dAR_M; EXIT / dead end:
+               R_fail - AR_k). Lagrange's -lambda * violations is added on top, as for every mode.
   directional  r_t = obj(dAR_t) every step, +B on feasible completion,
                -C and termination at a dead end (mask: no feasible ECU for
                the next service; repair: no ECU to repair to);
@@ -105,7 +110,7 @@ def service_order(inst: dict, mode: str = "desc", seed: int = 0) -> list[int]:
 
 
 OBS_MODES = ("base", "conflict", "feas", "raw")   # raw: v4.4.3, state for src/paper_rl/graph_net
-REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional")
+REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional", "ar_tel")
 
 
 def obs_dim(n: int, m: int, obs_mode: str = "base", action_mode: str = "ecu") -> int:
@@ -214,6 +219,7 @@ class PlacementEnv(gym.Env):
         self.exec_ru = 0.0                                  # every executed placement (objective)
         self.exec_ecus: set[int] = set()
         self.valid_placed = 0
+        self.paid = 0.0                                     # ar_tel: reward paid so far this episode
         self.cap_violations = 0
         self.conflict_violations = 0
         self.repairs = 0
@@ -357,12 +363,12 @@ class PlacementEnv(gym.Env):
     def _fail_reward(self) -> float:
         if self.reward_mode == "ar_raw":
             return 0.0
-        if self.reward_mode == "ar_pen":
+        if self.reward_mode in ("ar_pen", "ar_tel"):
             return -(1.0 - self.valid_placed / self.M)
         return -self.M * (1.0 - self.valid_placed / self.M)
 
     def _success_reward(self) -> float:
-        if self.reward_mode in ("ar_raw", "ar_pen"):
+        if self.reward_mode in ("ar_raw", "ar_pen", "ar_tel"):
             return self.ar
         if self.reward_mode == "ar":
             return self.M * self.ar
@@ -378,6 +384,14 @@ class PlacementEnv(gym.Env):
                 "ecus_used": len(self.legal_ecus), "inst_idx": self.inst_idx,
                 "viol_rate_ep": (self.cap_violations + self.conflict_violations) / self.M}
 
+    def _tel(self, r: float, done: bool, ar0: float) -> float:
+        """v4.4.9 ar_tel: map the ar_pen reward of a step to the redistributed one (identity otherwise)."""
+        if self.reward_mode != "ar_tel":
+            return r
+        r = r - self.paid if done else self.ar - ar0        # terminal: settle up to the ar_pen return
+        self.paid += r
+        return r
+
     def step(self, action: int):
         i, a = self.t, int(action)
         ar0 = self.ar
@@ -385,7 +399,7 @@ class PlacementEnv(gym.Env):
         n_place = self.M * self.N if self.joint else self.N
         if self.exit_action and a == n_place:                # EXIT: no feasible ECU left
             self.exited = True
-            return self._obs(), float(self._fail_reward()), True, False, self._info()
+            return self._obs(), float(self._tel(self._fail_reward(), True, ar0)), True, False, self._info()
         if self.joint:
             i, a = divmod(a, self.N)
             assert not self.placed[i], "service already placed"
@@ -399,7 +413,7 @@ class PlacementEnv(gym.Env):
                     self.dead_end = True
                 elif not feas.any():                     # nothing to repair to: dead end
                     self.dead_end = True
-                    r = -C.DIR_C * self.M if directional else self._fail_reward()
+                    r = -C.DIR_C * self.M if directional else self._tel(self._fail_reward(), True, ar0)
                     return self._obs(), r, True, False, self._info()
                 if feas.any():
                     cand = np.flatnonzero(feas)
@@ -429,7 +443,7 @@ class PlacementEnv(gym.Env):
         if dead:                                      # failure: stop before an infeasible placement
             self.dead_end = True
             done = True
-            r = -C.DIR_C * self.M if directional else self._fail_reward()
+            r = -C.DIR_C * self.M if directional else self._tel(self._fail_reward(), True, ar0)
         elif directional:
             r = objective_reward(self.ar - ar0)
             if success:
@@ -438,6 +452,7 @@ class PlacementEnv(gym.Env):
             r = self.M * self.ar_exec if done else 0.0
         else:
             r = (self._success_reward() if success else self._fail_reward()) if done else 0.0
+            r = self._tel(r, done, ar0)
         if self.mechanism == "lagrange" and done:          # terminal constraint cost (v4.3.1.5)
             r -= self.lam * (self.cap_violations + self.conflict_violations)
         return self._obs(), float(r), done, False, self._info(cap_v, conf_v)
