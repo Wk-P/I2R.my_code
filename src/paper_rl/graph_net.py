@@ -14,6 +14,8 @@ Relations (added to the attention logits through a learned weight per relation, 
   svc-svc conflict (both unplaced), svc hosted on ECU, unplaced svc conflicts with an ECU's
   services, unplaced svc fits the ECU's free capacity. Every ECU is scored by the same head;
   EXIT is scored from the global token. Swapping ECUs (or services) swaps the outputs.
+  pair_head (v4.4.10): ECU j is scored from the current-service / ECU pair,
+  MLP([h_svc(t), h_ecu(j), h_svc(t) * h_ecu(j), h_glob]) (4d -> d -> 1), one head shared by all ECUs.
 """
 from __future__ import annotations
 
@@ -87,14 +89,17 @@ class Block(nn.Module):
 
 
 class GraphPolicyNet(nn.Module):
-    def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False):
+    def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, pair_head: bool = False):
         super().__init__()
-        self.glob_std = glob_std
+        self.glob_std, self.pair_head = glob_std, pair_head
         self.inp = nn.ModuleList([nn.Linear(5 if glob_std else 4, d), nn.Linear(6, d), nn.Linear(5, d)])
         self.type_emb = nn.Parameter(torch.zeros(3, d))
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
         self.ln = nn.LayerNorm(d)
-        self.ecu_head = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1))
+        if pair_head:                                   # v4.4.10: current-service x ECU pair scoring
+            self.pair_mlp = nn.Sequential(nn.Linear(4 * d, d), nn.GELU(), nn.Linear(d, 1))
+        else:
+            self.ecu_head = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1))
         self.exit_head = nn.Linear(d, 1)
         self.value_head = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, 1))
 
@@ -107,7 +112,16 @@ class GraphPolicyNet(nn.Module):
         for b in self.blocks:
             x = b(x, rel)
         x = self.ln(x)
-        logits = torch.cat([self.ecu_head(x[:, 1:1 + N]).squeeze(-1), self.exit_head(x[:, 0])], 1)
+        h_ecu = x[:, 1:1 + N]
+        if self.pair_head:
+            M = reqs.shape[1]
+            h_svc = x[torch.arange(x.shape[0], device=x.device), 1 + N + t.clamp(max=M - 1)]   # current service
+            h_svc = h_svc.unsqueeze(1).expand_as(h_ecu)
+            z = torch.cat([h_svc, h_ecu, h_svc * h_ecu, x[:, :1].expand_as(h_ecu)], -1)
+            ecu_logits = self.pair_mlp(z).squeeze(-1)
+        else:
+            ecu_logits = self.ecu_head(h_ecu).squeeze(-1)
+        logits = torch.cat([ecu_logits, self.exit_head(x[:, 0])], 1)
         value = self.value_head(torch.cat([x[:, 0], x[:, 1:].mean(1)], -1)).squeeze(-1)
         return logits.masked_fill(~mask, -1e9), value, mask, ar
 

@@ -17,8 +17,9 @@ from paper_rl.graph_net import GraphPolicyNet, decode_raw
 class GraphMaskablePolicy(MaskableActorCriticPolicy):
     def __init__(self, observation_space, action_space, lr_schedule, n_ecu: int = 0, n_svc: int = 0,
                  d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, separate: bool = False,
-                 **kwargs):
-        self.n_ecu, self.n_svc, self.gkw = n_ecu, n_svc, dict(d=d, heads=heads, layers=layers, glob_std=glob_std)
+                 pair_head: bool = False, **kwargs):
+        self.n_ecu, self.n_svc = n_ecu, n_svc
+        self.gkw = dict(d=d, heads=heads, layers=layers, glob_std=glob_std, pair_head=pair_head)
         self.separate = separate
         super().__init__(observation_space, action_space, lr_schedule, **kwargs)
 
