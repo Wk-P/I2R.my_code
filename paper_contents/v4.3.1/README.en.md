@@ -2,7 +2,7 @@
 
 Incremental version after v4.3.0 (DQN family switched to the PPO reward; Mask/Repair-DQN/DDQN added). **Default behaviour is identical to v4.3.0**: every new reward is selected through the environment variable `REWARD_MODE`, and `legacy` is used when it is not set.
 
-## 1. Switchable reward `REWARD_MODE` (`shared/reward_config.py`)
+## 1. Switchable reward `REWARD_MODE` (`src/shared/reward_config.py`)
 
 | Mode | Terminal reward, violation-free episode | Terminal reward, episode with violations | Intermediate steps |
 |---|---|---|---|
@@ -13,7 +13,7 @@ Incremental version after v4.3.0 (DQN family switched to the PPO reward; Mask/Re
 
 - AR = average resource utilization (the objective); $AR^*$ is the instance's ILP-optimal AR.
 - Problem with `legacy`: when $AR<0.5-\frac{1}{2M}$ a violation-free episode scores below the $-1$ of "violating only at the last step" (about 1/10 of EQ instances are affected, see "Known issues" in `../v4.3.0/README.md`). `ar` / `ratio` guarantee that every violation-free episode (>0) is strictly better than every violating one (<0).
-- $AR^*$ is computed by `scripts/build_ar_star.py`, solving the ILP for 2000 instances per scenario in parallel, stored in `results/<branch>/<scen>/ilp/ar_star.json` (indexed by a hash of the instance), about 80 seconds.
+- $AR^*$ is computed by `src/scripts/build_ar_star.py`, solving the ILP for 2000 instances per scenario in parallel, stored in `results/<branch>/<scen>/ilp/ar_star.json` (indexed by a hash of the instance), about 80 seconds.
 - Environments wired in: PPO, Mask-PPO, DQN, DDQN (Mask-DQN/DDQN reuse the Mask-PPO environment). The curriculum weight $w$ of Mask-PPO LT is kept: the success branch is $M[(1-w)+w\cdot q]$, where $q$ is the quality term in the table above.
 
 ## 2. directional reward (based on `../v4.3.0/Reward-Discussion.md`)
@@ -46,8 +46,8 @@ Implementation: a `directional_step()` decorator wraps `step()` of 18 environmen
 
 ## 3. 1M-step reward pilot (`legacy` / `ar` / `ratio`)
 
-- Script: `scripts/run_v4.3.1_reward_pilot.py`; 3 rewards × {PPO, Mask-PPO, DQN} × 3 scenarios × seed 1 = 27 jobs.
-- Report: `reward_pilot_report.md` (this directory); manifest: `scripts/logs/v4.3.1_reward_pilot/manifest.json`.
+- Script: `src/scripts/run_v4.3.1_reward_pilot.py`; 3 rewards × {PPO, Mask-PPO, DQN} × 3 scenarios × seed 1 = 27 jobs.
+- Report: `reward_pilot_report.md` (this directory); manifest: `logs/v4.3.1_reward_pilot/manifest.json`.
 - Scheduling weights follow measured CPU usage (PPO 7 cores, DQN 3 cores); `--resume` supported.
 
 Results (success_rate; single seed, 1M steps, AR is the mean over all test episodes):
@@ -70,13 +70,13 @@ Results (success_rate; single seed, 1M steps, AR is the mean over all test episo
 
 ## 4. Repair-* no longer records the repair-trigger rate
 
-`scenarios/*/ppo_opt/run_all.py` and `shared/dqn_variant_runner.py`: the violation columns count only executed placements (0 for Repair-* by construction), and result files no longer output the repair-trigger rate. The environment still counts repairs internally because the `legacy` reward uses them.
+`scenarios/*/ppo_opt/run_all.py` and `src/shared/dqn_variant_runner.py`: the violation columns count only executed placements (0 for Repair-* by construction), and result files no longer output the repair-trigger rate. The environment still counts repairs internally because the `legacy` reward uses them.
 
 ## 5. git branch cleanup and result directories
 
 - The former 5 branches (main → pretrain → paper-verfication → add_states → final_paper_experiments) were research stages on one straight line, all contained in the latest commit. Only **main** is kept as the main line (fast-forwarded to the latest), and versions are marked with tags.
 - The old branches became archive tags and were deleted (locally and on GitHub): `archive/stage1-main`, `archive/stage2-pretrain`, `archive/stage3-paper-verification` (including 2 previously unpushed local commits), `archive/stage4-add-states`, `archive/stage5-final-paper-experiments`. To view an old stage: `git checkout archive/stage4-add-states`.
-- Where results are written is decoupled from the branch name: `shared/version_config.RESULTS_SPACE = "final_paper_experiments"` (overridable with `$RESULTS_SPACE`); new training keeps writing to `results/final_paper_experiments/`; existing `results/<old branch name>/` directories and every path reference in the docs stay unchanged. The panel shows them as "data spaces", labelled with stage name and version range (`app/backend/result_spaces.json`).
+- Where results are written is decoupled from the branch name: `src/shared/version_config.RESULTS_SPACE = "final_paper_experiments"` (overridable with `$RESULTS_SPACE`); new training keeps writing to `results/final_paper_experiments/`; existing `results/<old branch name>/` directories and every path reference in the docs stay unchanged. The panel shows them as "data spaces", labelled with stage name and version range (`app/backend/result_spaces.json`).
 
 ## 6. Experiment panel (`app/`) redesign
 

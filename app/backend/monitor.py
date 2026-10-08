@@ -12,7 +12,7 @@ request/response cycle.
 Writes app/backend/monitor_state.json every POLL_INTERVAL_SECONDS, read
 (never written) by main.py's /api/progress. Read-only over training
 state — like main.py, this never imports or executes anything under
-scenarios/ or shared/; it only reads `ps` and progress files main.py already
+scenarios/ or src/shared/; it only reads `ps` and progress files main.py already
 knows how to read (reused directly from main.py to avoid duplicating the
 process/log-matching logic).
 

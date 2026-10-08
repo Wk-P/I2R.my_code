@@ -1,4 +1,4 @@
-"""shared/dqn_variants.py — DQN-family learners added in v4.3.0.
+"""src/shared/dqn_variants.py — DQN-family learners added in v4.3.0.
 
     DoubleDQN     — Double DQN target (same as scenarios/*/ddqn/run_all.py::DDQN)
     MaskableDQN   — DQN with a hard action mask

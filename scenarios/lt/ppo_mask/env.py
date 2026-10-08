@@ -15,7 +15,7 @@ Constraints:
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))  # src/ for shared
 
 import random
 import gymnasium as gym
@@ -170,7 +170,7 @@ class P4Env(gym.Env):
         has options, but they collectively contend for the same scarce
         capacity" cases that a per-service check can't see. It's a
         SUFFICIENT, not exact, feasibility signal (a real solver -- e.g.
-        shared/ilp_utils.py::solve_ilp -- would be exact but is far too
+        src/shared/ilp_utils.py::solve_ilp -- would be exact but is far too
         expensive to call every step of every parallel env during PPO
         training): FFD success proves feasibility; FFD failure doesn't
         prove infeasibility (a different placement order might still work),
@@ -503,7 +503,7 @@ class P4Env(gym.Env):
                   f"| cap_viol={self.capacity_violations} conflict_viol={self.conflict_violations}")
 
 
-# REWARD_MODE=directional replaces the reward (shared/reward_config.py); no-op otherwise.
+# REWARD_MODE=directional replaces the reward (src/shared/reward_config.py); no-op otherwise.
 P4Env.step = directional_step(P4Env.step)
 
 

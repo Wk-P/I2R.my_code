@@ -33,8 +33,8 @@ import time
 from collections import deque
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 
 import numpy as np
 
@@ -249,7 +249,7 @@ def main():
     ap.add_argument("--exit-action", action="store_true",       # Mask only: EXIT action, valid iff no ECU is feasible
                     default=os.environ.get("EXIT_ACTION", "0") == "1")
     ap.add_argument("--net", default=os.environ.get("POLICY_NET", "mlp"), choices=["mlp", "graph"],
-                    help="v4.4.3: 'graph' = structure-aware policy (paper_rl/graph_policy.py); forces --obs raw")
+                    help="v4.4.3: 'graph' = structure-aware policy (src/paper_rl/graph_policy.py); forces --obs raw")
     ap.add_argument("--device", default=os.environ.get("POLICY_DEVICE", "cpu"),
                     help="v4.4.3: torch device for PPO (cuda needs .venv-gpu); default cpu as before")
     ap.add_argument("--gae-lambda", type=float, default=None,   # v4.4.4; default: PPO_GAE_LAMBDA in config

@@ -2,7 +2,7 @@
 Hyperparameter & path configuration for repair_ddqn (v4.3.0).
 Double DQN on the Repair-PPO environment (ppo_opt/env.py::P6Env) + best-fit repair.
 Hyperparameters are identical to eq/dqn so the DQN family differs only in
-the constraint mechanism. DQN_* names are kept for shared/dqn_variant_runner.py.
+the constraint mechanism. DQN_* names are kept for src/shared/dqn_variant_runner.py.
 """
 
 from pathlib import Path

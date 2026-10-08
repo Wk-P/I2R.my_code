@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Diagnostic: does a structure-aware network learn the ILP-optimal action where the MLP fails?
 
-Same supervised oracle-action test as scripts/diag_supervised.py (same 50k p = 0.6 training
+Same supervised oracle-action test as src/scripts/diag_supervised.py (same 50k p = 0.6 training
 instances with ILP labels, same 400 test instances, same label sets), two new networks:
-  attn  -- paper_rl/graph_net.GraphPolicyNet (tokens for ECUs / services / global, relation-
+  attn  -- src/paper_rl/graph_net.GraphPolicyNet (tokens for ECUs / services / global, relation-
            biased attention, one shared ECU scoring head; ECU-permutation equivariant),
            trained on 10k and 50k instances;
   mlp3  -- a larger MLP (3 x 1024, tanh) on the base + conflict-graph observation, 50k (control:
@@ -11,7 +11,7 @@ instances with ILP labels, same 400 test instances, same label sets), two new ne
 Reported per step: train / test accuracy (argmax in the label set) and the learned policy rolled
 out on the test set (EXIT rate, AR gap); the MLP 256-256 rows of supervised_diag.md for reference.
 
-    .venv/bin/python scripts/diag_arch.py run   -> paper_contents/v4.4.3/arch_diag.md
+    .venv/bin/python src/scripts/diag_arch.py run   -> paper_contents/v4.4.3/arch_diag.md
 """
 import json
 import subprocess
@@ -21,9 +21,9 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "src" / "scripts"))
 import diag_supervised as S  # noqa: E402
 
 OUT = S.OUT
@@ -178,7 +178,7 @@ def report():
     old = json.loads((OUT / "results.json").read_text())
     name = {"base": "MLP 256×2，原观测", "conflict": "MLP 256×2，+冲突图", "mlp3": "MLP 1024×3，+冲突图", "attn": "注意力网络（结构感知）"}
     lines = ["# 网络结构诊断：结构感知网络能否学会 ILP 最优动作（不训练 RL）", "",
-             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `scripts/diag_arch.py`；网络 `paper_rl/graph_net.py`。",
+             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/diag_arch.py`；网络 `src/paper_rl/graph_net.py`。",
              "- 与 `paper_contents/v4.4.2/supervised_diag.md` 完全相同的监督测试：同一批 p = 0.6 训练实例（带 ILP 最优标签）、同一 400 个测试实例、同一标签集（同容量的空 ECU 都算对）。",
              "- **注意力网络**：全局 / 每台 ECU / 每个服务各一个 token；服务间冲突、服务在哪台 ECU、服务与 ECU 上的服务冲突、服务放得进 ECU 剩余容量 四种关系"
              "作为可学习偏置加到注意力上；每台 ECU 用同一个打分头，EXIT 由全局 token 打分。输入只有原始状态（容量、需求、冲突图、已放置、当前步），"

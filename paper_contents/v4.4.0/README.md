@@ -9,7 +9,7 @@
 
 ## 状态（观测）
 
-没有"当前服务"，所以原观测里围绕当前服务的分量去掉，改为每个服务一组。代码：`paper_rl/env.py` 的 `_obs_joint()`。维数 = 4 + 3N + 4M + MN + 1：LT 245、EQ 175、GT 240。
+没有"当前服务"，所以原观测里围绕当前服务的分量去掉，改为每个服务一组。代码：`src/paper_rl/env.py` 的 `_obs_joint()`。维数 = 4 + 3N + 4M + MN + 1：LT 245、EQ 175、GT 240。
 
 | 序号 | 分量 | 长度 | 含义 |
 |---|---|---|---|
@@ -29,4 +29,4 @@
 
 服务编号仍按需求降序排（只是编号，不再规定放置顺序）。
 
-试跑：`scripts/run_v4.4.0.py --pilot`，Maskable PPO / DQN × 3 场景 × 种子 1 × 1M 步；报告 `pilot_report.md` 中每个模型与 v4.3.8 试跑的同一模型（只选 ECU）并排。
+试跑：`src/scripts/run_v4.4.0.py --pilot`，Maskable PPO / DQN × 3 场景 × 种子 1 × 1M 步；报告 `pilot_report.md` 中每个模型与 v4.3.8 试跑的同一模型（只选 ECU）并排。

@@ -2,7 +2,7 @@
 
   saved SB3 model   : results/<space>/<scen>/<algo>/<exp_id>/<pattern>; observation mode read from
                       results.json ("obs", default base); Mask PPO gets the action mask.
-  supervised ref    : exp_id "ref:<path>" = a GraphPolicyNet state dict (scripts/diag_arch.py),
+  supervised ref    : exp_id "ref:<path>" = a GraphPolicyNet state dict (src/scripts/diag_arch.py),
                       raw observation, argmax over the legal actions.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 RESULTS = ROOT / "results" / "unified"
 
 

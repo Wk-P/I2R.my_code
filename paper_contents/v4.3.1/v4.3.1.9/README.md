@@ -15,7 +15,7 @@ M(1+\kappa\,AR), & M_v=M,\\[2pt]
 \qquad \kappa=2 .
 $$
 
-只改成功分支，失败分支不变。`paper_rl/env.py` 中为 `reward_mode="succ_first"`（`train.py` 默认值改为它），κ 在 `paper_rl/config.py: SUCC_KAPPA`。`legacy` 保留，可复现旧结果。
+只改成功分支，失败分支不变。`src/paper_rl/env.py` 中为 `reward_mode="succ_first"`（`train.py` 默认值改为它），κ 在 `src/paper_rl/config.py: SUCC_KAPPA`。`legacy` 保留，可复现旧结果。
 
 ## 2. 理由
 
@@ -25,7 +25,7 @@ $$
 
 ## 3. 实验
 
-`scripts/run_v4.3.1.9.py`：12 模型 × LT/EQ/GT × 种子 1–3 × 5M = 108 个任务。p = 0.6 数据、划分、超参、无奖励归一化均与 v4.3.1.6 相同。按全机所有训练进程统计负载，与 v4.3.1.8 共享 CPU。对照为 v4.3.1.7 重评后的 v4.3.1.6 模型（真正 AR\*）。
+`src/scripts/run_v4.3.1.9.py`：12 模型 × LT/EQ/GT × 种子 1–3 × 5M = 108 个任务。p = 0.6 数据、划分、超参、无奖励归一化均与 v4.3.1.6 相同。按全机所有训练进程统计负载，与 v4.3.1.8 共享 CPU。对照为 v4.3.1.7 重评后的 v4.3.1.6 模型（真正 AR\*）。
 
 ## 4. 结果
 

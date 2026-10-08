@@ -16,11 +16,11 @@ $$r_t = 0\ (t<T),\qquad r_T = AR\cdot\mathbb{1}\{M\text{ 个服务全部合法�
 
 回合回报恰为 $AR\cdot\mathbb{1}\{\text{可行}\}$，$J(\pi)=\mathbb{E}[AR\cdot\mathbb{1}\{\text{可行}\}]$。
 
-- `paper_rl/env.py`：新增 `reward_mode="ar_raw"`。成功得 AR，失败（违规或死局，含 Repair 无可替换 ECU）得 0；不乘 M。Lagrangian 照旧在终局减 $\lambda\sum_t c_t$。
+- `src/paper_rl/env.py`：新增 `reward_mode="ar_raw"`。成功得 AR，失败（违规或死局，含 Repair 无可替换 ECU）得 0；不乘 M。Lagrangian 照旧在终局减 $\lambda\sum_t c_t$。
 - 失败回合不能给原始 AR：死局前已放置部分的 AR 往往很高，会诱导提前走进死局（同 v4.3.1.4 的堆叠问题）。
-- `paper_rl/train.py`：新增 `--gamma`（默认取 config 的 PPO_GAMMA / DQN_GAMMA，即旧行为），写入 `results.json` 的 `gamma` 字段；本版本所有学习器 γ = 1。
+- `src/paper_rl/train.py`：新增 `--gamma`（默认取 config 的 PPO_GAMMA / DQN_GAMMA，即旧行为），写入 `results.json` 的 `gamma` 字段；本版本所有学习器 γ = 1。
 - 其余与 v4.3.1.6 完全相同：原观测（base）、服务按需求降序、12 个模型、其余超参、5M 步、种子 1–3、p = 0.6 数据与划分、评估方式（每个测试实例 1 次确定性输出）。
-- `scripts/run_v4.3.5.py`：108 个任务；报告对比 legacy（v4.3.1.6，v4.3.1.7 重评）、AR（本版本）与贪心。
+- `src/scripts/run_v4.3.5.py`：108 个任务；报告对比 legacy（v4.3.1.6，v4.3.1.7 重评）、AR（本版本）与贪心。
 
 ## 3. 历史依据与已知风险
 

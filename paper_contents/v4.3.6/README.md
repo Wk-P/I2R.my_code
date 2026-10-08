@@ -16,8 +16,8 @@
 
 ## 2. 改动（唯一变量：奖励）
 
-- `paper_rl/env.py`：新增 `reward_mode="ar_pen"`。
-- `scripts/run_v4.3.6.py`：完整实验（12 模型 × 3 场景 × 3 种子 × 5M）；`--pilot` 为试跑（PPO 四种 + Mask-DQN + Repair-DQN × 3 场景 × 种子 1 × 1M，18 个任务）。
+- `src/paper_rl/env.py`：新增 `reward_mode="ar_pen"`。
+- `src/scripts/run_v4.3.6.py`：完整实验（12 模型 × 3 场景 × 3 种子 × 5M）；`--pilot` 为试跑（PPO 四种 + Mask-DQN + Repair-DQN × 3 场景 × 种子 1 × 1M，18 个任务）。
 - 其余与 v4.3.1.6 相同：原观测、需求降序、死局即终止（教授意见 1-②"不中途停止、走满 M 步"留到下一版本）、其余超参、数据与划分、评估方式。
 
 ## 3. 自检

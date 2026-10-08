@@ -5,7 +5,7 @@
 ## 1. 改动：每个回合都放满 M 个服务
 
 - 以前 Mask / Repair 在"下一个服务没有任何可行 ECU"时提前终止，记为"死局"。这其实就是一次必然发生的违约（放到哪个 ECU 都会超容量或 privacy 冲突），提前终止反而把它藏起来，也分不清违反的是哪类约束。
-- 现在（`--full-episode`，`paper_rl/env.py` 的 `full_episode=True`）：不提前结束。Mask 在没有可行 ECU 时放开掩码，执行 agent 自己的选择；Repair 无可修复 ECU 时执行原动作。违约照常按 capacity / privacy 分别记录。
+- 现在（`--full-episode`，`src/paper_rl/env.py` 的 `full_episode=True`）：不提前结束。Mask 在没有可行 ECU 时放开掩码，执行 agent 自己的选择；Repair 无可修复 ECU 时执行原动作。违约照常按 capacity / privacy 分别记录。
 - 奖励不变（终局一次）：无违约得 AR，有违约得 −(1 − valid/M)，valid 为合法放置数。
 - 贪心基线同口径：没有可行 ECU 时，优先选没有 privacy 冲突、剩余容量最大的 ECU，否则选剩余容量最大的，违约照常记录。
 
@@ -21,4 +21,4 @@
 
 ## 4. 实验
 
-`scripts/run_v4.3.7.py --pilot`：PPO 四种 + Mask-DQN + Repair-DQN × 3 场景 × 种子 1 × 1M（18 个任务），报告 `pilot_report.md`。
+`src/scripts/run_v4.3.7.py --pilot`：PPO 四种 + Mask-DQN + Repair-DQN × 3 场景 × 种子 1 × 1M（18 个任务），报告 `pilot_report.md`。

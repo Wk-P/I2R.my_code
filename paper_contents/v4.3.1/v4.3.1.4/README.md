@@ -1,10 +1,10 @@
 # v4.3.1.4 — 冲突密度 0.6、统一 objective 奖励、死局即失败
 
-v4.3.1 的子版本（tag `v4.3.1.4`），在 v4.3.1.3 统一实现（`paper_rl/`）基础上改三处。依据：v4.3.1.3 试跑结论（`../v4.3.1.3/README.md` 第 8 节）及用户决定。
+v4.3.1 的子版本（tag `v4.3.1.4`），在 v4.3.1.3 统一实现（`src/paper_rl/`）基础上改三处。依据：v4.3.1.3 试跑结论（`../v4.3.1.3/README.md` 第 8 节）及用户决定。
 
 ## 1. 冲突密度 p：0.3 → 0.6
 
-`python -m paper_rl.data --p 0.6 --version v4.3.1.4` → `data/v4.3.1.4/{lt,eq,gt}.yaml`（v4.3.1.3 的 p = 0.3 数据保留在 `data/v4.3.1.3/`；`paper_rl/config.DATA_VERSION` 选择数据集）。其余分布不变，三场景仍只差 N / M。
+`python -m paper_rl.data --p 0.6 --version v4.3.1.4` → `data/v4.3.1.4/{lt,eq,gt}.yaml`（v4.3.1.3 的 p = 0.3 数据保留在 `data/v4.3.1.3/`；`src/paper_rl/config.DATA_VERSION` 选择数据集）。其余分布不变，三场景仍只差 N / M。
 
 | 场景 | 平均 AR\*（p = 0.3） | 平均 AR\*（p = 0.6） |
 |---|---|---|
@@ -42,8 +42,8 @@ Maskable（下一服务无可行 ECU）与 Repair（无可修复 ECU）在**所�
 
 ## 5. 试跑
 
-- 脚本：`scripts/run_v4.3.1.4_pilot.py`；12 个模型 × 3 场景 × objective × 种子 1 × 1M 步 = 36 个任务。
-- 记录：`scripts/logs/v4.3.1.4_pilot/manifest.json`（含代码提交）；结果 `results/unified/<scen>/<algo>/<exp_id>/`；报告 `pilot_report.md`（本目录）。
+- 脚本：`src/scripts/run_v4.3.1.4_pilot.py`；12 个模型 × 3 场景 × objective × 种子 1 × 1M 步 = 36 个任务。
+- 记录：`logs/v4.3.1.4_pilot/manifest.json`（含代码提交）；结果 `results/unified/<scen>/<algo>/<exp_id>/`；报告 `pilot_report.md`（本目录）。
 
 **已完成**（2026-10-02 05:10 – 05:35，36/36，无失败）。完整表格见 `pilot_report.md`。
 

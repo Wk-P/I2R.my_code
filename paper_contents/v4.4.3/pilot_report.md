@@ -1,12 +1,12 @@
 # v4.4.3 结构感知策略网络（纯 RL，其余同 v4.3.8）
 
 - 生成时间：2026-10-07 22:56:07
-- 唯一改动：策略 / 价值网络。MLP 256-256（扁平观测）→ 关系偏置注意力网络（`paper_rl/graph_net.py`，ECU / 服务 / 全局各为 token，四种关系作为注意力偏置），输入原始状态（`obs = raw`，信息与原观测相同）。编码器共享；每台 ECU 用同一个 actor 打分头（ECU 编号置换等变），EXIT 由全局 token 打分，V(s) 由全局 token 与 token 平均得到（置换不变）。其余与 v4.3.8 完全相同：数据 v4.3.1.4（p = 0.6）、需求降序、只选 ECU、ar_pen 奖励、γ = 1、不提前结束、EXIT、40 环境 × 512 步、batch 256、10 epochs、clip 0.1、熵系数 0.005、学习率 3e-4。
-- 三行：MLP Mask PPO = v4.3.8 试跑；结构感知 Mask PPO = 本版本（纯 RL，从零训练）；ILP 监督参照 = 同一网络用 5 万个实例的 ILP 最优动作做监督训练（`scripts/diag_arch.py`），**不是 RL，也不是上限**，只作表示能力的参照。
+- 唯一改动：策略 / 价值网络。MLP 256-256（扁平观测）→ 关系偏置注意力网络（`src/paper_rl/graph_net.py`，ECU / 服务 / 全局各为 token，四种关系作为注意力偏置），输入原始状态（`obs = raw`，信息与原观测相同）。编码器共享；每台 ECU 用同一个 actor 打分头（ECU 编号置换等变），EXIT 由全局 token 打分，V(s) 由全局 token 与 token 平均得到（置换不变）。其余与 v4.3.8 完全相同：数据 v4.3.1.4（p = 0.6）、需求降序、只选 ECU、ar_pen 奖励、γ = 1、不提前结束、EXIT、40 环境 × 512 步、batch 256、10 epochs、clip 0.1、熵系数 0.005、学习率 3e-4。
+- 三行：MLP Mask PPO = v4.3.8 试跑；结构感知 Mask PPO = 本版本（纯 RL，从零训练）；ILP 监督参照 = 同一网络用 5 万个实例的 ILP 最优动作做监督训练（`src/scripts/diag_arch.py`），**不是 RL，也不是上限**，只作表示能力的参照。
 - AR、ILP AR 在未 EXIT 的同一批测试实例上平均；绝对 gap = ILP AR − AR，相对 gap = (ILP AR − AR) / ILP AR。Mask 违约率恒为 0。
 - 开启 ECU 数在未 EXIT 的实例上平均；被逼开启 = 每个测试实例的平均次数（定义见 `paper_contents/v4.4.1/open_diag.md`）。
-- 选中最优动作的比例来自逐步 regret 诊断（`scripts/diag_regret.py`，ILP 固定前缀求最优完成，regret ≤ 1e-4 记为最优，在完成的实例上统计）。
-- manifest：`scripts/logs/v4.4.3_pilot/manifest.json`
+- 选中最优动作的比例来自逐步 regret 诊断（`src/scripts/diag_regret.py`，ILP 固定前缀求最优完成，regret ≤ 1e-4 记为最优，在完成的实例上统计）。
+- manifest：`logs/v4.4.3_pilot/manifest.json`
 - **试跑**：结构感知 Mask PPO × 3 场景 × 种子 1 × 1M 步。
 
 ## LT

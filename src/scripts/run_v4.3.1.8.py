@@ -8,9 +8,9 @@ reward / M, so the terminal reward lies in [-1, 1] instead of [-M, M].
 Baseline = the same models without normalisation, re-evaluated against the true
 AR* in v4.3.1.7 (paper_contents/v4.3.1/v4.3.1.7/summary.json).
 
-    nohup .venv/bin/python scripts/run_v4.3.1.8.py > scripts/logs/run_v4.3.1.8_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.1.8.py --resume >> scripts/logs/run_v4.3.1.8_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.3.1.8.py --report
+    nohup .venv/bin/python src/scripts/run_v4.3.1.8.py > logs/run_v4.3.1.8_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.8.py --resume >> logs/run_v4.3.1.8_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.3.1.8.py --report
 """
 import json
 import os
@@ -21,9 +21,9 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
-LOG_DIR = ROOT / "scripts" / "logs" / "v4.3.1.8"
+LOG_DIR = ROOT / "logs" / "v4.3.1.8"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.8" / "report.md"
@@ -101,7 +101,7 @@ def write_report(exp_ids):
              "其余与 v4.3.1.6 相同（legacy 奖励、p = 0.6 数据、同一划分与超参、3 种子 × 5M）。",
              "- 「原始」= 未归一化的同一模型，取自 v4.3.1.7 重评（最优 AR 由 ILP 求得）；「归一化」= 本版本。",
              "- 相对最优 AR = 模型 AR ÷ 同一实例的最优 AR（ILP 求得）。「成功回合」只在成功的 episode 上平均；「失败计 0」把失败 episode 记为 0 再平均。均值 ± 样本标准差（3 种子）。",
-             "- manifest：`scripts/logs/v4.3.1.8/manifest.json`", ""]
+             "- manifest：`logs/v4.3.1.8/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """v4.3.1 reward pilot: compare terminal-reward variants at 1M steps.
 
-    REWARD_MODE  legacy | ar | ratio      (see shared/reward_config.py)
+    REWARD_MODE  legacy | ar | ratio      (see src/shared/reward_config.py)
     algos        ppo, ppo_mask, dqn
     scenarios    lt, eq, gt
     seed         1
 
 27 jobs. All three modes are run at the same 1M budget so `legacy` is a
 like-for-like baseline (the 5M results are not comparable). Requires
-results/<branch>/<scen>/ilp/ar_star.json (scripts/build_ar_star.py).
+results/<branch>/<scen>/ilp/ar_star.json (src/scripts/build_ar_star.py).
 
 Results: results/final_paper_experiments/<scen>/<algo>/<exp_id>/; manifest
-scripts/logs/v4.3.1_reward_pilot/manifest.json; report
+logs/v4.3.1_reward_pilot/manifest.json; report
 paper_contents/v4.3.1/reward_pilot_report.md.
 
 Usage:
-    nohup .venv/bin/python scripts/run_v4.3.1_reward_pilot.py > scripts/logs/run_v4.3.1_reward_pilot_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1_reward_pilot.py > logs/run_v4.3.1_reward_pilot_driver.log 2>&1 &
     # resume after the driver was stopped (training processes keep running):
-    nohup .venv/bin/python scripts/run_v4.3.1_reward_pilot.py --resume >> scripts/logs/run_v4.3.1_reward_pilot_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1_reward_pilot.py --resume >> logs/run_v4.3.1_reward_pilot_driver.log 2>&1 &
 """
 import csv
 import json
@@ -27,9 +27,9 @@ import sys
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 PY = str(PROJECT_ROOT / ".venv" / "bin" / "python")
-LOG_DIR = PROJECT_ROOT / "scripts" / "logs" / "v4.3.1_reward_pilot"
+LOG_DIR = PROJECT_ROOT / "logs" / "v4.3.1_reward_pilot"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST_PATH = LOG_DIR / "manifest.json"
 REPORT_PATH = PROJECT_ROOT / "paper_contents" / "v4.3.1" / "reward_pilot_report.md"
@@ -90,7 +90,7 @@ def write_report(exp_ids: dict) -> None:
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              "- 无违规 episode 的终局奖励：legacy = M(2AR−1)；ar = M·AR；ratio = M·AR/AR*。有违规时三者相同：−M(1−valid/M)。",
              "- 指标为训练脚本内置的测试集单次确定性评估（400 个实例）。AR 为全部测试 episode 的均值（与 v4.2.0 口径相同）。",
-             "- manifest：`scripts/logs/v4.3.1_reward_pilot/manifest.json`", ""]
+             "- manifest：`logs/v4.3.1_reward_pilot/manifest.json`", ""]
     for scen in SCENARIOS:
         lines += [f"## {scen.upper()}", "", "| 算法 | 奖励 | success_rate | AR | 容量违规率 | 冲突违规率 |", "|---|---|---|---|---|---|"]
         for algo in ALGOS:
@@ -111,7 +111,7 @@ def write_report(exp_ids: dict) -> None:
 def main():
     for scen in SCENARIOS:
         p = RESULTS_ROOT / scen / "ilp" / "ar_star.json"
-        assert p.exists(), f"{p} missing -- run scripts/build_ar_star.py"
+        assert p.exists(), f"{p} missing -- run src/scripts/build_ar_star.py"
     queue = [(m, s, a) for s in SCENARIOS for a in ALGOS for m in MODES]
     exp_ids: dict = {}
     adopted = []  # (pid, label, weight) of runs launched by a previous driver, still alive

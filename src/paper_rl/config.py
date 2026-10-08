@@ -1,7 +1,7 @@
 """Single configuration for every model and scenario (v4.3.1.3).
 
 Nothing here depends on the scenario; LT / EQ / GT differ only in N and M
-(paper_rl/data.py). Values marked "from v4.x" are the setting most of the
+(src/paper_rl/data.py). Values marked "from v4.x" are the setting most of the
 previous per-scenario configs agreed on.
 """
 

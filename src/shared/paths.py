@@ -3,7 +3,7 @@ paths.py — Single source of truth for where experiment artifacts live.
 
 All algorithms, in every scenario, write to
 results/<space>/<scenario>/<algo>/ under the project root, where <space> is
-shared/version_config.RESULTS_SPACE ($RESULTS_SPACE overrides it). This keeps
+src/shared/version_config.RESULTS_SPACE ($RESULTS_SPACE overrides it). This keeps
 scenarios/ code-only; nothing under scenarios/ should ever create a results/
 directory of its own.
 
@@ -21,7 +21,7 @@ import secrets
 import subprocess
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 def _git_current_branch() -> str:
@@ -50,7 +50,7 @@ RESULTS_ROOT = PROJECT_ROOT / "results" / RESULTS_SPACE
 PROGRESS_FILENAME = ".progress.json"
 EXP_ID_ENV_VAR = "EXP_ID"
 
-# Bump shared/version_config.py's CURRENT_VERSION on every tagged release
+# Bump src/shared/version_config.py's CURRENT_VERSION on every tagged release
 # (git tag vX.Y.Z) — embedded in saved model filenames so a model file is
 # self-describing even if it's copied out of its
 # results/<space>/<scenario>/<algo>/<exp_id>/ directory.
@@ -101,7 +101,7 @@ def new_exp_id() -> str:
 
     One exp_id identifies one whole experiment *batch* — e.g. eq+gt+lt all
     launched together share the same id — not one per algo. The orchestrating
-    launch script (scripts/start_experiment.sh) calls this once and exports
+    launch script (src/scripts/start_experiment.sh) calls this once and exports
     it as $EXP_ID; every scenario/algo process in that batch picks it up via
     resolve_exp_id() instead of minting its own.
     """

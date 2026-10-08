@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """One-off retry driver for the 12 jobs that failed in the first v4.1.0
 2M-step campaign run (all 12 failures were the same ILP-cache race condition
-in shared/ilp_utils.py, fixed in this branch's follow-up commit -- not a
+in src/shared/ilp_utils.py, fixed in this branch's follow-up commit -- not a
 reward-fix issue). Relaunches exactly these 12 (scenario, algo, seed) combos,
 updates the campaign manifest with their new exp_ids, and regenerates the
 report on completion.
 
 Usage:
-    nohup .venv/bin/python scripts/retry_v4.1.0_failed.py > scripts/logs/retry_v4.1.0_failed_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/retry_v4.1.0_failed.py > logs/retry_v4.1.0_failed_driver.log 2>&1 &
     disown
 """
 import json
@@ -15,8 +15,8 @@ import subprocess
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
-LOG_DIR = PROJECT_ROOT / "scripts" / "logs" / "v4.1.0_2M_campaign"
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+LOG_DIR = PROJECT_ROOT / "logs" / "v4.1.0_2M_campaign"
 MANIFEST_PATH = LOG_DIR / "manifest.json"
 
 THREAD_WEIGHT = {
@@ -115,7 +115,7 @@ def main():
     print("=== auto-generating report ===", flush=True)
     r = subprocess.run(
         [str(PROJECT_ROOT / ".venv" / "bin" / "python"),
-         "scripts/generate_v4.1.0_report.py", "--manifest", str(MANIFEST_PATH)],
+         "src/scripts/generate_v4.1.0_report.py", "--manifest", str(MANIFEST_PATH)],
         cwd=PROJECT_ROOT,
     )
     print("=== report generated ===" if r.returncode == 0 else "!!! report generation FAILED", flush=True)

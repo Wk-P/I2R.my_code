@@ -2,19 +2,19 @@
 """Solve the ILP for every instance of each scenario pool and write
 results/<branch>/<scenario>/ilp/ar_star.json = {scenario_key: AR*}.
 
-Needed by REWARD_MODE=ratio (shared/reward_config.py). Infeasible instances
+Needed by REWARD_MODE=ratio (src/shared/reward_config.py). Infeasible instances
 (no Optimal status) are left out -- a success, the only place AR* is read,
 is impossible on them.
 
 Usage:
-    .venv/bin/python scripts/build_ar_star.py [lt eq gt]
+    .venv/bin/python src/scripts/build_ar_star.py [lt eq gt]
 """
 import json
 import sys
 from multiprocessing import Pool
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 
 
 def _solve(sc):
@@ -27,11 +27,11 @@ def _solve(sc):
 
 
 def _init(scen):
-    sys.path[:0] = [str(ROOT / "scenarios" / scen), str(ROOT)]
+    sys.path[:0] = [str(ROOT / "scenarios" / scen), str(ROOT / "src")]
 
 
 def build(scen: str) -> None:
-    sys.path[:0] = [str(ROOT / "scenarios" / scen / "ppo"), str(ROOT / "scenarios" / scen), str(ROOT)]
+    sys.path[:0] = [str(ROOT / "scenarios" / scen / "ppo"), str(ROOT / "scenarios" / scen), str(ROOT / "src")]
     import config as C
     from shared.reward_config import ar_star_path, scenario_key
     pool_sc = C.SCENARIOS

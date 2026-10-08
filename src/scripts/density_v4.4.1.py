@@ -7,7 +7,7 @@ together with p), so the feasibility curve needs its own sample: per scenario,
 objective). Both tables are binned by conflict_ratio = measured fraction of
 service pairs sharing a conflict set (p only drives the generator).
 
-    .venv/bin/python scripts/density_v4.4.1.py [--n 10000]
+    .venv/bin/python src/scripts/density_v4.4.1.py [--n 10000]
     -> paper_contents/v4.4.1/density_report.md
 """
 import argparse
@@ -20,8 +20,8 @@ from pathlib import Path
 import numpy as np
 import pulp
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 from paper_rl.data import SCENARIOS, conflict_ratio, draw, load  # noqa: E402
 
 VERSION = "v4.4.1"

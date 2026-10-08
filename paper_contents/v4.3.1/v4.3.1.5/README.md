@@ -33,9 +33,9 @@ v4.3.1 的子版本（tag `v4.3.1.5`），只改 Lagrangian（PPO / DQN / DDQN �
 
 ## 4. 试跑
 
-- 3 个 Lagrangian 模型 × 3 场景 × objective × 种子 1 × **5M 步** = 9 个任务；脚本 `scripts/run_v4.3.1.5_pilot.py`。其余 9 个模型不受本次改动影响。
+- 3 个 Lagrangian 模型 × 3 场景 × objective × 种子 1 × **5M 步** = 9 个任务；脚本 `src/scripts/run_v4.3.1.5_pilot.py`。其余 9 个模型不受本次改动影响。
 - 注意：本轮 5M 步，v4.3.1.4 的其余模型为 1M 步，不能直接横向比较；本轮只用于验证 Lagrangian 能否学会。
-- 记录：`scripts/logs/v4.3.1.5_pilot/manifest.json`；报告 `pilot_report.md`（本目录）。
+- 记录：`logs/v4.3.1.5_pilot/manifest.json`；报告 `pilot_report.md`（本目录）。
 
 **已作废**（2026-10-02 15:18 启动，约 16:30 停止，9 个任务均未完成）。停止原因：用户决定 12 个模型的奖励改回 legacy、PPO clip ε 0.2 → 0.1（见 v4.3.1.6），本轮设定不再代表最终方案。
 

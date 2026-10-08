@@ -4,7 +4,7 @@
 - 设定：p = 0.6 数据；12 个模型统一 legacy 奖励；Lagrangian 终局代价 λ·违规总数、λ_max 50；Maskable / Repair 死局判失败；PPO clip 0.1。种子 1 复用 `v4.3.1.6_run`，种子 2、3 为本批次。
 - 每个种子在各自的测试集（400 个实例）上单次确定性评估；表中为 3 个种子的均值 ± 样本标准差。
 - success_rate = M 个服务全部合法放置；AR = average resource utilization（只计合法放置），全部测试 episode 均值；AR/AR* 只在成功 episode 上计算；AR/AR*×success = 失败 episode 计 0 的综合指标；违规率 = max(容量违规率, 冲突违规率)，即至少一项违规的 episode 比例的下界。
-- manifest：`scripts/logs/v4.3.1.6_campaign/manifest.json`
+- manifest：`logs/v4.3.1.6_campaign/manifest.json`
 
 ## LT
 

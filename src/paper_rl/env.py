@@ -89,7 +89,7 @@ from paper_rl import config as C
 MECHANISMS = ("none", "mask", "lagrange", "repair")
 
 
-OBS_MODES = ("base", "conflict", "feas", "raw")   # raw: v4.4.3, state for paper_rl/graph_net
+OBS_MODES = ("base", "conflict", "feas", "raw")   # raw: v4.4.3, state for src/paper_rl/graph_net
 REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional")
 
 
@@ -311,7 +311,7 @@ class PlacementEnv(gym.Env):
         return f.ravel()
 
     def _raw_obs(self) -> np.ndarray:
-        """v4.4.3: raw state for the structure-aware policy (paper_rl/graph_net.decode_raw):
+        """v4.4.3: raw state for the structure-aware policy (src/paper_rl/graph_net.decode_raw):
         capacities (N), demands in placement order (M), conflict graph (M x M), ECU of every
         placed service + 1 (0 = not placed, M), current step t (1)."""
         adj = np.zeros((self.M, self.M), dtype=np.float32)

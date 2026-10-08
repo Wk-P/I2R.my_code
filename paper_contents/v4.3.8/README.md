@@ -9,11 +9,11 @@
 - 测试：Maskable 的 capacity / privacy 违约率恒为 0，另报 EXIT 率（选了 EXIT 的测试实例比例）；AR / ILP AR / AR gap 在无违约且未 EXIT 的实例上算。
 - 其他机制（无约束、Lagrangian、Repair）与 v4.3.7 完全相同。
 
-运行：`scripts/run_v4.3.8.py --pilot`（只重训 Maskable PPO / DQN × 3 场景 × 种子 1 × 1M 步，其余 4 个模型取自 v4.3.7 试跑），报告 `pilot_report.md`。
+运行：`src/scripts/run_v4.3.8.py --pilot`（只重训 Maskable PPO / DQN × 3 场景 × 种子 1 × 1M 步，其余 4 个模型取自 v4.3.7 试跑），报告 `pilot_report.md`。
 
 ## 状态（观测）
 
-v4.3.8 用原观测（`obs = base`，不含 v4.3.4 的冲突图），与 v4.3.1.6 起各版本相同，EXIT 动作没有改观测。代码：`paper_rl/env.py` 的 `_obs()`。
+v4.3.8 用原观测（`obs = base`，不含 v4.3.4 的冲突图），与 v4.3.1.6 起各版本相同，EXIT 动作没有改观测。代码：`src/paper_rl/env.py` 的 `_obs()`。
 
 记号：N 个 ECU、M 个服务（按需求降序排好，第 t 步放第 t 个），c_j 为 ECU j 容量，r_j 为剩余容量，d_i 为服务 i 需求，c_max = max_j c_j，当前服务 i = t。
 

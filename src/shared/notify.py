@@ -28,7 +28,7 @@ import ssl
 from email.message import EmailMessage
 from pathlib import Path
 
-_ENV_FILE = Path(__file__).resolve().parent.parent / ".env.email"
+_ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env.email"
 _KEYS = (
     "NOTIFY_EMAIL_TO", "NOTIFY_SMTP_HOST", "NOTIFY_SMTP_PORT",
     "NOTIFY_SMTP_USER", "NOTIFY_SMTP_PASS",

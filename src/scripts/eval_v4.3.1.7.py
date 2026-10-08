@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """v4.3.1.7: re-evaluate the 108 v4.3.1.6 models against the true ILP optimum, and time ILP vs RL.
 
-No retraining. For every (scenario, model, seed) of scripts/logs/v4.3.1.6_campaign/manifest.json:
+No retraining. For every (scenario, model, seed) of logs/v4.3.1.6_campaign/manifest.json:
   - load the saved model, run one deterministic episode per test instance of
     that seed (400), record per-instance AR, success, violations, dead end and
     wall time per episode (env + inference, 1 torch thread);
   - compare with the instance's AR* from solve_ilp_max_ar (data/v4.3.1.4,
-    recomputed by scripts/recompute_ar_star.py).
+    recomputed by src/scripts/recompute_ar_star.py).
 ILP timing: solve_ilp_max_ar on the seed-1 test set of every scenario (CBC, 1 thread).
 Both run as WORKERS parallel single-thread processes, so they see the same load.
 
 Outputs (paper_contents/v4.3.1/v4.3.1.7/): eval_raw.jsonl (per run), ilp_timing.json,
 summary.json, report.md.
 
-    .venv/bin/python scripts/eval_v4.3.1.7.py
+    .venv/bin/python src/scripts/eval_v4.3.1.7.py
 """
 import json
 import os
@@ -23,12 +23,12 @@ from multiprocessing import Pool
 from pathlib import Path
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 
 import numpy as np
 
-MANIFEST = ROOT / "scripts" / "logs" / "v4.3.1.6_campaign" / "manifest.json"
+MANIFEST = ROOT / "logs" / "v4.3.1.6_campaign" / "manifest.json"
 OUT = ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.7"
 RESULTS = ROOT / "results" / "unified"
 WORKERS = 16

@@ -2,17 +2,17 @@
 """v4.4.2: ILP-demonstration warm start for Mask PPO (BC -> PPO), otherwise v4.3.8.
 
 Before PPO, the Mask PPO policy is fitted to the ILP optimum of every training instance replayed
-in the environment's order (paper_rl/bc.py): multi-label cross-entropy (every legal empty ECU of
+in the environment's order (src/paper_rl/bc.py): multi-label cross-entropy (every legal empty ECU of
 the same capacity counts when the expert opens an ECU) plus the value head fitted to the expert
 return (= ILP AR, gamma = 1). Then the usual PPO training. Data v4.3.1.4 (p = 0.6), reward
 ar_pen, gamma 1, full episode, EXIT, base observation, descending demand, ECU action, PPO
 hyper-parameters: all as v4.3.8. --pilot: 3 scenarios x seed 1 x 1M; the report compares
 scratch Mask PPO (v4.3.8 pilot), the BC warm start alone, and BC -> PPO, including the
-ECU-opening diagnostic (scripts/diag_open_ecu.py).
+ECU-opening diagnostic (src/scripts/diag_open_ecu.py).
 
     .venv/bin/python -m paper_rl.bc v4.3.1.4                  # once: ILP allocations
-    nohup .venv/bin/python scripts/run_v4.4.2.py --pilot > scripts/logs/run_v4.4.2_pilot_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.4.2.py --pilot --report
+    nohup .venv/bin/python src/scripts/run_v4.4.2.py --pilot > logs/run_v4.4.2_pilot_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.4.2.py --pilot --report
 """
 import json
 import os
@@ -24,17 +24,17 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "src" / "scripts"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 VERSION = "4.4.2"
 DATA = "v4.3.1.4"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}"
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "report.md"
 RESULTS = ROOT / "results" / "unified"
-SCRATCH = ROOT / "scripts" / "logs" / "v4.3.8_pilot" / "manifest.json"     # scratch Mask PPO, same setting
+SCRATCH = ROOT / "logs" / "v4.3.8_pilot" / "manifest.json"     # scratch Mask PPO, same setting
 
 CAPACITY = int(56 * 0.93)
 SCENARIOS = ["lt", "eq", "gt"]
@@ -45,7 +45,7 @@ REWARD, NORM, OBS, GAMMA = "ar_pen", "none", "base", 1.0
 PILOT = "--pilot" in sys.argv
 if PILOT:
     SEEDS, STEPS = [1], 1_000_000
-    LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot"
+    LOG_DIR = ROOT / "logs" / f"v{VERSION}_pilot"
     MANIFEST = LOG_DIR / "manifest.json"
     REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "pilot_report.md"
 LOG_DIR.mkdir(parents=True, exist_ok=True)

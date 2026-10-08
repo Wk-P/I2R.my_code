@@ -2,7 +2,7 @@
 
 **只记录事实和数据，不涉及论文的论证方式或叙事框架（由作者自行撰写）。**
 
-- 数据来源：`scripts/run_full_5M_campaign.py`，2026-09-08 13:40:58 启动，2026-09-09 11:01:06 完成。
+- 数据来源：`src/scripts/run_full_5M_campaign.py`，2026-09-08 13:40:58 启动，2026-09-09 11:01:06 完成。
 - 规模：5 个随机种子 × 3 场景(lt/eq/gt) × 6 算法(ppo_mask/ppo_lagrangian/ppo_opt/ppo/dqn/ddqn) = 90 次独立训练，全部成功，0 失败。
 - 每次训练均为 5,000,000 步，使用各场景/算法**实际保留**的最终超参数配置（见 `本轮实验总结-超参调优与收敛性验证.md` 第 3 节）。
 - 结果写入项目正式目录 `results/add_states/<scenario>/<algo>/<exp_id>/`，原始数据（`summary.csv` 为测试集评估结果，`training_curve.csv` 为逐 episode 训练曲线）均可追溯。

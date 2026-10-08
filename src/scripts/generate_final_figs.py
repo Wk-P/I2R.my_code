@@ -13,7 +13,7 @@ Categorical palette follows the dataviz skill's validated 8-slot default
 order (references/palette.md), first 6 slots for algorithm identity.
 
 Usage:
-    .venv/bin/python scripts/generate_final_figs.py
+    .venv/bin/python src/scripts/generate_final_figs.py
 """
 import json
 from pathlib import Path
@@ -25,7 +25,7 @@ matplotlib.rcParams["axes.unicode_minus"] = False
 import matplotlib.pyplot as plt
 import numpy as np
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_PATH = PROJECT_ROOT / "paper_contents" / "v4.1.0.2" / "figs" / "final_summary_data.json"
 OUT_DIR = PROJECT_ROOT / "paper_contents" / "v4.1.0.2" / "figs"
 

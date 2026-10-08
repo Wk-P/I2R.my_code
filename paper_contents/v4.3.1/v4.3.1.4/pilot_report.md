@@ -3,7 +3,7 @@
 - 生成时间：2026-10-02 05:35:22
 - 奖励（objective）：放完 M 个服务时 M·AR（AR 计入所有执行的放置，不惩罚违规）；Lagrangian 每步另减 λ·c_t；Maskable / Repair 死局判失败，−M(1−valid/M) 并终止。
 - 测试集 400 个实例，单次确定性评估。success_rate = M 个服务全部合法放置的比例；AR = average resource utilization（只计合法放置），全部测试 episode 的均值；AR/AR* = 成功 episode 上 AR 与 ILP 最优值之比的均值；违规率 = 出现 ≥1 次违规的 episode 比例；死局率 = 因死局终止的 episode 比例。
-- manifest：`scripts/logs/v4.3.1.4_pilot/manifest.json`
+- manifest：`logs/v4.3.1.4_pilot/manifest.json`
 
 ## LT
 

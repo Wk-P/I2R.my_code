@@ -16,11 +16,11 @@ $$r_t = 0\ (t<T),\qquad r_T = AR\cdot\mathbb{1}\{\text{all } M \text{ services p
 
 The episode return is exactly $AR\cdot\mathbb{1}\{\text{feasible}\}$, $J(\pi)=\mathbb{E}[AR\cdot\mathbb{1}\{\text{feasible}\}]$.
 
-- `paper_rl/env.py`: new `reward_mode="ar_raw"`. Success gets AR, failure (violation or dead end, including Repair with no ECU to repair to) gets 0; no scaling by M. Lagrangian still subtracts $\lambda\sum_t c_t$ at the end.
+- `src/paper_rl/env.py`: new `reward_mode="ar_raw"`. Success gets AR, failure (violation or dead end, including Repair with no ECU to repair to) gets 0; no scaling by M. Lagrangian still subtracts $\lambda\sum_t c_t$ at the end.
 - A failed episode cannot get the raw AR: the AR of what was placed before a dead end is often high, which would encourage walking into dead ends early (the same problem as the stacking in v4.3.1.4).
-- `paper_rl/train.py`: new `--gamma` (default PPO_GAMMA / DQN_GAMMA from config, i.e. the old behaviour), written to the `gamma` field of `results.json`; all learners use γ = 1 in this version.
+- `src/paper_rl/train.py`: new `--gamma` (default PPO_GAMMA / DQN_GAMMA from config, i.e. the old behaviour), written to the `gamma` field of `results.json`; all learners use γ = 1 in this version.
 - Everything else exactly as in v4.3.1.6: base observation, services in descending demand, 12 models, other hyper-parameters, 5M steps, seeds 1–3, p = 0.6 data and splits, evaluation (one deterministic output per test instance).
-- `scripts/run_v4.3.5.py`: 108 jobs; the report compares legacy (v4.3.1.6, re-evaluated in v4.3.1.7), AR (this version) and greedy.
+- `src/scripts/run_v4.3.5.py`: 108 jobs; the report compares legacy (v4.3.1.6, re-evaluated in v4.3.1.7), AR (this version) and greedy.
 
 ## 3. Historical evidence and known risks
 

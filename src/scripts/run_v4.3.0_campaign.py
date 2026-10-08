@@ -10,11 +10,11 @@ v4.3.0 changes (see paper_contents/v4.3.0/README.md):
 The PPO family is not retrained. Results land in
 results/final_paper_experiments/<scenario>/<algo>/<exp_id>/; the
 (scenario, algo, seed) -> exp_id manifest is written to
-scripts/logs/v4.3.0_campaign/manifest.json, and a summary report to
+logs/v4.3.0_campaign/manifest.json, and a summary report to
 paper_contents/v4.3.0/campaign_report.md when every job has finished.
 
 Usage:
-    nohup .venv/bin/python scripts/run_v4.3.0_campaign.py > scripts/logs/run_v4.3.0_campaign_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.0_campaign.py > logs/run_v4.3.0_campaign_driver.log 2>&1 &
     disown
 """
 import csv
@@ -26,9 +26,9 @@ from pathlib import Path
 
 import numpy as np
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 PY = str(PROJECT_ROOT / ".venv" / "bin" / "python")
-LOG_DIR = PROJECT_ROOT / "scripts" / "logs" / "v4.3.0_campaign"
+LOG_DIR = PROJECT_ROOT / "logs" / "v4.3.0_campaign"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST_PATH = LOG_DIR / "manifest.json"
 REPORT_PATH = PROJECT_ROOT / "paper_contents" / "v4.3.0" / "campaign_report.md"
@@ -96,7 +96,7 @@ def write_report(exp_ids: dict) -> None:
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              f"- {STEPS:,} 步 × 种子 {SEEDS}；每个种子在自己的测试集上单次确定性评估（训练脚本内置评估）。",
              "- 违规率 = 测试 episode 中出现 ≥1 次违规的比例；Repair-* 两列为修复触发率（执行的放置不违规）。",
-             "- manifest：`scripts/logs/v4.3.0_campaign/manifest.json`", ""]
+             "- manifest：`logs/v4.3.0_campaign/manifest.json`", ""]
     for scen in SCENARIOS:
         lines += [f"## {scen.upper()}", "",
                   "| 算法 | success_rate | AR | 容量违规率 | 冲突违规率 | 种子数 | ILP AR |",

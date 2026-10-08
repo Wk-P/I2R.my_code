@@ -2,7 +2,7 @@
 run_all_bc.py — P5 pipeline (Lagrangian PPO) with ILP behavior-cloning pretraining.
 
 Same as run_all.py, except the plain-PPO policy is warm-started via supervised
-behavior cloning on ILP-optimal expert trajectories (shared/bc_pretrain.py)
+behavior cloning on ILP-optimal expert trajectories (src/shared/bc_pretrain.py)
 before `model.learn()` runs. No action masking is used (matches P5 design);
 BC transitions are filtered to zero-violation expert replays only.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(HERE.parent.parent.parent / "src"))  # src/ for shared
 
 import shared.timer_utils as timer_utils
 

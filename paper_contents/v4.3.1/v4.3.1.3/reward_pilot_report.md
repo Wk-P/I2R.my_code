@@ -3,7 +3,7 @@
 - 生成时间：2026-10-02 01:43:51
 - 奖励：legacy = 成功 M(2AR−1)；ar = 成功 M·AR；失败均为 −M(1−valid/M)；directional = 逐步 ΔAR 方向奖励 + 完成奖励 M − 死局惩罚 M。Lagrange 方法另加 −λ·c_t。
 - 测试集 400 个实例，单次确定性评估。success_rate = M 个服务全部合法放置的比例；AR = average resource utilization（只计合法执行的放置），全部测试 episode 的均值；AR/AR* = 成功 episode 上 AR 与该实例 ILP 最优值之比的均值。
-- manifest：`scripts/logs/v4.3.1.3_reward_pilot/manifest.json`
+- manifest：`logs/v4.3.1.3_reward_pilot/manifest.json`
 
 ## LT
 

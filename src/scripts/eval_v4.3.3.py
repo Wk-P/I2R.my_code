@@ -6,7 +6,7 @@ than its deterministic one (and than greedy)?
 For each test instance (400 per seed) we draw K_MAX solutions:
   - RL: sample 0 is the deterministic policy, samples 1.. are drawn from the policy
     distribution (Maskable-PPO with its action mask);
-  - greedy: sample 0 is paper_rl/greedy.py, samples 1.. take a uniformly random
+  - greedy: sample 0 is src/paper_rl/greedy.py, samples 1.. take a uniformly random
     feasible ECU with probability GREEDY_EPS at each step, the greedy one otherwise.
 Best-of-K uses the first K samples and picks, without looking at AR*, a successful
 solution first, then the highest AR. AR* is only used afterwards for scoring.
@@ -14,9 +14,9 @@ Time per instance = K x the mean episode time (1 torch thread).
 
 Outputs (paper_contents/v4.3.3/): raw.jsonl (per run), report.md.
 
-    nohup .venv/bin/python scripts/eval_v4.3.3.py > scripts/logs/eval_v4.3.3.log 2>&1 &
-    nohup .venv/bin/python scripts/eval_v4.3.3.py --resume >> scripts/logs/eval_v4.3.3.log 2>&1 &   # skip runs in raw.jsonl
-    .venv/bin/python scripts/eval_v4.3.3.py --report      # regenerate report.md from raw.jsonl
+    nohup .venv/bin/python src/scripts/eval_v4.3.3.py > logs/eval_v4.3.3.log 2>&1 &
+    nohup .venv/bin/python src/scripts/eval_v4.3.3.py --resume >> logs/eval_v4.3.3.log 2>&1 &   # skip runs in raw.jsonl
+    .venv/bin/python src/scripts/eval_v4.3.3.py --report      # regenerate report.md from raw.jsonl
 """
 import json
 import os
@@ -26,12 +26,12 @@ from multiprocessing import Pool
 from pathlib import Path
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 
 import numpy as np
 
-MANIFEST = ROOT / "scripts" / "logs" / "v4.3.1.6_campaign" / "manifest.json"
+MANIFEST = ROOT / "logs" / "v4.3.1.6_campaign" / "manifest.json"
 OUT = ROOT / "paper_contents" / "v4.3.3"
 RESULTS = ROOT / "results" / "unified"
 WORKERS = 4
@@ -144,10 +144,10 @@ def write_report(runs):
 def write_panel_manifest(jobs):
     """Evaluation-batch manifest for the monitor panel (app/backend/main.py, _eval_batch_state)."""
     ilp = json.loads((ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.7" / "summary.json").read_text())["scenarios"]
-    d = ROOT / "scripts" / "logs" / "eval_v4.3.3"
+    d = ROOT / "logs" / "eval_v4.3.3"
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(json.dumps({
-        "kind": "eval", "version": "4.3.3", "script": "scripts/eval_v4.3.3.py", "log": "scripts/logs/eval_v4.3.3.log",
+        "kind": "eval", "version": "4.3.3", "script": "src/scripts/eval_v4.3.3.py", "log": "logs/eval_v4.3.3.log",
         "workers": WORKERS, "started_at": time.time(), "raw": "paper_contents/v4.3.3/raw.jsonl",
         "raw_format": "best_of_k", "ks": KS, "report": "paper_contents/v4.3.3/report.md",
         "ilp": {s: {k: ilp[s]["ilp"][k] for k in ("ar_mean", "ms_mean", "ms_median")}

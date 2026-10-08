@@ -11,7 +11,7 @@ ECUs (best capacity match available), du = u* - u >= 0.
 Per instance (completed without EXIT): active ECUs vs ILP, absolute / relative AR gap,
 number of voluntary opens, sum of du; Spearman correlations with the relative gap.
 
-    .venv/bin/python scripts/diag_open_ecu.py   -> paper_contents/v4.4.1/open_diag.md
+    .venv/bin/python src/scripts/diag_open_ecu.py   -> paper_contents/v4.4.1/open_diag.md
 """
 import json
 import random
@@ -22,15 +22,15 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 RESULTS = ROOT / "results" / "unified"
 REPORT = ROOT / "paper_contents" / "v4.4.1" / "open_diag.md"
 SCENARIOS = ["lt", "eq", "gt"]
 # (label, data version, manifest, algo)
-MODELS = [("v4.3.8 Mask PPO（p = 0.6）", "v4.3.1.4", "scripts/logs/v4.3.8_pilot/manifest.json", "mask_ppo"),
-          ("v4.3.8 Mask DQN（p = 0.6）", "v4.3.1.4", "scripts/logs/v4.3.8_pilot/manifest.json", "mask_dqn"),
-          ("v4.4.1 Mask PPO（随机密度）", "v4.4.1", "scripts/logs/v4.4.1_pilot/manifest.json", "mask_ppo")]
+MODELS = [("v4.3.8 Mask PPO（p = 0.6）", "v4.3.1.4", "logs/v4.3.8_pilot/manifest.json", "mask_ppo"),
+          ("v4.3.8 Mask DQN（p = 0.6）", "v4.3.1.4", "logs/v4.3.8_pilot/manifest.json", "mask_dqn"),
+          ("v4.4.1 Mask PPO（随机密度）", "v4.4.1", "logs/v4.4.1_pilot/manifest.json", "mask_ppo")]
 SEED = 1
 
 
@@ -103,7 +103,7 @@ def main():
     f4 = lambda v: f"{v:.4f}"
     pc = lambda v: f"{100 * v:.1f}%"
     lines = ["# 开启 ECU 诊断（回放已有模型，不训练）", "",
-             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `scripts/diag_open_ecu.py`。",
+             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/diag_open_ecu.py`。",
              "- 模型：v4.3.8 试跑的 Mask PPO / Mask DQN（p = 0.6 数据）、v4.4.1 试跑的 Mask PPO（随机密度数据）；均为种子 1、1M 步，"
              "在各自种子 1 的测试集（400 个实例）上确定性回放。",
              "- 「开启」= 把服务放到一个还没有服务的 ECU 上。**首次**：t = 0，还没有任何 ECU 开启；**主动**：已开启的 ECU 中至少有一个能合法放下该服务，"

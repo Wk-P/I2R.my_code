@@ -27,8 +27,8 @@ LT / EQ 各 300 个随机 episode × 4 种机制：终局奖励与上式（Lagra
 
 ## 运行
 
-- 12 个模型 × 3 场景 × legacy × 种子 1 × **5M 步** = 36 个任务；`scripts/run_v4.3.1.6.py`。
-- 记录：`scripts/logs/v4.3.1.6_run/manifest.json`；报告 `report.md`（本目录）。
+- 12 个模型 × 3 场景 × legacy × 种子 1 × **5M 步** = 36 个任务；`src/scripts/run_v4.3.1.6.py`。
+- 记录：`logs/v4.3.1.6_run/manifest.json`；报告 `report.md`（本目录）。
 
 **已完成**（2026-10-02 15:30 – 17:32，36/36，无失败）。完整表格见 `report.md`。
 
@@ -72,7 +72,7 @@ AR/AR\*（成功 episode）：PPO 四种机制 LT 0.884～0.895、EQ 0.935～0.9
 ## 正式实验（3 种子）
 
 - 12 个模型 × 3 场景 × 种子 {1, 2, 3} × 5M 步 = 108 次运行。种子 1 复用上面的单种子运行（代码与设定完全相同，commit `ede2187`），本批次补跑种子 2、3，共 72 个任务。代码未改，仍属 v4.3.1.6。
-- 脚本：`scripts/run_v4.3.1.6_campaign.py`；manifest：`scripts/logs/v4.3.1.6_campaign/manifest.json`（含种子 1 的 exp_id）；报告：`campaign_report.md`（本目录，3 种子均值 ± 样本标准差，新增"AR/AR\*×success"综合指标，失败计 0）。
+- 脚本：`src/scripts/run_v4.3.1.6_campaign.py`；manifest：`logs/v4.3.1.6_campaign/manifest.json`（含种子 1 的 exp_id）；报告：`campaign_report.md`（本目录，3 种子均值 ± 样本标准差，新增"AR/AR\*×success"综合指标，失败计 0）。
 - DQN / DDQN 的 Lagrangian 保持现有设定（未单独调整），其表现差作为结果如实报告。
 
 **已完成**（2026-10-03 12:40 – 16:37，72/72 无失败；加上种子 1 共 108 次运行）。完整表格见 `campaign_report.md`。

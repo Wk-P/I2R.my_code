@@ -1,4 +1,4 @@
-"""shared/reward_config.py — switchable reward (v4.3.1).
+"""src/shared/reward_config.py — switchable reward (v4.3.1).
 
 $REWARD_MODE selects the terminal reward of a violation-free episode:
 
@@ -18,7 +18,7 @@ Environments call success_quality(ar, ar_star) and multiply by M (Mask-PPO
 LT keeps its curriculum weight w on top: M * ((1-w) + w*quality)).
 
 AR* per instance comes from results/<branch>/<scenario>/ilp/ar_star.json,
-built once by scripts/build_ar_star.py; instances are keyed by
+built once by src/scripts/build_ar_star.py; instances are keyed by
 scenario_key(caps, reqs, conflict_sets) on the ORIGINAL (unsorted) service
 order, i.e. exactly the tuple an environment draws in reset().
 """
@@ -56,7 +56,7 @@ def lookup_ar_star(scenario: str, caps, reqs, conflict_sets) -> float | None:
     if scenario not in _AR_STAR:
         path = ar_star_path(scenario)
         if not path.exists():
-            raise FileNotFoundError(f"{path} missing -- run scripts/build_ar_star.py first")
+            raise FileNotFoundError(f"{path} missing -- run src/scripts/build_ar_star.py first")
         _AR_STAR[scenario] = json.loads(path.read_text())
     return _AR_STAR[scenario][scenario_key(caps, reqs, conflict_sets)]
 

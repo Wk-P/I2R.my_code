@@ -5,7 +5,7 @@
 - 三行：从零训练 = v4.3.8 试跑的 Mask PPO；只做 BC = 预训练后、PPO 之前的模型；BC → Mask PPO = 本版本最终模型。
 - AR、ILP AR 在未 EXIT 的同一批测试实例上平均；绝对 gap = ILP AR − AR，相对 gap = (ILP AR − AR) / ILP AR。Mask 违约率恒为 0。
 - 开启 ECU 数 / ILP 开启数在未 EXIT 的实例上平均；被逼开启、主动开启为每个测试实例的平均次数（定义见 `paper_contents/v4.4.1/open_diag.md`）。
-- manifest：`scripts/logs/v4.4.2_pilot/manifest.json`
+- manifest：`logs/v4.4.2_pilot/manifest.json`
 - **试跑**：Mask PPO × 3 场景 × 种子 1 × 1M 步。
 
 ## LT

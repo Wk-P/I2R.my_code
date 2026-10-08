@@ -16,8 +16,8 @@ Intermediate rewards are 0. Lagrangian still subtracts $\lambda\sum_t c_t$ at th
 
 ## 2. Changes (only variable: the reward)
 
-- `paper_rl/env.py`: new `reward_mode="ar_pen"`.
-- `scripts/run_v4.3.6.py`: full experiment (12 models × 3 scenarios × 3 seeds × 5M); `--pilot` is a pilot (the four PPO variants + Mask-DQN + Repair-DQN × 3 scenarios × seed 1 × 1M, 18 jobs).
+- `src/paper_rl/env.py`: new `reward_mode="ar_pen"`.
+- `src/scripts/run_v4.3.6.py`: full experiment (12 models × 3 scenarios × 3 seeds × 5M); `--pilot` is a pilot (the four PPO variants + Mask-DQN + Repair-DQN × 3 scenarios × seed 1 × 1M, 18 jobs).
 - Everything else as in v4.3.1.6: base observation, descending-demand order, a dead end terminates the episode (professor's comment 1-② "no early stop, always run M steps" is left to the next version), other hyper-parameters, data and splits, evaluation.
 
 ## 3. Self-check

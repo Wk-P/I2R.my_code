@@ -2,7 +2,7 @@
 Hyperparameter & path configuration for mask_dqn (v4.3.0).
 DQN on the Mask-PPO environment (ppo_mask/env.py::P4Env) + hard action mask.
 Hyperparameters are identical to lt/dqn so the DQN family differs only in
-the constraint mechanism. DQN_* names are kept for shared/dqn_variant_runner.py.
+the constraint mechanism. DQN_* names are kept for src/shared/dqn_variant_runner.py.
 """
 
 from pathlib import Path

@@ -2,7 +2,7 @@
 run_all_bc.py — P6 pipeline (PPO + best-fit repair) with ILP behavior-cloning
 pretraining. Same as run_all.py, except the plain-PPO policy is warm-started
 via supervised behavior cloning on ILP-optimal expert trajectories
-(shared/bc_pretrain.py) before `model.learn()` runs. No action masking is
+(src/shared/bc_pretrain.py) before `model.learn()` runs. No action masking is
 used (matches P6 design; invalid picks get auto-repaired).
 
 Run:
@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(HERE.parent.parent.parent / "src"))  # src/ for shared
 
 import shared.timer_utils as timer_utils
 

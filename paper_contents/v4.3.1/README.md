@@ -2,7 +2,7 @@
 
 在 v4.3.0（DQN 系列改用 PPO 奖励、新增 Mask/Repair-DQN/DDQN）之后的增量版本。**默认行为与 v4.3.0 完全相同**：新增的奖励写法全部通过环境变量 `REWARD_MODE` 切换，不设置时为 `legacy`。
 
-## 1. 可切换的奖励 `REWARD_MODE`（`shared/reward_config.py`）
+## 1. 可切换的奖励 `REWARD_MODE`（`src/shared/reward_config.py`）
 
 | 模式 | 无违规 episode 的终局奖励 | 有违规 episode 的终局奖励 | 中间步 |
 |---|---|---|---|
@@ -13,7 +13,7 @@
 
 - AR = average resource utilization（平均资源利用率，优化目标）；$AR^*$ 为该实例的 ILP 最优 AR。
 - `legacy` 的问题：$AR<0.5-\frac{1}{2M}$ 时无违规 episode 的奖励低于"只在最后一步违规"的 $-1$（EQ 约 1/10 的实例受影响，见 `../v4.3.0/README.md`"已知问题"）。`ar` / `ratio` 保证任何无违规 episode（>0）严格优于任何违规 episode（<0）。
-- $AR^*$ 由 `scripts/build_ar_star.py` 对每个场景 2000 个实例并行求 ILP 得到，存于 `results/<branch>/<scen>/ilp/ar_star.json`（按实例内容哈希索引），约 80 秒。
+- $AR^*$ 由 `src/scripts/build_ar_star.py` 对每个场景 2000 个实例并行求 ILP 得到，存于 `results/<branch>/<scen>/ilp/ar_star.json`（按实例内容哈希索引），约 80 秒。
 - 接入的环境：PPO、Mask-PPO、DQN、DDQN（Mask-DQN/DDQN 复用 Mask-PPO 环境）。Mask-PPO LT 的课程权重 $w$ 保留：成功分支为 $M[(1-w)+w\cdot q]$，$q$ 为上表中的质量项。
 
 ## 2. directional 奖励（依据 `../v4.3.0/Reward-Discussion.md`）
@@ -46,8 +46,8 @@ $$
 
 ## 3. 1M 步奖励试跑（`legacy` / `ar` / `ratio`）
 
-- 脚本：`scripts/run_v4.3.1_reward_pilot.py`；3 种奖励 × {PPO, Mask-PPO, DQN} × 3 场景 × 种子 1 = 27 个任务。
-- 报告：`reward_pilot_report.md`（本目录）；manifest：`scripts/logs/v4.3.1_reward_pilot/manifest.json`。
+- 脚本：`src/scripts/run_v4.3.1_reward_pilot.py`；3 种奖励 × {PPO, Mask-PPO, DQN} × 3 场景 × 种子 1 = 27 个任务。
+- 报告：`reward_pilot_report.md`（本目录）；manifest：`logs/v4.3.1_reward_pilot/manifest.json`。
 - 调度权重按实测 CPU 占用（PPO 7 核、DQN 3 核），支持 `--resume` 接续。
 
 结果（success_rate；单种子、1M 步，AR 为全部测试 episode 的均值）：
@@ -70,13 +70,13 @@ $$
 
 ## 4. Repair-* 不再记录修复触发率
 
-`scenarios/*/ppo_opt/run_all.py` 与 `shared/dqn_variant_runner.py`：违规列只统计实际执行的放置（Repair-* 结构上为 0），结果文件不再输出修复触发率。环境内部仍统计修复次数，因为 `legacy` 奖励要用。
+`scenarios/*/ppo_opt/run_all.py` 与 `src/shared/dqn_variant_runner.py`：违规列只统计实际执行的放置（Repair-* 结构上为 0），结果文件不再输出修复触发率。环境内部仍统计修复次数，因为 `legacy` 奖励要用。
 
 ## 5. git 分支整理与结果目录
 
 - 原先 5 个分支（main → pretrain → paper-verfication → add_states → final_paper_experiments）是同一条直线上的研究阶段，均已包含在最新提交中。整理后只保留 **main** 作为主线（已快进到最新），版本用 tag 标记。
 - 旧分支改为归档 tag 后删除（本地与 GitHub）：`archive/stage1-main`、`archive/stage2-pretrain`、`archive/stage3-paper-verification`（含原本地未推送的 2 个提交）、`archive/stage4-add-states`、`archive/stage5-final-paper-experiments`。查看旧阶段：`git checkout archive/stage4-add-states`。
-- 结果写入位置与分支名解耦：`shared/version_config.RESULTS_SPACE = "final_paper_experiments"`（`$RESULTS_SPACE` 可覆盖），新训练继续写入 `results/final_paper_experiments/`；已有的 `results/<旧分支名>/` 目录和文档中的路径引用全部保持不变。面板中以"数据空间"展示，并标注阶段名与版本范围（`app/backend/result_spaces.json`）。
+- 结果写入位置与分支名解耦：`src/shared/version_config.RESULTS_SPACE = "final_paper_experiments"`（`$RESULTS_SPACE` 可覆盖），新训练继续写入 `results/final_paper_experiments/`；已有的 `results/<旧分支名>/` 目录和文档中的路径引用全部保持不变。面板中以"数据空间"展示，并标注阶段名与版本范围（`app/backend/result_spaces.json`）。
 
 ## 6. 实验面板（`app/`）改版
 

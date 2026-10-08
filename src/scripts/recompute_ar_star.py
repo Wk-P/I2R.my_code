@@ -6,14 +6,14 @@ the total utilisation and is not the AR optimum. This recomputes it with
 solve_ilp_max_ar (Dinkelbach). Instances (ECUs, SVCs, conflict sets) are not
 changed; the old value is kept as `ar_star_total_util`.
 
-    python scripts/recompute_ar_star.py v4.3.1.4
+    python src/scripts/recompute_ar_star.py v4.3.1.4
 """
 import sys
 from multiprocessing import Pool
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 
 import yaml
 from paper_rl.data import data_dir

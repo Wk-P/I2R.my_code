@@ -6,11 +6,11 @@
 same splits / hyper-parameters as v4.3.1.6. DQN's epsilon schedule is a fraction
 of the total steps, so it now decays over 5M steps instead of 2.5M.
 The report compares with the 5M models (v4.3.1.7 re-evaluation,
-paper_contents/v4.3.1/v4.3.1.7/summary.json) and the greedy baseline (paper_rl/greedy.py).
+paper_contents/v4.3.1/v4.3.1.7/summary.json) and the greedy baseline (src/paper_rl/greedy.py).
 
-    nohup .venv/bin/python scripts/run_v4.3.1.10.py > scripts/logs/run_v4.3.1.10_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.1.10.py --resume >> scripts/logs/run_v4.3.1.10_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.3.1.10.py --report
+    nohup .venv/bin/python src/scripts/run_v4.3.1.10.py > logs/run_v4.3.1.10_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.10.py --resume >> logs/run_v4.3.1.10_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.3.1.10.py --report
 """
 import json
 import os
@@ -21,11 +21,11 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 VERSION = "4.3.1.10"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / "v4.3.1" / f"v{VERSION}" / "report.md"
@@ -144,11 +144,11 @@ def write_report(exp_ids):
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              "- 唯一改动：训练步数 10M（DQN 的 ε 衰减随之变为前 5M 步）；其余与 v4.3.1.6 相同"
              "（legacy 奖励、不归一化、p = 0.6 数据、同一划分与超参、3 种子）。",
-             "- 「5M」= v4.3.1.6 的模型，取自 v4.3.1.7 重评；「10M」= 本版本，生成报告时重新评估；「贪心」= `paper_rl/greedy.py`"
+             "- 「5M」= v4.3.1.6 的模型，取自 v4.3.1.7 重评；「10M」= 本版本，生成报告时重新评估；「贪心」= `src/paper_rl/greedy.py`"
              "（可行 ECU 中先选已开的，再选需求/容量最大的；不违规，无可行 ECU 即失败）。均为每个测试实例 1 次确定性输出。",
              "- AR 与 ILP AR 都只在该方法成功的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
              "均值 ± 样本标准差（3 种子的测试集）。",
-             f"- manifest：`scripts/logs/v{VERSION}/manifest.json`", ""]
+             f"- manifest：`logs/v{VERSION}/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

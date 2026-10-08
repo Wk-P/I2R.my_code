@@ -21,16 +21,16 @@ conflict_viol ~0.18) before deciding whether to port the same fix to eq/gt
 (which were barely affected by the original regression and may not need it).
 
 Results land in results/final_paper_experiments/<scenario>/<algo>/<exp_id>/
-(branch-namespaced per shared/paths.py), completely separate from
+(branch-namespaced per src/shared/paths.py), completely separate from
 results/add_states/. A manifest of every (scenario, algo, seed) -> exp_id is
-written to scripts/logs/v4.1.0.3_lt_ppo_lagrangian_5M/manifest.json so the report
-generator (scripts/generate_v4.1.0_report.py) knows exactly which exp_ids
+written to logs/v4.1.0.3_lt_ppo_lagrangian_5M/manifest.json so the report
+generator (src/scripts/generate_v4.1.0_report.py) knows exactly which exp_ids
 belong to this run. On completion this script automatically invokes the
 report generator (per project requirement: every full experiment on
 final_paper_experiments must auto-produce a full report).
 
 Usage:
-    nohup .venv/bin/python scripts/run_v4.1.0.3_lt_ppo_lagrangian_5M.py > scripts/logs/run_v4.1.0.3_lt_ppo_lagrangian_5M_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.1.0.3_lt_ppo_lagrangian_5M.py > logs/run_v4.1.0.3_lt_ppo_lagrangian_5M_driver.log 2>&1 &
     disown
 """
 import json
@@ -39,8 +39,8 @@ import sys
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
-LOG_DIR = PROJECT_ROOT / "scripts" / "logs" / "v4.1.0.3_lt_ppo_lagrangian_5M"
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+LOG_DIR = PROJECT_ROOT / "logs" / "v4.1.0.3_lt_ppo_lagrangian_5M"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST_PATH = LOG_DIR / "manifest.json"
 
@@ -156,7 +156,7 @@ def main():
     print("=== auto-generating report ===", flush=True)
     report_proc = subprocess.run(
         [str(PROJECT_ROOT / ".venv" / "bin" / "python"),
-         "scripts/generate_v4.1.0_report.py", "--manifest", str(MANIFEST_PATH)],
+         "src/scripts/generate_v4.1.0_report.py", "--manifest", str(MANIFEST_PATH)],
         cwd=PROJECT_ROOT,
     )
     if report_proc.returncode != 0:

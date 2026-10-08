@@ -196,7 +196,7 @@ def solve_ilp(ecus, services, conflict_sets=None) -> dict:
 def solve_ilp_all_scenarios(yaml_config: Path, scenarios: list, outdir: Path):
     """Return (mean_ar, per_scenario_results) for all scenarios, cached.
 
-    `outdir` is expected to be results/<scenario>/<algo>/ (see shared/paths.py);
+    `outdir` is expected to be results/<scenario>/<algo>/ (see src/shared/paths.py);
     the scenario name is derived from it. The ILP result only depends on the
     scenario config, not on which algo is asking, so every algo shares one
     content-addressed cache file at results/<scenario>/ilp/<hash>.json

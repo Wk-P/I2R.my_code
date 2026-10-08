@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""v4.4.3: Mask PPO with the structure-aware policy network (paper_rl/graph_policy.py), pure RL.
+"""v4.4.3: Mask PPO with the structure-aware policy network (src/paper_rl/graph_policy.py), pure RL.
 
 Single change from v4.3.8: the policy / value network. MLP 256-256 on the flat observation ->
-relation-biased attention over ECU / service / global tokens (paper_rl/graph_net.py) on the raw
+relation-biased attention over ECU / service / global tokens (src/paper_rl/graph_net.py) on the raw
 state (obs = raw, which carries the same information). Shared encoder; every ECU scored by the same
 actor head (ECU-permutation equivariant), EXIT by the global token, V(s) from the global token +
 token mean (permutation invariant). Everything else as v4.3.8: data v4.3.1.4 (p = 0.6), descending
@@ -10,14 +10,14 @@ demand, ECU action, reward ar_pen, gamma 1, full episode, EXIT, 40 envs x 512 st
 10 epochs, clip 0.1, ent 0.005, lr 3e-4. --pilot: 3 scenarios x seed 1 x 1M.
 The report puts side by side: MLP Mask PPO (v4.3.8 pilot), structure-aware Mask PPO (this
 version), and the oracle-supervised reference (same network trained on ILP actions,
-scripts/diag_arch.py, 50k instances): relative gap, EXIT, active ECUs, forced openings, and the
-optimal-action rates of the regret diagnostic (scripts/diag_regret.py).
+src/scripts/diag_arch.py, 50k instances): relative gap, EXIT, active ECUs, forced openings, and the
+optimal-action rates of the regret diagnostic (src/scripts/diag_regret.py).
 
-    nohup .venv/bin/python scripts/run_v4.4.3.py --pilot > scripts/logs/run_v4.4.3_pilot_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.4.3.py --pilot --report
-    nohup .venv/bin/python scripts/run_v4.4.3.py --seeds 1 > scripts/logs/run_v4.4.3_driver.log 2>&1 &     # 5M, seed 1
-    nohup .venv/bin/python scripts/run_v4.4.3.py --seeds 2,3 >> scripts/logs/run_v4.4.3_driver.log 2>&1 &  # later: adds seeds
-    .venv/bin/python scripts/run_v4.4.3.py --report
+    nohup .venv/bin/python src/scripts/run_v4.4.3.py --pilot > logs/run_v4.4.3_pilot_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.4.3.py --pilot --report
+    nohup .venv/bin/python src/scripts/run_v4.4.3.py --seeds 1 > logs/run_v4.4.3_driver.log 2>&1 &     # 5M, seed 1
+    nohup .venv/bin/python src/scripts/run_v4.4.3.py --seeds 2,3 >> logs/run_v4.4.3_driver.log 2>&1 &  # later: adds seeds
+    .venv/bin/python src/scripts/run_v4.4.3.py --report
 5M runs also train an MLP Mask PPO control with the same budget (manifest key mask_ppo_mlp).
 """
 import json
@@ -30,17 +30,17 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "src" / "scripts"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 VERSION = "4.4.3"
 DATA = "v4.3.1.4"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}"
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "report.md"
 RESULTS = ROOT / "results" / "unified"
-MLP = ROOT / "scripts" / "logs" / "v4.3.8_pilot" / "manifest.json"          # MLP Mask PPO, same setting
+MLP = ROOT / "logs" / "v4.3.8_pilot" / "manifest.json"          # MLP Mask PPO, same setting
 REF = ROOT / "results" / "sup_diag"                                           # attn_<scen>_50000.pt (diag_arch.py)
 
 CAPACITY = int(56 * 0.93)
@@ -54,13 +54,13 @@ if "--seeds" in sys.argv:                              # e.g. --seeds 1  (later 
     SEEDS = [int(x) for x in sys.argv[sys.argv.index("--seeds") + 1].split(",")]
 # full run: the structure-aware model plus an MLP control with the same 5M budget (key mask_ppo_mlp)
 KEYS = {"mask_ppo": "graph", "mask_ppo_mlp": "mlp"}
-PILOT_MANIFEST = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot" / "manifest.json"
+PILOT_MANIFEST = ROOT / "logs" / f"v{VERSION}_pilot" / "manifest.json"
 GPU = "--gpu" in sys.argv          # structure-aware runs on CUDA (.venv-gpu), one GPU per scenario; MLP stays on CPU
 PY_GPU = str(ROOT / ".venv-gpu" / "bin" / "python")
 if PILOT:
     KEYS = {"mask_ppo": "graph"}
     SEEDS, STEPS = [1], 1_000_000
-    LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot"
+    LOG_DIR = ROOT / "logs" / f"v{VERSION}_pilot"
     MANIFEST = LOG_DIR / "manifest.json"
     REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "pilot_report.md"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -104,7 +104,7 @@ def launch(seed, scen, key, exp_ids):
 def regret_summary(out_md, args):
     js = Path(out_md).with_suffix(".json")
     if not js.exists():
-        subprocess.run([PY, str(ROOT / "scripts" / "diag_regret.py"), "--out", str(out_md), *args], cwd=ROOT, check=True)
+        subprocess.run([PY, str(ROOT / "src" / "scripts" / "diag_regret.py"), "--out", str(out_md), *args], cwd=ROOT, check=True)
     return json.loads(js.read_text())
 
 
@@ -162,15 +162,15 @@ def write_report(exp_ids):
     pc = lambda v: f"{100 * v:.1f}%"
     lines = [f"# v{VERSION} 结构感知策略网络（纯 RL，其余同 v4.3.8）", "",
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
-             "- 唯一改动：策略 / 价值网络。MLP 256-256（扁平观测）→ 关系偏置注意力网络（`paper_rl/graph_net.py`，ECU / 服务 / 全局各为 token，"
+             "- 唯一改动：策略 / 价值网络。MLP 256-256（扁平观测）→ 关系偏置注意力网络（`src/paper_rl/graph_net.py`，ECU / 服务 / 全局各为 token，"
              "四种关系作为注意力偏置），输入原始状态（`obs = raw`，信息与原观测相同）。编码器共享；每台 ECU 用同一个 actor 打分头（ECU 编号置换等变），"
              "EXIT 由全局 token 打分，V(s) 由全局 token 与 token 平均得到（置换不变）。其余与 v4.3.8 完全相同：数据 v4.3.1.4（p = 0.6）、需求降序、只选 ECU、"
              "ar_pen 奖励、γ = 1、不提前结束、EXIT、40 环境 × 512 步、batch 256、10 epochs、clip 0.1、熵系数 0.005、学习率 3e-4。",
              "- 各行：MLP Mask PPO = v4.3.8 设置（试跑报告为 v4.3.8 试跑 1M；正式报告为同一 5M 预算重新训练的对照）；结构感知 Mask PPO = 本版本（纯 RL，从零训练）；"
-             "ILP 监督参照 = 同一网络用 5 万个实例的 ILP 最优动作做监督训练（`scripts/diag_arch.py`），**不是 RL，也不是上限**，只作表示能力的参照。",
+             "ILP 监督参照 = 同一网络用 5 万个实例的 ILP 最优动作做监督训练（`src/scripts/diag_arch.py`），**不是 RL，也不是上限**，只作表示能力的参照。",
              "- AR、ILP AR 在未 EXIT 的同一批测试实例上平均；绝对 gap = ILP AR − AR，相对 gap = (ILP AR − AR) / ILP AR。Mask 违约率恒为 0。",
              "- 开启 ECU 数在未 EXIT 的实例上平均；被逼开启 = 每个测试实例的平均次数（定义见 `paper_contents/v4.4.1/open_diag.md`）。",
-             "- 选中最优动作的比例来自逐步 regret 诊断（`scripts/diag_regret.py`，ILP 固定前缀求最优完成，regret ≤ 1e-4 记为最优，在完成的实例上统计）。",
+             "- 选中最优动作的比例来自逐步 regret 诊断（`src/scripts/diag_regret.py`，ILP 固定前缀求最优完成，regret ≤ 1e-4 记为最优，在完成的实例上统计）。",
              f"- manifest：`{MANIFEST.relative_to(ROOT)}`"]
     seeds = sorted(exp_ids)
     lines.append("- **试跑**：结构感知 Mask PPO × 3 场景 × 种子 1 × 1M 步。" if PILOT else

@@ -1,7 +1,7 @@
 """
 run_all.py — repair_dqn (DQN on the Repair-PPO environment (ppo_opt/env.py::P6Env) + best-fit repair), v4.3.0.
 
-The pipeline lives in shared/dqn_variant_runner.py (ILP -> train -> evaluate
+The pipeline lives in src/shared/dqn_variant_runner.py (ILP -> train -> evaluate
 -> results.json / summary.csv / training_curve.* / comparison.png).
 
 Run:
@@ -14,7 +14,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(HERE.parent.parent.parent / "src"))  # src/ for shared
 
 import config as C
 from shared.dqn_variant_runner import make_runner

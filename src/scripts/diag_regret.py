@@ -9,7 +9,7 @@ trajectory the regrets telescope: sum_t Regret(s_t, a_t) = ILP AR - AR on comple
 Empty ECUs of equal capacity are interchangeable, so they are solved once. EXIT instances are
 reported separately: t_first_infeasible = first step whose action leaves no feasible completion.
 
-    .venv/bin/python scripts/diag_regret.py [--n 400]   -> paper_contents/v4.4.2/regret_diag.md
+    .venv/bin/python src/scripts/diag_regret.py [--n 400]   -> paper_contents/v4.4.2/regret_diag.md
 """
 import argparse
 import json
@@ -21,12 +21,12 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 RESULTS = ROOT / "results" / "unified"
 REPORT = ROOT / "paper_contents" / "v4.4.2" / "regret_diag.md"
 SCENARIOS = ["lt", "eq", "gt"]
-DATA, MANIFEST, ALGO, SEED = "v4.3.1.4", "scripts/logs/v4.3.8_pilot/manifest.json", "mask_ppo", 1
+DATA, MANIFEST, ALGO, SEED = "v4.3.1.4", "logs/v4.3.8_pilot/manifest.json", "mask_ppo", 1
 EPS = 1e-4
 
 
@@ -134,7 +134,7 @@ def main():
     pc = lambda v: f"{100 * v:.1f}%"
     f4 = lambda v: f"{v:.4f}"
     lines = ["# 逐步 regret 分解（用 ILP 测量，不训练）", "",
-             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `scripts/diag_regret.py`；耗时 {(time.time() - t0) / 60:.1f} 分钟。",
+             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/diag_regret.py`；耗时 {(time.time() - t0) / 60:.1f} 分钟。",
              f"- 模型：{a.label}，在种子 1 测试集的前 {a.n} 个实例上确定性回放。",
              "- V*(s_t) = 固定已做的放置、其余由 ILP（Dinkelbach）最优完成时能达到的最终 AR；Regret(s_t, a) = V*(s_t) − V*(执行 a 之后)。"
              "沿策略自己的轨迹逐步相加，恰好等于该实例的绝对 gap（ILP AR − AR）。",

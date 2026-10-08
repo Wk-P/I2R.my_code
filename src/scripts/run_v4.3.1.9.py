@@ -10,9 +10,9 @@ v4.3.1.7 (paper_contents/v4.3.1/v4.3.1.7/summary.json).
 Load is counted over every running paper_rl.train process on the machine (PPO 4,
 DQN / DDQN 2 threads), so this campaign shares the CPU with v4.3.1.8.
 
-    nohup .venv/bin/python scripts/run_v4.3.1.9.py > scripts/logs/run_v4.3.1.9_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.1.9.py --resume >> scripts/logs/run_v4.3.1.9_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.3.1.9.py --report
+    nohup .venv/bin/python src/scripts/run_v4.3.1.9.py > logs/run_v4.3.1.9_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.9.py --resume >> logs/run_v4.3.1.9_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.3.1.9.py --report
 """
 import json
 import os
@@ -23,9 +23,9 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
-LOG_DIR = ROOT / "scripts" / "logs" / "v4.3.1.9"
+LOG_DIR = ROOT / "logs" / "v4.3.1.9"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.9" / "report.md"
@@ -106,7 +106,7 @@ def write_report(exp_ids):
              "失败分支 -M(1-M_v/M) 不变；其余与 v4.3.1.6 相同（p = 0.6 数据、同一划分与超参、无奖励归一化）。",
              "- 「旧」= v4.3.1.6 模型，取自 v4.3.1.7 重评（最优 AR 由 ILP 求得）；「新」= 本版本。",
              "- 相对最优 AR = 模型 AR ÷ 同一实例的最优 AR（ILP 求得）。「成功回合」只在成功的 episode 上平均；「失败计 0」把失败 episode 记为 0 再平均。均值 ± 样本标准差（3 种子）。",
-             "- manifest：`scripts/logs/v4.3.1.9/manifest.json`", ""]
+             "- manifest：`logs/v4.3.1.9/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

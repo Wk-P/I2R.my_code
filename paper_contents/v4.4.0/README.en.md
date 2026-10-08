@@ -9,7 +9,7 @@ Professor's comment 2 (placement order). On top of v4.3.8 (unified reward, no ea
 
 ## State (observation)
 
-There is no current service, so the components built around it are dropped and replaced by one group per service. Code: `_obs_joint()` in `paper_rl/env.py`. Dimension = 4 + 3N + 4M + MN + 1: LT 245, EQ 175, GT 240.
+There is no current service, so the components built around it are dropped and replaced by one group per service. Code: `_obs_joint()` in `src/paper_rl/env.py`. Dimension = 4 + 3N + 4M + MN + 1: LT 245, EQ 175, GT 240.
 
 | # | Component | Length | Meaning |
 |---|---|---|---|
@@ -29,4 +29,4 @@ There is no current service, so the components built around it are dropped and r
 
 Services are still indexed by descending demand (only an index; it no longer fixes the placement order).
 
-Pilot: `scripts/run_v4.4.0.py --pilot`, Maskable PPO / DQN × 3 scenarios × seed 1 × 1M steps; `pilot_report.md` puts each model next to the same model of the v4.3.8 pilot (ECU only).
+Pilot: `src/scripts/run_v4.4.0.py --pilot`, Maskable PPO / DQN × 3 scenarios × seed 1 × 1M steps; `pilot_report.md` puts each model next to the same model of the v4.3.8 pilot (ECU only).

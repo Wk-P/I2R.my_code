@@ -15,11 +15,11 @@ Every scenario uses the same distributions; only N and M differ:
 Instances that the ILP cannot solve are redrawn. The ILP optimum (AR*) is
 stored with every instance; since v4.5.0 it comes from solve_ilp_max_ar
 (Dinkelbach, the true AR optimum) -- older sets were fixed afterwards by
-scripts/recompute_ar_star.py.
+src/scripts/recompute_ar_star.py.
 
     python -m paper_rl.data --p 0.6 --version v4.3.1.4 [--n 2000]   # writes data/<version>/<scen>.yaml
     python -m paper_rl.data --p-random --version v4.4.1             # p ~ U[0, 1) per instance
-(v4.3.1.3 used p = 0.3, v4.3.1.4 uses p = 0.6; paper_rl/config.DATA_VERSION selects the set.)
+(v4.3.1.3 used p = 0.3, v4.3.1.4 uses p = 0.6; src/paper_rl/config.DATA_VERSION selects the set.)
 v4.4.1: with --p-random every instance draws its own p ~ U[0, 1); if the ILP is
 infeasible, p is redrawn together with the instance, so the stored p is
 U[0, 1) conditioned on feasibility (skewed low in LT). Each instance stores
@@ -33,8 +33,8 @@ import random
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scenarios" / "lt"))   # ilp.objects (ECU, SVC)
 
 SCENARIOS = {"lt": (10, 15), "eq": (10, 10), "gt": (15, 10)}   # name -> (N, M)

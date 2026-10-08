@@ -5,10 +5,10 @@ Settings: p = 0.6 data; legacy reward for all 12 models (success M(2AR-1),
 otherwise -M(1-valid/M)); Lagrangian cost -lambda * total violations at the
 end, lambda_max 50; Maskable / Repair dead end = failure; PPO clip 0.1.
 Results: results/unified/<scen>/<algo>/<exp_id>/; manifest
-scripts/logs/v4.3.1.6_run/manifest.json; report paper_contents/v4.3.1/v4.3.1.6/report.md.
+logs/v4.3.1.6_run/manifest.json; report paper_contents/v4.3.1/v4.3.1.6/report.md.
 
-    nohup .venv/bin/python scripts/run_v4.3.1.6.py > scripts/logs/run_v4.3.1.6_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.1.6.py --resume >> scripts/logs/run_v4.3.1.6_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.6.py > logs/run_v4.3.1.6_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.6.py --resume >> logs/run_v4.3.1.6_driver.log 2>&1 &
 """
 import csv
 import json
@@ -18,9 +18,9 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
-LOG_DIR = ROOT / "scripts" / "logs" / "v4.3.1.6_run"
+LOG_DIR = ROOT / "logs" / "v4.3.1.6_run"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.6" / "report.md"
@@ -95,7 +95,7 @@ def write_report(exp_ids):
              "- 测试集 400 个实例，单次确定性评估。success_rate = M 个服务全部合法放置的比例；"
              "AR = average resource utilization（只计合法放置），全部测试 episode 的均值；"
              "AR/AR* = 成功 episode 上 AR 与 ILP 最优值之比的均值；违规率 = 出现 ≥1 次违规的 episode 比例；死局率 = 因死局终止的 episode 比例。",
-             f"- manifest：`scripts/logs/v4.3.1.6_run/manifest.json`", ""]
+             f"- manifest：`logs/v4.3.1.6_run/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

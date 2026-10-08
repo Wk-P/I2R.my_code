@@ -5,7 +5,7 @@
 - 每个实例都 ILP 可行，所以 **EXIT 率 = 策略把一个本可完成的实例做成死局的比例**。Maskable 违约率恒为 0（已核对，表中不列）。
 - AR 与 ILP AR 只在未 EXIT 的测试实例上平均（同一批实例）；绝对 gap = ILP AR − AR，相对 gap = (ILP AR − AR) / ILP AR。
 - ρ = 实测冲突服务对比例（`conflict_ratio`）。每个测试实例 1 次确定性输出。
-- manifest：`scripts/logs/v4.4.1_pilot/manifest.json`
+- manifest：`logs/v4.4.1_pilot/manifest.json`
 - **试跑**：Maskable PPO × 3 场景 × 种子 1 × 1M 步。
 
 ## LT

@@ -13,9 +13,9 @@ v4.3.1 的子版本（tag `v4.3.1.3`）。起因：v4.3.1.2 审计发现三个�
 | capacity | 放在同一 ECU 上的服务所需 container 数之和不超过该 ECU 的 container 上限 |
 | privacy-conflict | 同一个冲突集中的两个服务不能放在同一 ECU；不共享任何冲突集的服务可以共置 |
 
-ILP 约束与此相同（`shared/ilp_utils.solve_ilp`）。术语：容量与需求的单位为 container（原文中的 VM 一律改为 container）。
+ILP 约束与此相同（`src/shared/ilp_utils.solve_ilp`）。术语：容量与需求的单位为 container（原文中的 VM 一律改为 container）。
 
-## 2. 场景数据（`paper_rl/data.py` → `data/v4.3.1.3/{lt,eq,gt}.yaml`）
+## 2. 场景数据（`src/paper_rl/data.py` → `data/v4.3.1.3/{lt,eq,gt}.yaml`）
 
 | 场景 | N | M |
 |---|---|---|
@@ -42,7 +42,7 @@ ILP 约束与此相同（`shared/ilp_utils.solve_ilp`）。术语：容量与需
 
 注意：EQ / GT 的总容量约为总需求的 2 倍，Mask / Repair 即使随机选动作 success_rate 也接近 100%，这两个场景主要比较 AR。
 
-## 3. 统一环境（`paper_rl/env.py::PlacementEnv`）
+## 3. 统一环境（`src/paper_rl/env.py::PlacementEnv`）
 
 - 服务按需求降序依次放置（所有模型、场景相同）。
 - 观测（维度 $6+5N+2M+1$）：当前服务需求、当前 AR、剩余可用容量和、剩余需求和、当前服务可行 ECU 比例、剩余服务比例；各 ECU 的初始容量、剩余容量、冲突标志、仍可接收（无冲突）的服务比例、可行标志（容量且无冲突）；各服务剩余需求、各服务当前可行 ECU 比例；$\lambda/\lambda_{\max}$（仅 Lagrange，其余为 0）。
@@ -68,7 +68,7 @@ $r^{obj}(d)=1+\beta d\ (d>\epsilon)$，$\beta d\ (|d|\le\epsilon)$，$-\lambda_d
 
 去掉的旧特例：Mask-PPO 的一步前瞻掩码与 AR 课程权重 $w$（仅 LT）、Repair-PPO 的单步 −0.1 修复惩罚与"触发修复则终局 0"（仅 LT）、Lagrange-PPO 各场景不同的逐步奖励、`bottleneck_risk` 特征。
 
-## 5. 超参数（`paper_rl/config.py`，三场景相同）
+## 5. 超参数（`src/paper_rl/config.py`，三场景相同）
 
 | | PPO 系列 | DQN / DDQN 系列 |
 |---|---|---|
@@ -76,7 +76,7 @@ $r^{obj}(d)=1+\beta d\ (d>\epsilon)$，$\beta d\ (|d|\le\epsilon)$，$-\lambda_d
 | 学习率 | 3e-4 | 1e-3 |
 | 其他 | n_steps 512，batch 256，epochs 10，γ 0.99，GAE λ 0.95，clip 0.2，熵系数 0.005（恒定），网络 pi/vf [256,256] | buffer 1e5，learning_starts 2000，batch 64，γ 0.99，train_freq 4，target 每 500 步硬更新，ε 在前 50% 步数从 1 降到 0，网络 [128,128] |
 
-DQN 与 DDQN 只差目标值计算；Mask-DQN/DDQN 在探索、贪心动作和目标值中都只考虑可行 ECU（`shared/dqn_variants.py`）。
+DQN 与 DDQN 只差目标值计算；Mask-DQN/DDQN 在探索、贪心动作和目标值中都只考虑可行 ECU（`src/shared/dqn_variants.py`）。
 
 Lagrange（PPO / DQN / DDQN 相同）：$\lambda_0=0.1$，预热 5000 个 episode 后每 20 个 episode 更新 $\lambda\leftarrow\mathrm{clip}(\lambda+0.005\,\bar\nu,0,5)$，$\bar\nu$ 为平均（容量 + 冲突）违规数 / M；评估时 $\lambda$ 固定为最终值。
 
@@ -84,16 +84,16 @@ Lagrange（PPO / DQN / DDQN 相同）：$\lambda_0=0.1$，预热 5000 个 episod
 
 | 文件 | 作用 |
 |---|---|
-| `paper_rl/data.py` | 数据生成（含 ILP） |
-| `paper_rl/env.py` | 统一环境 |
-| `paper_rl/config.py` | 统一超参数 |
-| `paper_rl/train.py` | 训练 + 评估：`python -m paper_rl.train --scen lt --algo mask_ppo --reward ar --steps 1000000 --seed 1` |
-| `scripts/run_v4.3.1.3_reward_pilot.py` | 奖励选型试跑 |
+| `src/paper_rl/data.py` | 数据生成（含 ILP） |
+| `src/paper_rl/env.py` | 统一环境 |
+| `src/paper_rl/config.py` | 统一超参数 |
+| `src/paper_rl/train.py` | 训练 + 评估：`python -m paper_rl.train --scen lt --algo mask_ppo --reward ar --steps 1000000 --seed 1` |
+| `src/scripts/run_v4.3.1.3_reward_pilot.py` | 奖励选型试跑 |
 
 - 算法名：`ppo / mask_ppo / lagrange_ppo / repair_ppo / dqn / mask_dqn / … / repair_ddqn`。
 - 结果写入 `results/unified/<scen>/<algo>/<exp_id>/`（`RESULTS_SPACE = "unified"`，与旧数据完全分开）：模型、`results.json`（含 version、commit、reward_mode、seed）、`summary.csv`、`training_curve.csv/png`。
 - 评估：80/20 划分（按种子打乱），测试集 400 个实例，每个单次确定性评估。
-- `scenarios/` 下的旧实现保留不动，仅用于复现 v4.3.1.2 及以前的结果；从本版本起论文实验只使用 `paper_rl/`。
+- `scenarios/` 下的旧实现保留不动，仅用于复现 v4.3.1.2 及以前的结果；从本版本起论文实验只使用 `src/paper_rl/`。
 
 ## 7. 自检
 

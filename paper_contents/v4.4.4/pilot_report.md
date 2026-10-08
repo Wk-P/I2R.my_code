@@ -4,9 +4,9 @@
 - 唯一改动：GAE λ 0.95 → 1（`paper_rl.train --gae-lambda 1`）。γ = 1 时优势变为整条轨迹的实际回报减 V(s)：早期步的优势不再经由 TD bootstrap 依赖 critic 估计（偏差↓），代价是方差↑。
 - 其余全部与 v4.4.3 试跑相同：结构感知网络（obs = raw）、数据 v4.3.1.4（p = 0.6）、需求降序、只选 ECU、ar_pen 奖励、γ = 1、不提前结束、EXIT、40 环境 × 512 步、batch 256、10 epochs、clip 0.1、熵系数 0.005、学习率 3e-4、种子 1、1M 步、CPU。
 - AR、ILP AR、开启 ECU 数在各自未 EXIT 的测试实例上平均；相对 gap = (ILP AR − AR) / ILP AR；Mask 违约率恒为 0。被逼开启 = 每个测试实例的平均次数（定义见 `paper_contents/v4.4.1/open_diag.md`）。
-- 选中最优动作的比例与 regret 来自逐步 regret 诊断（`scripts/diag_regret.py`，种子 1 测试集前 400 个实例，regret ≤ 1e-4 记为最优）。第 1–5 步 regret = 每个完成实例在前 5 步的 regret 之和的平均（各步 regret 之和 = 绝对 gap）。
-- ILP 监督参照：同一网络用 5 万个实例的 ILP 最优动作监督训练（`scripts/diag_arch.py`），不是 RL，也不是上限，只作参照。
-- manifest：`scripts/logs/v4.4.4_pilot/manifest.json`；对照：`scripts/logs/v4.4.3_pilot/manifest.json`
+- 选中最优动作的比例与 regret 来自逐步 regret 诊断（`src/scripts/diag_regret.py`，种子 1 测试集前 400 个实例，regret ≤ 1e-4 记为最优）。第 1–5 步 regret = 每个完成实例在前 5 步的 regret 之和的平均（各步 regret 之和 = 绝对 gap）。
+- ILP 监督参照：同一网络用 5 万个实例的 ILP 最优动作监督训练（`src/scripts/diag_arch.py`），不是 RL，也不是上限，只作参照。
+- manifest：`logs/v4.4.4_pilot/manifest.json`；对照：`logs/v4.4.3_pilot/manifest.json`
 
 ## LT
 

@@ -3,7 +3,7 @@
 - 生成时间：2026-10-01 21:27:31
 - 无违规 episode 的终局奖励：legacy = M(2AR−1)；ar = M·AR；ratio = M·AR/AR*。有违规时三者相同：−M(1−valid/M)。
 - 指标为训练脚本内置的测试集单次确定性评估（400 个实例）。AR 为全部测试 episode 的均值（与 v4.2.0 口径相同）。
-- manifest：`scripts/logs/v4.3.1_reward_pilot/manifest.json`
+- manifest：`logs/v4.3.1_reward_pilot/manifest.json`
 
 ## LT
 

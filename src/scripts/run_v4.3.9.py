@@ -35,10 +35,10 @@ The report compares with the same models on the base observation (v4.3.1.6, re-e
 in v4.3.1.7, legacy reward) and the greedy baseline; every model is evaluated deterministically,
 once per test instance.
 
-    nohup .venv/bin/python scripts/run_v4.3.9.py > scripts/logs/run_v4.3.9_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.9.py --pilot > scripts/logs/run_v4.3.9_pilot_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.9.py --resume >> scripts/logs/run_v4.3.9_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.3.9.py --report
+    nohup .venv/bin/python src/scripts/run_v4.3.9.py > logs/run_v4.3.9_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.9.py --pilot > logs/run_v4.3.9_pilot_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.9.py --resume >> logs/run_v4.3.9_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.3.9.py --report
 """
 import json
 import os
@@ -49,11 +49,11 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 VERSION = "4.3.9"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "report.md"
@@ -74,8 +74,8 @@ PILOT = "--pilot" in sys.argv
 if PILOT:
     ALGOS = ["mask_ppo", "mask_dqn"]
     SEEDS, STEPS = [1], 1_000_000
-    BASE_PILOT = ROOT / "scripts" / "logs" / "v4.3.8_pilot" / "manifest.json"    # same models, base observation
-    LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot"
+    BASE_PILOT = ROOT / "logs" / "v4.3.8_pilot" / "manifest.json"    # same models, base observation
+    LOG_DIR = ROOT / "logs" / f"v{VERSION}_pilot"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     MANIFEST = LOG_DIR / "manifest.json"
     REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "pilot_report.md"
@@ -193,7 +193,7 @@ def write_report(exp_ids):
              "选后回合结束，得失败奖励 −(1 − valid/M)。因此 Maskable 永不违约（两种违约率恒为 0），报 EXIT 率 = 选了 EXIT 的测试实例比例。其他机制与 v4.3.7 完全相同。",
              "- 唯一改动：奖励。终局 r = AR ∈ (0, 1]（M 个服务全部合法放置），否则 r = −(1 − valid/M) ∈ [−1, 0)，中间步 0，不乘 M；"
              "所有学习器 γ = 1（Lagrangian 照旧终局减 λΣc_t）；每回合放满 M 个服务，没有可行 ECU 时照样执行并记为 capacity / privacy 违约。其余与 v4.3.1.6 相同（原观测、需求降序、p = 0.6 数据、同一划分与其余超参、5M 步、3 种子）。",
-             "- 违约率 = 至少出现一次该类违约的测试实例比例；AR、ILP AR 只在无违约（Maskable：未 EXIT）的测试实例上平均。「AR」= 本版本，生成报告时重新评估；「贪心」= `paper_rl/greedy.py`"
+             "- 违约率 = 至少出现一次该类违约的测试实例比例；AR、ILP AR 只在无违约（Maskable：未 EXIT）的测试实例上平均。「AR」= 本版本，生成报告时重新评估；「贪心」= `src/paper_rl/greedy.py`"
              "（可行 ECU 中先选已开的，再选需求/容量最大的；无可行 ECU 时强放到无 privacy 冲突、剩余容量最大的 ECU，记为违约）。均为每个测试实例 1 次确定性输出。",
              "- AR 与 ILP AR 都只在该方法无违约且未 EXIT 的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
              "均值 ± 样本标准差（3 种子的测试集）。",

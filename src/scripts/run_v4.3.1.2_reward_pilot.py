@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """v4.3.1.2 reward pilot: 12 models x 3 rewards at 1M steps.
 
-    REWARD_MODE  legacy | ar | directional   (see shared/reward_config.py)
+    REWARD_MODE  legacy | ar | directional   (see src/shared/reward_config.py)
     algos        {PPO, DQN, DDQN} x {unconstrained, Mask, Lagrange, Repair}
     scenarios    lt, eq, gt
     seed         1
@@ -11,13 +11,13 @@ it was indistinguishable from `ar` and needs the ILP optimum at training time.
 Purpose: pick the reward for the 5M x 3-seed campaign of the 12 models.
 
 Results: results/final_paper_experiments/<scen>/<algo>/<exp_id>/; manifest
-scripts/logs/v4.3.1.2_reward_pilot/manifest.json; report
+logs/v4.3.1.2_reward_pilot/manifest.json; report
 paper_contents/v4.3.1/v4.3.1.2/reward_pilot_report.md.
 
 Usage:
-    nohup .venv/bin/python scripts/run_v4.3.1.2_reward_pilot.py > scripts/logs/run_v4.3.1.2_reward_pilot_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.2_reward_pilot.py > logs/run_v4.3.1.2_reward_pilot_driver.log 2>&1 &
     # resume after the driver was stopped (training processes keep running):
-    nohup .venv/bin/python scripts/run_v4.3.1.2_reward_pilot.py --resume >> scripts/logs/run_v4.3.1.2_reward_pilot_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.2_reward_pilot.py --resume >> logs/run_v4.3.1.2_reward_pilot_driver.log 2>&1 &
 """
 import csv
 import json
@@ -27,9 +27,9 @@ import sys
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 PY = str(PROJECT_ROOT / ".venv" / "bin" / "python")
-LOG_DIR = PROJECT_ROOT / "scripts" / "logs" / "v4.3.1.2_reward_pilot"
+LOG_DIR = PROJECT_ROOT / "logs" / "v4.3.1.2_reward_pilot"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST_PATH = LOG_DIR / "manifest.json"
 REPORT_PATH = PROJECT_ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.2" / "reward_pilot_report.md"
@@ -115,7 +115,7 @@ def write_report(exp_ids: dict) -> None:
              "directional = 逐步 ΔAR 方向奖励 + 完成奖励 B − 死局惩罚 C（见 README）。",
              "- 指标为训练脚本内置的测试集单次确定性评估（400 个实例）。success_rate = M 个服务全部合法放置且无违规的实例比例；"
              "AR = average resource utilization，全部测试 episode 的均值（违规 episode 的 AR 各环境口径不同，无约束 / Lagrange 方法的 AR 仅供参考）。",
-             "- manifest：`scripts/logs/v4.3.1.2_reward_pilot/manifest.json`", ""]
+             "- manifest：`logs/v4.3.1.2_reward_pilot/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (["", "mask", "lagrange", "repair"].index(split(a)[0]),
                                          ["ppo", "dqn", "ddqn"].index(split(a)[1])))
     for scen in SCENARIOS:

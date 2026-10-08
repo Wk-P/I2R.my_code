@@ -10,8 +10,8 @@ infeasible. --pilot: Mask PPO x 3 scenarios x seed 1 x 1M.
 The report gives the overall table and the same metrics per conflict-density bin
 (rho = conflict_ratio, measured fraction of conflicting service pairs).
 
-    nohup .venv/bin/python scripts/run_v4.4.1.py --pilot > scripts/logs/run_v4.4.1_pilot_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.4.1.py --pilot --report
+    nohup .venv/bin/python src/scripts/run_v4.4.1.py --pilot > logs/run_v4.4.1_pilot_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.4.1.py --pilot --report
 """
 import json
 import os
@@ -24,11 +24,11 @@ os.environ["DATA_VERSION"] = "v4.4.1"          # before paper_rl.config is impor
 
 import numpy as np  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 VERSION = "4.4.1"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}"
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "report.md"
 RESULTS = ROOT / "results" / "unified"
@@ -43,7 +43,7 @@ REWARD, NORM, OBS, GAMMA = "ar_pen", "none", "base", 1.0
 PILOT = "--pilot" in sys.argv
 if PILOT:
     SEEDS, STEPS = [1], 1_000_000
-    LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot"
+    LOG_DIR = ROOT / "logs" / f"v{VERSION}_pilot"
     MANIFEST = LOG_DIR / "manifest.json"
     REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "pilot_report.md"
 LOG_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-"""shared/dqn_variant_runner.py — one pipeline for the v4.3.0 DQN variants:
+"""src/shared/dqn_variant_runner.py — one pipeline for the v4.3.0 DQN variants:
 
     mask_dqn / mask_ddqn      — Mask-PPO environment (ppo_mask/env.py::P4Env)
                                 + MaskableDQN / MaskableDDQN

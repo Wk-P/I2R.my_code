@@ -34,7 +34,7 @@ GT 的 DQN/DDQN 原来在容量违规时直接终止 episode（奖励 $-M$），
 | Repair-DQN | `ppo_opt/env.py::P6Env` | SB3 `DQN` |
 | Repair-DDQN | `ppo_opt/env.py::P6Env` | `DoubleDQN` |
 
-**Mask-DQN / Mask-DDQN**（`shared/dqn_variants.py`）。掩码 $m_t$ 与 Mask-PPO 相同（LT 含一步前瞻）。P4Env 的观测里 `valid_flag` 段就是 `action_masks()`，所以掩码直接从观测读取，$s_{t+1}$ 的掩码随 replay buffer 里的 next_obs 一起得到。记 $\mathcal{A}(s)=\{j: m(s)[j]=1\}$，若为空则取全部 $N$ 个 ECU：
+**Mask-DQN / Mask-DDQN**（`src/shared/dqn_variants.py`）。掩码 $m_t$ 与 Mask-PPO 相同（LT 含一步前瞻）。P4Env 的观测里 `valid_flag` 段就是 `action_masks()`，所以掩码直接从观测读取，$s_{t+1}$ 的掩码随 replay buffer 里的 next_obs 一起得到。记 $\mathcal{A}(s)=\{j: m(s)[j]=1\}$，若为空则取全部 $N$ 个 ECU：
 
 - 动作选择：$\varepsilon$-greedy 的随机动作与预热期动作都在 $\mathcal{A}(s_t)$ 内均匀采样；贪心动作 $a_t=\arg\max_{a\in\mathcal{A}(s_t)}Q_\theta(s_t,a)$。
 - 目标值：
@@ -61,12 +61,12 @@ $$
 ## 代码位置
 
 - `scenarios/{lt,eq,gt}/{dqn,ddqn}/env.py`：奖励修改
-- `shared/dqn_variants.py`：`DoubleDQN`、`MaskableDQN`、`MaskableDDQN`
-- `shared/dqn_variant_runner.py`：四个变体共用的训练/评估/输出流程
+- `src/shared/dqn_variants.py`：`DoubleDQN`、`MaskableDQN`、`MaskableDDQN`
+- `src/shared/dqn_variant_runner.py`：四个变体共用的训练/评估/输出流程
 - `scenarios/{lt,eq,gt}/{mask_dqn,mask_ddqn,repair_dqn,repair_ddqn}/`：`config.py` + `run_all.py`
-- `shared/training_steps_config.py`：四个变体纳入统一 5M 步
-- `shared/version_config.py`：`CURRENT_VERSION = "4.3.0"`
-- `scripts/run_v4.3.0_campaign.py`：6 个 DQN 系算法 × 3 场景 × 3 种子（1/2/3）× 5M 步，共 54 个任务；结束后生成 `campaign_report.md`
+- `src/shared/training_steps_config.py`：四个变体纳入统一 5M 步
+- `src/shared/version_config.py`：`CURRENT_VERSION = "4.3.0"`
+- `src/scripts/run_v4.3.0_campaign.py`：6 个 DQN 系算法 × 3 场景 × 3 种子（1/2/3）× 5M 步，共 54 个任务；结束后生成 `campaign_report.md`
 
 ## 验证
 

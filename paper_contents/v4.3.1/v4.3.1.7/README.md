@@ -19,8 +19,8 @@ v4.3.1 的子版本（tag `v4.3.1.7`）。**不重新训练**：v4.3.1.6 的 108
 ## 2. 修正
 
 - `shared.ilp_utils.solve_ilp_max_ar(caps, reqs, conflict_sets)`：Dinkelbach，每轮解 $\max\sum x_{ij}n_i/e_j-\lambda\sum_j y_j$（约束与原 ILP 相同，另加 $x_{ij}\le y_j$、$\sum_i x_{ij}n_i\le e_jy_j$），$\lambda\leftarrow F/G$ 直到 $|\Delta\lambda|<10^{-6}$。与原 `main.py` 实现对照 45 个实例，0 处不一致。`solve_ilp` 保留并加注释说明其不是 AR 最优。
-- `scripts/recompute_ar_star.py v4.3.1.4`：`data/v4.3.1.4/*.yaml` 的 `ar_star` 改为 Dinkelbach 值，旧值保留为 `ar_star_total_util`；实例内容不变。
-- `scripts/eval_v4.3.1.7.py`：108 个模型在各自种子测试集（400 实例）上重新评估（与存储的 success_rate 逐一一致），并做 ILP / RL 计时；两者都在 16 个单线程进程并行的相同条件下测量。
+- `src/scripts/recompute_ar_star.py v4.3.1.4`：`data/v4.3.1.4/*.yaml` 的 `ar_star` 改为 Dinkelbach 值，旧值保留为 `ar_star_total_util`；实例内容不变。
+- `src/scripts/eval_v4.3.1.7.py`：108 个模型在各自种子测试集（400 实例）上重新评估（与存储的 success_rate 逐一一致），并做 ILP / RL 计时；两者都在 16 个单线程进程并行的相同条件下测量。
 
 输出：`report.md`（完整表格）、`summary.json`、`eval_raw.jsonl`（每个实例的 AR、AR\*、成功、违规、死局、耗时）、`ilp_timing.json`。
 

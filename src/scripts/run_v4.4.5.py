@@ -13,8 +13,8 @@ The report compares v4.4.3 pilot (baseline), LR, ENT and the ILP-supervised refe
 regret and optimal-action rate first, then step-1 optimal rate, EXIT, active ECUs vs ILP, forced
 openings, relative gap. Baseline / reference regret come from paper_contents/v4.4.4 (with regret_t).
 
-    nohup .venv/bin/python scripts/run_v4.4.5.py > scripts/logs/run_v4.4.5_pilot_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.4.5.py --report
+    nohup .venv/bin/python src/scripts/run_v4.4.5.py > logs/run_v4.4.5_pilot_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.4.5.py --report
 """
 import json
 import os
@@ -26,18 +26,18 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "src" / "scripts"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 PY_GPU = str(ROOT / ".venv-gpu" / "bin" / "python")
 VERSION = "4.4.5"
 DATA = "v4.3.1.4"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}_pilot"
 MANIFEST = LOG_DIR / "manifest.json"
 OUT = ROOT / "paper_contents" / f"v{VERSION}"
 REPORT = OUT / "pilot_report.md"
-BASE = ROOT / "scripts" / "logs" / "v4.4.3_pilot" / "manifest.json"          # lambda 0.95, same everything else
+BASE = ROOT / "logs" / "v4.4.3_pilot" / "manifest.json"          # lambda 0.95, same everything else
 REF = ROOT / "results" / "sup_diag"                                           # attn_<scen>_50000.pt (diag_arch.py)
 
 SCENARIOS = ["lt", "eq", "gt"]
@@ -87,7 +87,7 @@ def regret_summary(out_md, args):
     """diag_regret.py summary; rerun if missing or written before regret_t existed (v4.4.4)."""
     js = Path(out_md).with_suffix(".json")
     if not js.exists() or "regret_t" not in next(iter(json.loads(js.read_text()).values())):
-        subprocess.run([PY, str(ROOT / "scripts" / "diag_regret.py"), "--out", str(out_md), *args], cwd=ROOT, check=True)
+        subprocess.run([PY, str(ROOT / "src" / "scripts" / "diag_regret.py"), "--out", str(out_md), *args], cwd=ROOT, check=True)
     return json.loads(js.read_text())
 
 
@@ -130,8 +130,8 @@ def write_report(exp_ids):
              "其次是第 1 步选中最优、EXIT、开启 ECU 数 − ILP、被逼开启、相对 gap。",
              "- AR、ILP AR、开启 ECU 数在各自未 EXIT 的测试实例上平均；相对 gap = (ILP AR − AR) / ILP AR；Mask 违约率恒为 0。"
              "被逼开启 = 每个测试实例的平均次数（定义见 `paper_contents/v4.4.1/open_diag.md`）。",
-             "- 逐步 regret 诊断：`scripts/diag_regret.py`，种子 1 测试集前 400 个实例，regret ≤ 1e-4 记为最优。基线与监督参照的诊断取自 `paper_contents/v4.4.4/`。",
-             "- ILP 监督参照：同一网络用 5 万个实例的 ILP 最优动作监督训练（`scripts/diag_arch.py`），不是 RL，也不是上限，只作参照。",
+             "- 逐步 regret 诊断：`src/scripts/diag_regret.py`，种子 1 测试集前 400 个实例，regret ≤ 1e-4 记为最优。基线与监督参照的诊断取自 `paper_contents/v4.4.4/`。",
+             "- ILP 监督参照：同一网络用 5 万个实例的 ILP 最优动作监督训练（`src/scripts/diag_arch.py`），不是 RL，也不是上限，只作参照。",
              f"- manifest：`{rel(MANIFEST)}`；基线：`{rel(BASE)}`", ""]
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

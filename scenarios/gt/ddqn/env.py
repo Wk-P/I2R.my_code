@@ -15,7 +15,7 @@ Constraint handling:
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))  # src/ for shared
 
 import random
 import gymnasium as gym
@@ -241,7 +241,7 @@ class DDQNEnv(gym.Env):
             print(f"  Done | AR={self.ar:.4f} | conflict_viol={self.conflict_violations}")
 
 
-# REWARD_MODE=directional replaces the reward (shared/reward_config.py); no-op otherwise.
+# REWARD_MODE=directional replaces the reward (src/shared/reward_config.py); no-op otherwise.
 DDQNEnv.step = directional_step(DDQNEnv.step)
 
 

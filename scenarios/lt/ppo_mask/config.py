@@ -73,7 +73,7 @@ PPO_CLIP_RANGE  = 0.2
 # v1.0.1: entropy schedule replaces the static PPO_ENT_COEF=0.005 constant —
 # PPO-CMA (Hamalainen et al. 2020) shows a fixed/small entropy coefficient lets
 # exploration collapse prematurely; anneal from high to low instead.
-# All three overridable via env vars so scripts/run_paper_verification.sh can
+# All three overridable via env vars so src/scripts/run_paper_verification.sh can
 # drive v1.0.1..v1.0.4 without editing this file per run.
 #
 # v1.0.1..v2.3.x default was INIT=FINAL=0.005 -- i.e. entropy_at() was a
@@ -93,7 +93,7 @@ PPO_ENT_COEF_FINAL = float(os.environ.get("ENT_COEF_FINAL", "0.002"))
 # (CMA-ES-style selection). 1.0 = vanilla PPO (no pruning).
 ADV_PRUNE_WEIGHT   = float(os.environ.get("ADV_PRUNE_WEIGHT", "1.0"))
 # v2.4.0 (add_states): potential-based shaping weight on the bottleneck_risk
-# state feature (see P4Env docstring / shared/adaptive_ppo.py::beta_at).
+# state feature (see P4Env docstring / src/shared/adaptive_ppo.py::beta_at).
 # Linearly annealed init->final over training like the entropy schedule,
 # but decaying (not rising) -- see beta_at()'s docstring for why a constant
 # beta measured worse than beta=0.0 in an ablation. Both 0.0 by default
@@ -101,7 +101,7 @@ ADV_PRUNE_WEIGHT   = float(os.environ.get("ADV_PRUNE_WEIGHT", "1.0"))
 BOTTLENECK_SHAPING_WEIGHT_INIT  = float(os.environ.get("BOTTLENECK_SHAPING_WEIGHT_INIT", "0.0"))
 BOTTLENECK_SHAPING_WEIGHT_FINAL = float(os.environ.get("BOTTLENECK_SHAPING_WEIGHT_FINAL", "0.0"))
 # v2.7.0: weight on AR quality within the success-branch reward (P4Env.step,
-# see shared/adaptive_ppo.py::ar_weight_at). Annealed init->final RISING
+# see src/shared/adaptive_ppo.py::ar_weight_at). Annealed init->final RISING
 # (opposite direction from bottleneck shaping) -- 0.0 = pure "did you
 # complete the placement" signal, 1.0 = original M*(2*ar-1) formula.
 # Default 0.0->1.0: early training ignores AR entirely (pure success

@@ -53,7 +53,7 @@ PPO baseline（无约束处理机制）不是优化目标，因为它本身没�
 
 ## 二、代码实现
 
-### ILP 专家轨迹的构建（`shared/bc_pretrain.py`）
+### ILP 专家轨迹的构建（`src/shared/bc_pretrain.py`）
 
 1. `ilp_expert_actions(caps, reqs, conflict_sets, sorted_desc)`：对场景跑 `shared.ilp_utils.solve_ilp`（非 Dinkelbach 单次 LP），得到最优分配 $x_{ij}$；按目标 env 的内部服务呈现顺序重排，转成逐步 expert action 序列。
    - **`sorted_desc` 参数**：并非所有 env 都按需求降序排列服务，三个场景 × ppo系/dqn系之间存在真实差异（eq 的 ppo 系降序、dqn 系不排序；gt 全部不排序；lt 全部降序）——不能假设统一常量。传错这个参数不会报错，只会让专家动作和 env 实际呈现的服务对不上号，静默拉低 `build_bc_dataset` 的可用场景比例（`mismatch_skipped` 升高）。
@@ -95,39 +95,39 @@ BC_MARGIN     = 0.8   # 仅 DQN/DDQN
 `pretrain` 分支相对 `main` 新增：
 
 ```
-shared/bc_pretrain.py                          共享 BC 逻辑
+src/shared/bc_pretrain.py                          共享 BC 逻辑
 scenarios/<eq|gt|lt>/<algo>/run_all_bc.py       每个算法的 BC pre-train+微调入口（15 个）
-scripts/resume_scenario.sh                      扩展支持 <algo>_bc 后缀
-scripts/start_experiment.sh                     同上（转发给 resume_scenario.sh）
+src/scripts/resume_scenario.sh                      扩展支持 <algo>_bc 后缀
+src/scripts/start_experiment.sh                     同上（转发给 resume_scenario.sh）
 ```
 
 `main` 分支保持"纯 RL 训练、优化目标只有 ar"不变，作为可随时回退的基线。
 
 ### 结果数据按分支物理隔离
 
-`results/` 整个目录被 gitignore，切换 git 分支不会自动改变磁盘上已有的数据。为了让"BC pre-train"实验和"main 分支纯 RL 训练"两条线不互相污染，`shared/paths.py` 的 `results_dir()` 显式在路径里加入当前分支名：
+`results/` 整个目录被 gitignore，切换 git 分支不会自动改变磁盘上已有的数据。为了让"BC pre-train"实验和"main 分支纯 RL 训练"两条线不互相污染，`src/shared/paths.py` 的 `results_dir()` 显式在路径里加入当前分支名：
 
 ```js
 results/<git-branch>/<scenario>/<algo>/<run>/
 ```
 
-`shared/paths.py`（训练脚本用）在模块加载时解析一次当前分支；`app/backend/main.py`（长期运行的看板服务）在每次请求时重新探测分支，这样另一个终端的 `git checkout` 不需要重启服务就能反映到看板上。
+`src/shared/paths.py`（训练脚本用）在模块加载时解析一次当前分支；`app/backend/main.py`（长期运行的看板服务）在每次请求时重新探测分支，这样另一个终端的 `git checkout` 不需要重启服务就能反映到看板上。
 
 看板前端不强行"只看当前分支"，而是提供一个按真实分支切换的 tab（`ExperimentTree.vue`），每个 tab 对应一次 `/api/experiments?branch=<name>` 请求，读取该分支自己的 `results/<branch>/` 子树；详情页路由带上 `branch` 段（`#/run/<branch>/<scenario>/<algo>/<run>`），避免从非当前分支的 tab 钻进详情页时读错数据。
 
 ### exp_id：一批实验的归属标识
 
-`shared/paths.py` 的 `resolve_exp_id()` 设计里，一个 `exp_id` 代表"一整批实验"（如 eq+gt+lt 全部算法共用一个 id），通过 `$EXP_ID` 环境变量在多个脚本进程间共享；不设置则各自随机生成。`run_all_bc.py` 的输出目录是 `<exp_id>_bc`（区别于 baseline 的 `<exp_id>`），因此目录名和 batch 归属不再是同一件事——`run_all_bc.py` 额外把真实 `exp_id` 显式写入 `results.json` 的 `"exp_id"` 字段，看板按这个字段分组，不是按目录名。
+`src/shared/paths.py` 的 `resolve_exp_id()` 设计里，一个 `exp_id` 代表"一整批实验"（如 eq+gt+lt 全部算法共用一个 id），通过 `$EXP_ID` 环境变量在多个脚本进程间共享；不设置则各自随机生成。`run_all_bc.py` 的输出目录是 `<exp_id>_bc`（区别于 baseline 的 `<exp_id>`），因此目录名和 batch 归属不再是同一件事——`run_all_bc.py` 额外把真实 `exp_id` 显式写入 `results.json` 的 `"exp_id"` 字段，看板按这个字段分组，不是按目录名。
 
-批量实验必须通过标准启动器共享 `EXP_ID`（`scripts/start_experiment.sh` 内部会对 eq/gt/lt 三个场景各调用一次 `resume_scenario.sh`，共用同一个 `EXP_ID`）：
+批量实验必须通过标准启动器共享 `EXP_ID`（`src/scripts/start_experiment.sh` 内部会对 eq/gt/lt 三个场景各调用一次 `resume_scenario.sh`，共用同一个 `EXP_ID`）：
 
 ```bash
-scripts/start_experiment.sh bc-compare
+src/scripts/start_experiment.sh bc-compare
 ```
 
 `bc-compare` 是脚本提供的便捷参数，等价于把 5 个支持 BC 的算法（`ppo_mask`/`ppo_lagrangian`/`ppo_opt`/`dqn`/`ddqn`）的 baseline 与 `_bc` 变体都列出来，再加上不参与 BC 对比的 `ppo`，三场景共 33 个模型；也可以手写 algo 列表只跑一部分，例如：
 
 ```bash
-scripts/start_experiment.sh ppo_mask ppo_mask_bc ppo_lagrangian ppo_lagrangian_bc dqn dqn_bc
+src/scripts/start_experiment.sh ppo_mask ppo_mask_bc ppo_lagrangian ppo_lagrangian_bc dqn dqn_bc
 ```
 

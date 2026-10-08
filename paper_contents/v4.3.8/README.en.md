@@ -9,11 +9,11 @@ On top of v4.3.7 (unified reward, no early stop), only Maskable changes:
 - Test: Maskable's capacity / privacy violation rates are 0 by construction; its EXIT rate (share of test instances that ended with EXIT) is reported; AR / ILP AR / AR gap are averaged over instances with no violation and no EXIT.
 - All other mechanisms (none, Lagrangian, Repair) are identical to v4.3.7.
 
-Run: `scripts/run_v4.3.8.py --pilot` (retrains only Maskable PPO / DQN × 3 scenarios × seed 1 × 1M steps; the other 4 models come from the v4.3.7 pilot), report `pilot_report.md`.
+Run: `src/scripts/run_v4.3.8.py --pilot` (retrains only Maskable PPO / DQN × 3 scenarios × seed 1 × 1M steps; the other 4 models come from the v4.3.7 pilot), report `pilot_report.md`.
 
 ## State (observation)
 
-v4.3.8 uses the base observation (`obs = base`, without the v4.3.4 conflict graph), the same as every version since v4.3.1.6; the EXIT action does not change it. Code: `_obs()` in `paper_rl/env.py`.
+v4.3.8 uses the base observation (`obs = base`, without the v4.3.4 conflict graph), the same as every version since v4.3.1.6; the EXIT action does not change it. Code: `_obs()` in `src/paper_rl/env.py`.
 
 Notation: N ECUs, M services (sorted by descending demand; step t places service t), c_j the capacity of ECU j, r_j its remaining capacity, d_i the demand of service i, c_max = max_j c_j, current service i = t.
 

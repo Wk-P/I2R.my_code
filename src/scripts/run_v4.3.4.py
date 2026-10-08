@@ -3,16 +3,16 @@
 
 Only change: --obs conflict. The observation gets the conflict graph among the
 services not yet placed, fixed length M(M-1)/2 (LT 105, EQ/GT 45; placed services'
-entries are 0; paper_rl/env.py _conflict_obs). Reward (legacy), algorithms,
+entries are 0; src/paper_rl/env.py _conflict_obs). Reward (legacy), algorithms,
 hyper-parameters, 5M steps, seeds 1-3, data, splits and evaluation are those of v4.3.1.6.
 12 models x LT/EQ/GT x 3 seeds = 108 jobs.
 The report compares with the same models on the base observation (v4.3.1.6, re-evaluated
 in v4.3.1.7) and the greedy baseline; every model is evaluated deterministically,
 once per test instance.
 
-    nohup .venv/bin/python scripts/run_v4.3.4.py > scripts/logs/run_v4.3.4_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.4.py --resume >> scripts/logs/run_v4.3.4_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.3.4.py --report
+    nohup .venv/bin/python src/scripts/run_v4.3.4.py > logs/run_v4.3.4_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.4.py --resume >> logs/run_v4.3.4_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.3.4.py --report
 """
 import json
 import os
@@ -23,11 +23,11 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 VERSION = "4.3.4"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "report.md"
@@ -146,11 +146,11 @@ def write_report(exp_ids):
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              "- 唯一改动：观测中加入尚未放置的服务之间的冲突图（固定长度 M(M−1)/2，LT 105 维、EQ/GT 45 维，已放置服务对应位置为 0）；"
              "其余与 v4.3.1.6 相同（legacy 奖励、不归一化、p = 0.6 数据、同一划分与超参、5M 步、3 种子）。",
-             "- 「原观测」= v4.3.1.6 的模型，取自 v4.3.1.7 重评；「冲突观测」= 本版本，生成报告时重新评估；「贪心」= `paper_rl/greedy.py`"
+             "- 「原观测」= v4.3.1.6 的模型，取自 v4.3.1.7 重评；「冲突观测」= 本版本，生成报告时重新评估；「贪心」= `src/paper_rl/greedy.py`"
              "（可行 ECU 中先选已开的，再选需求/容量最大的；不违规，无可行 ECU 即失败）。均为每个测试实例 1 次确定性输出。",
              "- AR 与 ILP AR 都只在该方法成功的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
              "均值 ± 样本标准差（3 种子的测试集）。",
-             f"- manifest：`scripts/logs/v{VERSION}/manifest.json`", ""]
+             f"- manifest：`logs/v{VERSION}/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

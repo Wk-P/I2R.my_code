@@ -3,7 +3,7 @@ run_all_bc.py — DQN pipeline with ILP behavior-cloning pretraining.
 
 Same as run_all.py, except the Q-network is warm-started via a DQfD-style
 large-margin classification loss on ILP-optimal expert transitions
-(shared/bc_pretrain.pretrain_dqn) before `model.learn()` runs. DQN has no
+(src/shared/bc_pretrain.pretrain_dqn) before `model.learn()` runs. DQN has no
 policy distribution to imitate directly (unlike PPO), hence the margin loss
 instead of log-prob behavior cloning.
 
@@ -21,7 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(HERE.parent.parent.parent / "src"))  # src/ for shared
 
 import shared.timer_utils as timer_utils
 

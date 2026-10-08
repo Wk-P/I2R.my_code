@@ -10,15 +10,15 @@ New minor version (tag `v4.3.4`).
 
 ## 2. Changes (only variable: the observation)
 
-- `paper_rl/env.py`: new `obs_mode` (`base` = the observation of v4.3.3 and earlier, `conflict` = this version). `conflict` appends the conflict graph among not-yet-placed services to the original observation: the upper triangle in placement order, fixed length M(M−1)/2 (LT 105, EQ/GT 45 dimensions); 1 if a pair conflicts and both are unplaced (including the current service), else 0. No hand-crafted features (conflict degree, blocking score, etc.) and no choice of any heuristic.
+- `src/paper_rl/env.py`: new `obs_mode` (`base` = the observation of v4.3.3 and earlier, `conflict` = this version). `conflict` appends the conflict graph among not-yet-placed services to the original observation: the upper triangle in placement order, fixed length M(M−1)/2 (LT 105, EQ/GT 45 dimensions); 1 if a pair conflicts and both are unplaced (including the current service), else 0. No hand-crafted features (conflict degree, blocking score, etc.) and no choice of any heuristic.
 - The original part of the observation is unchanged at every step (checked at every step of 30 instances per scenario); the position of the action mask in the observation is unchanged (MaskableDQN depends on it).
-- `paper_rl/train.py`: new `--obs {base, conflict}` (default `base`, as before), written to the `obs` field of `results.json`; the evaluation log now prints AR, ILP AR and AR gap over successful instances.
+- `src/paper_rl/train.py`: new `--obs {base, conflict}` (default `base`, as before), written to the `obs` field of `results.json`; the evaluation log now prints AR, ILP AR and AR gap over successful instances.
 - Everything else exactly as in v4.3.1.6: shared base reward (legacy), 12 models, hyper-parameters, 5M steps, seeds 1–3, data and splits, evaluation (one deterministic output per test instance).
-- `scripts/run_v4.3.4.py`: 108 jobs; the report compares the "base observation" (v4.3.1.6, re-evaluated in v4.3.1.7), the "conflict observation" (this version) and greedy.
+- `src/scripts/run_v4.3.4.py`: 108 jobs; the report compares the "base observation" (v4.3.1.6, re-evaluated in v4.3.1.7), the "conflict observation" (this version) and greedy.
 
 ## 3. Schedule
 
-Started after v4.3.1.10 (10M) finished, with the machine to itself. While v4.3.1.10 was running the code was kept as a patch (`scripts/pending/v4.3.4_obs_conflict.patch`), so that all v4.3.1.10 jobs ran on their own commit; `scripts/pending/after_v4.3.1.10.sh` applied the patch after v4.3.1.10 finished, committed and tagged, regenerated the v4.3.1.10 report, then started this version.
+Started after v4.3.1.10 (10M) finished, with the machine to itself. While v4.3.1.10 was running the code was kept as a patch (`src/scripts/pending/v4.3.4_obs_conflict.patch`), so that all v4.3.1.10 jobs ran on their own commit; `src/scripts/pending/after_v4.3.1.10.sh` applied the patch after v4.3.1.10 finished, committed and tagged, regenerated the v4.3.1.10 report, then started this version.
 
 ## 4. Read together with v4.3.1.10
 

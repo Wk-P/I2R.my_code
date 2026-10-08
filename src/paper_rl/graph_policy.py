@@ -1,4 +1,4 @@
-"""v4.4.3: MaskablePPO policy built on the structure-aware network (paper_rl/graph_net.py).
+"""v4.4.3: MaskablePPO policy built on the structure-aware network (src/paper_rl/graph_net.py).
 
 Shared encoder, separate heads: every ECU token is scored by the same actor head (ECU-
 permutation equivariant), EXIT by the global token, and the value V(s) comes from the global

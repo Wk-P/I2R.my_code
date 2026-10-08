@@ -12,7 +12,7 @@ v4.3.1 的子版本（tag `v4.3.1.2`）。目的：在跑 12 个模型的 5M × 
 
 同一列复用同一个环境（Mask → `ppo_mask/env.py`，Lagrange → `ppo_lagrangian/env.py`，Repair → `ppo_opt/env.py`），所以同一约束机制下 PPO / DQN / DDQN 之间只差学习算法；DQN 与 DDQN 的超参数相同。
 
-**Lagrange-DQN / Lagrange-DDQN**（`shared/dqn_variant_runner.py`，`variant="lagrange"`）：
+**Lagrange-DQN / Lagrange-DDQN**（`src/shared/dqn_variant_runner.py`，`variant="lagrange"`）：
 
 - 环境为 Lagrange-PPO 的 `LagrangeEnv`，$\lambda$ 归一化后进入观测。
 - 对偶上升与 Lagrange-PPO 相同，常数从同场景 `ppo_lagrangian/config.py` 复制（`LAMBDA_INIT / LR / TARGET / MAX / UPDATE_WINDOW / WARMUP_EPISODES`）：预热 $E_w$ 个 episode 后，每 $W$ 个 episode
@@ -31,10 +31,10 @@ v4.3.1 的子版本（tag `v4.3.1.2`）。目的：在跑 12 个模型的 5M × 
 
 ## 3. 奖励选型试跑
 
-- 脚本：`scripts/run_v4.3.1.2_reward_pilot.py`（支持 `--resume`）
+- 脚本：`src/scripts/run_v4.3.1.2_reward_pilot.py`（支持 `--resume`）
 - 规模：12 个模型 × 3 场景 × {`legacy`, `ar`, `directional`} × 种子 1，1M 步，共 108 个任务。不再跑 `ratio`：v4.3.1 试跑中它与 `ar` 几乎没有差别，且训练时需要 ILP 最优值。
 - directional 参数为默认值：$\beta=10$，$\lambda_d=1$，$\epsilon=10^{-3}$，$B=C=M$。
-- 记录：manifest `scripts/logs/v4.3.1.2_reward_pilot/manifest.json`，每个任务日志在同一目录；结果在 `results/final_paper_experiments/<scen>/<algo>/<exp_id>/`；模型文件名带 `v4.3.1.2-pilot-<奖励>`。
+- 记录：manifest `logs/v4.3.1.2_reward_pilot/manifest.json`，每个任务日志在同一目录；结果在 `results/final_paper_experiments/<scen>/<algo>/<exp_id>/`；模型文件名带 `v4.3.1.2-pilot-<奖励>`。
 - 报告：`reward_pilot_report.md`（本目录，任务全部结束后自动生成）。
 
 **选型标准**（用于决定 5M 正式实验的奖励）：

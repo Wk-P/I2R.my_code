@@ -1,5 +1,5 @@
 """
-shared/bc_pretrain.py — ILP behavior-cloning pretraining utilities, reused
+src/shared/bc_pretrain.py — ILP behavior-cloning pretraining utilities, reused
 across ppo_mask / ppo_lagrangian / ppo_opt / dqn / ddqn pipelines (all lt/eq/gt
 scenario variants).
 

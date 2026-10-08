@@ -37,7 +37,7 @@ from collections import deque
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(HERE.parent.parent.parent / "src"))  # src/ for shared
 
 import shared.timer_utils as timer_utils
 

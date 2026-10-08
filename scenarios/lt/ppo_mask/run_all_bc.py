@@ -3,7 +3,7 @@ run_all_bc.py — P4 pipeline with ILP behavior-cloning pretraining before PPO.
 
 Same as run_all.py, except the MaskablePPO policy is warm-started via
 supervised behavior cloning on ILP-optimal expert trajectories
-(shared/bc_pretrain.py) before `model.learn()` runs. Produces its own
+(src/shared/bc_pretrain.py) before `model.learn()` runs. Produces its own
 results/plots under a distinct output dir suffix so it can be compared
 against the plain-PPO baseline.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE.parent.parent.parent))  # project root for shared
+sys.path.insert(0, str(HERE.parent.parent.parent / "src"))  # src/ for shared
 
 import shared.timer_utils as timer_utils
 

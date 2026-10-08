@@ -10,7 +10,7 @@ This script is invoked automatically at the end of every full campaign run
 on the final_paper_experiments branch (per project requirement) but can
 also be run manually against a partial manifest to check progress:
 
-    .venv/bin/python scripts/generate_v4.1.0_report.py --manifest scripts/logs/v4.1.0_2M_campaign/manifest.json
+    .venv/bin/python src/scripts/generate_v4.1.0_report.py --manifest logs/v4.1.0_2M_campaign/manifest.json
 """
 import argparse
 import csv
@@ -20,7 +20,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 REPORT_DIR = PROJECT_ROOT / "paper_contents" / "v4.1.0_reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)

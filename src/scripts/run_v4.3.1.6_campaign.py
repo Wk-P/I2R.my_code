@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """v4.3.1.6 formal campaign: 12 models x 3 scenarios x seeds {1, 2, 3} x 5M steps.
 
-Seed 1 was already run with identical code and settings (scripts/run_v4.3.1.6.py,
-manifest scripts/logs/v4.3.1.6_run/manifest.json, commit ede2187) and is reused;
+Seed 1 was already run with identical code and settings (src/scripts/run_v4.3.1.6.py,
+manifest logs/v4.3.1.6_run/manifest.json, commit ede2187) and is reused;
 this script launches seeds 2 and 3 (72 jobs) and writes a report that
 aggregates all three seeds (mean +- sample std).
 
@@ -10,8 +10,8 @@ Settings (v4.3.1.6): p = 0.6 data; legacy reward for all 12 models; Lagrangian
 terminal cost -lambda * total violations, lambda_max 50; Maskable / Repair dead
 end = failure; PPO clip 0.1.
 
-    nohup .venv/bin/python scripts/run_v4.3.1.6_campaign.py > scripts/logs/run_v4.3.1.6_campaign_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.1.6_campaign.py --resume >> scripts/logs/run_v4.3.1.6_campaign_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.6_campaign.py > logs/run_v4.3.1.6_campaign_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.1.6_campaign.py --resume >> logs/run_v4.3.1.6_campaign_driver.log 2>&1 &
 """
 import csv
 import json
@@ -23,12 +23,12 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
-LOG_DIR = ROOT / "scripts" / "logs" / "v4.3.1.6_campaign"
+LOG_DIR = ROOT / "logs" / "v4.3.1.6_campaign"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
-SEED1_MANIFEST = ROOT / "scripts" / "logs" / "v4.3.1.6_run" / "manifest.json"
+SEED1_MANIFEST = ROOT / "logs" / "v4.3.1.6_run" / "manifest.json"
 REPORT = ROOT / "paper_contents" / "v4.3.1" / "v4.3.1.6" / "campaign_report.md"
 RESULTS = ROOT / "results" / "unified"
 
@@ -64,7 +64,7 @@ def write_manifest(exp_ids):
     tmp = MANIFEST.with_suffix(".tmp")
     tmp.write_text(json.dumps({"version": "4.3.1.6", "commit": commit, "branch": "unified", "steps": STEPS,
                                "reward": REWARD, "scenarios": SCENARIOS, "algos": ALGOS, "seeds": SEEDS,
-                               "note": "seed 1 reused from scripts/logs/v4.3.1.6_run (commit ede2187)",
+                               "note": "seed 1 reused from logs/v4.3.1.6_run (commit ede2187)",
                                "exp_ids": exp_ids}, indent=2))
     tmp.replace(MANIFEST)
 
@@ -105,7 +105,7 @@ def write_report(exp_ids):
              "- 每个种子在各自的测试集（400 个实例）上单次确定性评估；表中为 3 个种子的均值 ± 样本标准差。",
              "- success_rate = M 个服务全部合法放置；AR = average resource utilization（只计合法放置），全部测试 episode 均值；"
              "AR/AR* 只在成功 episode 上计算；AR/AR*×success = 失败 episode 计 0 的综合指标；违规率 = max(容量违规率, 冲突违规率)，即至少一项违规的 episode 比例的下界。",
-             "- manifest：`scripts/logs/v4.3.1.6_campaign/manifest.json`", ""]
+             "- manifest：`logs/v4.3.1.6_campaign/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

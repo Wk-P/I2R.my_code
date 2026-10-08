@@ -12,9 +12,9 @@ The report compares with the same models on the base observation (v4.3.1.6, re-e
 in v4.3.1.7, legacy reward) and the greedy baseline; every model is evaluated deterministically,
 once per test instance.
 
-    nohup .venv/bin/python scripts/run_v4.3.5.py > scripts/logs/run_v4.3.5_driver.log 2>&1 &
-    nohup .venv/bin/python scripts/run_v4.3.5.py --resume >> scripts/logs/run_v4.3.5_driver.log 2>&1 &
-    .venv/bin/python scripts/run_v4.3.5.py --report
+    nohup .venv/bin/python src/scripts/run_v4.3.5.py > logs/run_v4.3.5_driver.log 2>&1 &
+    nohup .venv/bin/python src/scripts/run_v4.3.5.py --resume >> logs/run_v4.3.5_driver.log 2>&1 &
+    .venv/bin/python src/scripts/run_v4.3.5.py --report
 """
 import json
 import os
@@ -25,11 +25,11 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 PY = str(ROOT / ".venv" / "bin" / "python")
 VERSION = "4.3.5"
-LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}"
+LOG_DIR = ROOT / "logs" / f"v{VERSION}"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 MANIFEST = LOG_DIR / "manifest.json"
 REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "report.md"
@@ -148,11 +148,11 @@ def write_report(exp_ids):
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              "- 唯一改动：奖励。终局 r = AR（M 个服务全部合法放置）否则 0（含死局），中间步 0，不乘 M；所有学习器 γ = 1，"
              "回报恰为 AR·1{可行}（Lagrangian 照旧终局减 λΣc_t）。其余与 v4.3.1.6 相同（原观测、需求降序、p = 0.6 数据、同一划分与其余超参、5M 步、3 种子）。",
-             "- 「legacy」= v4.3.1.6 的模型（终局 M(2AR−1) / −M(1−valid/M)，γ = 0.99），取自 v4.3.1.7 重评；「AR」= 本版本，生成报告时重新评估；「贪心」= `paper_rl/greedy.py`"
+             "- 「legacy」= v4.3.1.6 的模型（终局 M(2AR−1) / −M(1−valid/M)，γ = 0.99），取自 v4.3.1.7 重评；「AR」= 本版本，生成报告时重新评估；「贪心」= `src/paper_rl/greedy.py`"
              "（可行 ECU 中先选已开的，再选需求/容量最大的；不违规，无可行 ECU 即失败）。均为每个测试实例 1 次确定性输出。",
              "- AR 与 ILP AR 都只在该方法成功的测试实例上平均（同一批实例）；AR gap = ILP AR − AR。"
              "均值 ± 样本标准差（3 种子的测试集）。",
-             f"- manifest：`scripts/logs/v{VERSION}/manifest.json`", ""]
+             f"- manifest：`logs/v{VERSION}/manifest.json`", ""]
     order = sorted(ALGOS, key=lambda a: (LEARNERS.index(split(a)[1]), MECHS.index(split(a)[0])))
     for s in SCENARIOS:
         lines += [f"## {s.upper()}", "",

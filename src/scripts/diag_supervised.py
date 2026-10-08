@@ -3,7 +3,7 @@
 
 Supervised oracle-action prediction, no RL. Labels: the ILP optimum (Dinkelbach) of every
 instance replayed in the environment's order (descending demand); when the expert opens an
-empty ECU, every legal empty ECU of the same capacity is also a label (paper_rl/bc.py).
+empty ECU, every legal empty ECU of the same capacity is also a label (src/paper_rl/bc.py).
 Two observations, everything else equal:
   A  base      -- the observation of v4.3.8;
   B  conflict  -- base + conflict graph among unplaced services (v4.3.4; full graph at step 1).
@@ -13,8 +13,8 @@ regret diagnostic). Network = the PPO policy net (MLP 256-256 tanh, masked softm
 Reported per step: train / test accuracy (argmax in the label set), and the learned policy
 rolled out on the test set (EXIT rate, AR gap).
 
-    .venv/bin/python scripts/diag_supervised.py gen     # instances + ILP allocations -> results/sup_diag/
-    .venv/bin/python scripts/diag_supervised.py run     # 3 scenarios x 2 obs x 3 sizes -> paper_contents/v4.4.2/supervised_diag.md
+    .venv/bin/python src/scripts/diag_supervised.py gen     # instances + ILP allocations -> results/sup_diag/
+    .venv/bin/python src/scripts/diag_supervised.py run     # 3 scenarios x 2 obs x 3 sizes -> paper_contents/v4.4.2/supervised_diag.md
 """
 import json
 import random
@@ -25,8 +25,8 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 OUT = ROOT / "results" / "sup_diag"
 REPORT = ROOT / "paper_contents" / "v4.4.2" / "supervised_diag.md"
 SCENARIOS = ["lt", "eq", "gt"]
@@ -204,7 +204,7 @@ def write_report(res):
     pc = lambda v: f"{100 * v:.1f}%"
     regret = {"lt": [22.9, 19.7, 21.4], "eq": [28.8, 32.6, 33.6], "gt": [32.8, 26.5, 35.8]}   # regret_diag.md
     lines = ["# 监督诊断：网络能否从观测预测 ILP 最优动作（不训练 RL）", "",
-             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `scripts/diag_supervised.py`。",
+             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/diag_supervised.py`。",
              "- 标签：每个实例的 ILP 最优分配（Dinkelbach）按需求降序回放；专家开一个空 ECU 时，同容量、合法的空 ECU 都算对（与 v4.4.2 BC 相同）。"
              "准确率 = 网络在合法动作中 argmax 落在标签集内的比例，按专家轨迹上的状态统计。",
              "- 观测 A = 原观测（v4.3.8）；B = 原观测 + 未放置服务之间的冲突图（v4.3.4 的 `obs = conflict`，第 1 步即完整冲突图）。其余完全相同。",

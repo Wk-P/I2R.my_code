@@ -4,7 +4,7 @@ results/<branch>/<scenario>/<algo>/<run>/ for the currently checked-out git
 branch, plus best-effort process/log introspection for live training
 progress.
 
-This module never imports or executes anything under scenarios/ or shared/ —
+This module never imports or executes anything under scenarios/ or src/shared/ —
 it only reads files (results.json, PNGs, log files) and OS process state
 (ps, /proc, git). It cannot affect running or future training runs.
 
@@ -13,7 +13,7 @@ Serves:
   GET  /api/results/{scenario}/{algo}/{run}/{file}    training_curve.png / comparison.png
   GET  /api/history/{scenario}/{algo}                 all historical runs for one algo
   GET  /api/progress                                  live training progress per scenario
-  GET  /api/batches                                    auto-discovered ad-hoc batch names under scripts/logs/
+  GET  /api/batches                                    auto-discovered ad-hoc batch names under logs/
   GET  /api/batch_progress/{batch_name}                per-run status/results for one ad-hoc batch
   GET  /api/branch                                    current git branch + whether it has BC support
   GET  /api/system                                    CPU/load info, grouped by pinned core range
@@ -44,7 +44,7 @@ app.mount("/assets", StaticFiles(directory=APP_DIR / "static" / "assets"), name=
 
 # ── Git branch awareness ────────────────────────────────────────────────────
 #
-# results/<branch>/... mirrors shared/paths.py's own branch-scoped
+# results/<branch>/... mirrors src/shared/paths.py's own branch-scoped
 # results_dir() — see that module's docstring. This backend is a long-lived
 # server (unlike the one-shot training scripts), so the branch has to be
 # re-resolved on every request rather than cached at import time: a `git
@@ -74,13 +74,13 @@ def _git_branch_list() -> list[str]:
 
 def _active_space() -> str:
     """results/<space>/ that new training runs write to: $RESULTS_SPACE, else
-    RESULTS_SPACE in shared/version_config.py (read as text -- this module
-    never imports shared/), else the checked-out branch (pre-v4.3.1 layout)."""
+    RESULTS_SPACE in src/shared/version_config.py (read as text -- this module
+    never imports src/shared/), else the checked-out branch (pre-v4.3.1 layout)."""
     if os.environ.get("RESULTS_SPACE"):
         return os.environ["RESULTS_SPACE"]
     try:
         m = re.search(r'^RESULTS_SPACE\s*=\s*"([^"]+)"',
-                      (PROJECT_ROOT / "shared" / "version_config.py").read_text(), re.M)
+                      (PROJECT_ROOT / "src" / "shared" / "version_config.py").read_text(), re.M)
         if m:
             return m.group(1)
     except OSError:
@@ -105,7 +105,7 @@ def get_branch():
         "current":      _active_space(),
         "git_branch":   _git_current_branch(),
         "branches":     _git_branch_list(),
-        "bc_supported": (PROJECT_ROOT / "shared" / "bc_pretrain.py").is_file(),
+        "bc_supported": (PROJECT_ROOT / "src" / "shared" / "bc_pretrain.py").is_file(),
         # Branches that have a results/<branch>/ tree, with their run count
         # (results.json files), so the UI can offer only browsable branches.
         "result_branches": _result_branches(),
@@ -143,7 +143,7 @@ def _algo_key(data: dict) -> str | None:
     # must be listed here, or _algo_key() mistakes it for one and every
     # .get("ar_mean")-style read below blows up on a str/int instead of the
     # algo eval dict. "bc" and "exp_id" are both metadata added by
-    # run_all_bc.py — see shared/bc_pretrain.py.
+    # run_all_bc.py — see src/shared/bc_pretrain.py.
     reserved = ("scenario", "prototype_scenario", "scenario_count",
                 "train_count", "test_count", "N", "M", "ilp", "training",
                 "feasibility", "created_at", "bc", "exp_id",
@@ -178,13 +178,13 @@ def _row_from_run(scenario: str, algo: str, run_dir: Path) -> dict | None:
     training  = data.get("training", {})
     ilp       = data.get("ilp", {})
     # run_all_bc.py (ILP behavior-cloning pretrain) writes its result key as
-    # "<algo>_bc" (e.g. "maskable_ppo_bc") — see shared/bc_pretrain.py and
+    # "<algo>_bc" (e.g. "maskable_ppo_bc") — see src/shared/bc_pretrain.py and
     # each scenarios/<scenario>/<algo>/run_all_bc.py. That's the single
     # source of truth for "is this a BC run", since it comes straight from
     # the training script itself rather than a directory-naming convention.
     is_bc = bool(algo_key) and algo_key.endswith("_bc")
     # "run" (run_dir.name) and "exp_id" (the whole eq+gt+lt batch id, see
-    # shared/paths.new_exp_id) are different things that happened to always
+    # src/shared/paths.new_exp_id) are different things that happened to always
     # be equal — until run_all_bc.py started suffixing the run dir with
     # "_bc" to keep it separate from the baseline run in the same algo
     # folder. run_all_bc.py now writes "exp_id" into results.json explicitly
@@ -294,7 +294,7 @@ def get_results(branch: str | None = None):
 
 
 def _exp_batch_index() -> dict[str, dict]:
-    """exp_id -> {batch, variant, seed} over every batch under scripts/logs/."""
+    """exp_id -> {batch, variant, seed} over every batch under logs/."""
     index = {}
     if not LOGS_ROOT.is_dir():
         return index
@@ -692,7 +692,7 @@ def _match_scenario_algo(cmd: str, pid: int | None = None):
     live-progress display.
 
     Two invocation shapes are supported:
-      - the standard scripts/start_experiment.sh launcher, which always uses
+      - the standard src/scripts/start_experiment.sh launcher, which always uses
         the absolute .../scenarios/<scenario>/<algo>/run_all.py form;
       - an ad-hoc `cd scenarios/<scenario> && python3 <algo>/run_all[_bc].py`
         invocation (e.g. a manually backgrounded comparison run), whose cmd
@@ -709,7 +709,7 @@ def _match_scenario_algo(cmd: str, pid: int | None = None):
         scenario, algo, is_bc = m.group(1), m.group(2), m.group(3)
         return (scenario, f"{algo}+bc" if is_bc else algo)
 
-    # scripts/self_imitation_finetune_v2.py (see version/v2.1.0.md) is a
+    # src/scripts/self_imitation_finetune_v2.py (see version/v2.1.0.md) is a
     # lt/ppo_mask-only side experiment, not part of the standard run_all(_bc)
     # pipeline — hardcoded scenario/algo since the script itself is
     # hardcoded to lt/ppo_mask (imports scenarios/lt/ppo_mask/config.py).
@@ -828,7 +828,7 @@ def _training_proc_info(pid: int) -> dict:
 def get_system():
     """Live, generic "what's actually running right now" view — independent
     of /api/progress's one-process-per-scenario assumption and /api/batches'
-    scripts/logs/ naming convention, so it also picks up ad-hoc/exploratory
+    logs/ naming convention, so it also picks up ad-hoc/exploratory
     runs (a hyperparameter sweep, a one-off timing probe, anything launched
     by hand) that neither of those endpoints know how to parse. A process
     counts as "related" if it runs under this project's venv interpreter or
@@ -894,7 +894,7 @@ BATCH_LOG_DIR_RE = re.compile(
     r"^(?P<scenario>eq|gt|lt)_(?P<algo>\w+)_(?P<steps>\d+)_seed(?P<seed>\d+)_(?P<exp_id>[0-9a-f]+)\.log$"
 )
 LOG_EXP_ID_RE = re.compile(r"_(?P<exp_id>[0-9a-f]{8})\.log$")
-LOGS_ROOT = PROJECT_ROOT / "scripts" / "logs"
+LOGS_ROOT = PROJECT_ROOT / "logs"
 
 
 def _manifest_runs(manifest: dict) -> list[dict]:
@@ -1255,7 +1255,7 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
 
 @app.get("/api/batches")
 def list_batches(all: bool = False, branch: str | None = None):
-    """Batches under scripts/logs/ (one subdirectory each, described by a
+    """Batches under logs/ (one subdirectory each, described by a
     manifest.json or by old-style run log names). Default: only batches with
     a live run (what "currently training" needs). all=true: every batch with
     its status (running / finished / stopped / cancelled), newest first."""
