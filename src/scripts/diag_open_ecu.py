@@ -50,8 +50,9 @@ def replay(job):
     from paper_rl.train import split_algo
     label, version, scen, algo, exp_id = job[:5]
     pattern = job[5] if len(job) > 5 else "model_*"          # v4.4.2: "bc_only_*" = the BC warm start alone
+    seed = job[6] if len(job) > 6 else SEED                   # v4.4.5: test split of the run's own training seed
     mech, learner = split_algo(algo)
-    test = test_split(scen, version, SEED)
+    test = test_split(scen, version, seed)
     n, m = len(test[0]["ECUs"]), len(test[0]["SVCs"])
     predict, obs_mode = load_policy(scen, algo, exp_id, pattern, n, m)   # v4.4.3: any policy / observation
     env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode)
