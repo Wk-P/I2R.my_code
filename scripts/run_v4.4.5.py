@@ -5,7 +5,10 @@
     ENT: ent_coef 0.005 -> 0.001       (lr 3e-4)
 Everything else frozen as the v4.4.3 pilot (GAE lambda 0.95; v4.4.4 lambda = 1 had no effect): data
 v4.3.1.4 (p = 0.6), descending demand, ECU action, reward ar_pen, gamma 1, full episode, EXIT, graph
-net (obs raw), 40 envs x 512 steps, batch 256, 10 epochs, clip 0.1, seed 1, 1M steps, CPU.
+net (obs raw), 40 envs x 512 steps, batch 256, 10 epochs, clip 0.1, seed 1, 1M steps.
+GPU (.venv-gpu, one GPU per scenario, ~3x faster than CPU): the baseline is retrained on GPU too
+(key mask_ppo_base), so all variants share the device; the CPU v4.4.3 pilot stays in the report as
+a reference for device / run-to-run noise.
 The report compares v4.4.3 pilot (baseline), LR, ENT and the ILP-supervised reference: steps 1-5
 regret and optimal-action rate first, then step-1 optimal rate, EXIT, active ECUs vs ILP, forced
 openings, relative gap. Baseline / reference regret come from paper_contents/v4.4.4 (with regret_t).
@@ -27,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 PY = str(ROOT / ".venv" / "bin" / "python")
+PY_GPU = str(ROOT / ".venv-gpu" / "bin" / "python")
 VERSION = "4.4.5"
 DATA = "v4.3.1.4"
 LOG_DIR = ROOT / "scripts" / "logs" / f"v{VERSION}_pilot"
@@ -41,7 +45,7 @@ ALGO = "mask_ppo"
 SEED, STEPS = 1, 1_000_000
 REWARD, NORM, OBS, GAMMA, NET = "ar_pen", "none", "base", 1.0, "graph"
 # manifest key -> (variant label shown on the panel, extra paper_rl.train args)
-VARIANTS = {"mask_ppo_lr": ("lr1e-4", ["--lr", "1e-4"]), "mask_ppo_ent": ("ent0.001", ["--ent-coef", "0.001"])}
+VARIANTS = {"mask_ppo_base": ("base", []), "mask_ppo_lr": ("lr1e-4", ["--lr", "1e-4"]), "mask_ppo_ent": ("ent0.001", ["--ent-coef", "0.001"])}
 PREV = ROOT / "paper_contents" / "v4.4.4"                                    # regret of baseline / reference (regret_t)
 EARLY = 5                                                                     # "early steps" = steps 1..5
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,8 +60,8 @@ def write_manifest(exp_ids):
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     tmp = MANIFEST.with_suffix(".tmp")
     tmp.write_text(json.dumps({"version": VERSION, "commit": commit, "data": DATA, "net": NET, "obs": "raw", "steps": STEPS,
-                               "reward": REWARD, "reward_norm": NORM, "gamma": GAMMA, "gae_lambda": 0.95, "lr": {"mask_ppo_lr": 1e-4, "mask_ppo_ent": 3e-4},
-                               "ent_coef": {"mask_ppo_lr": 0.005, "mask_ppo_ent": 0.001},
+                               "reward": REWARD, "reward_norm": NORM, "gamma": GAMMA, "gae_lambda": 0.95, "lr": {"mask_ppo_base": 3e-4, "mask_ppo_lr": 1e-4, "mask_ppo_ent": 3e-4},
+                               "ent_coef": {"mask_ppo_base": 0.005, "mask_ppo_lr": 0.005, "mask_ppo_ent": 0.001}, "device": "cuda",
                                "full_episode": True, "exit_action": True, "scenarios": SCENARIOS, "algos": [ALGO],
                                "keys": {k: v[0] for k, v in VARIANTS.items()}, "seeds": [SEED], "exp_ids": exp_ids}, indent=2))
     tmp.replace(MANIFEST)
@@ -67,8 +71,8 @@ def launch(scen, key, exp_ids):
     exp_id = new_exp_id()
     log = open(LOG_DIR / f"seed{SEED}_{scen}_{key}_{exp_id}.log", "w")
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "EXP_ID": exp_id, "TRAIN_SEED": str(SEED),
-           "PAPER_VERSION": VERSION, "DATA_VERSION": DATA}
-    proc = subprocess.Popen([PY, "-u", "-m", "paper_rl.train", "--scen", scen, "--algo", ALGO, "--reward", REWARD,
+           "PAPER_VERSION": VERSION, "DATA_VERSION": DATA, "CUDA_VISIBLE_DEVICES": str(SCENARIOS.index(scen) % 3)}
+    proc = subprocess.Popen([PY_GPU, "-u", "-m", "paper_rl.train", "--device", "cuda", "--scen", scen, "--algo", ALGO, "--reward", REWARD,
                              "--reward-norm", NORM, "--obs", OBS, "--gamma", str(GAMMA), *VARIANTS[key][1],
                              "--full-episode", "--exit-action", "--net", NET, "--steps", str(STEPS), "--seed", str(SEED)],
                             cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
@@ -92,11 +96,13 @@ def write_report(exp_ids):
     rel = lambda p: str(p.relative_to(ROOT))
     ref = {"1": {s: {ALGO: f"ref:{REF / f'attn_{s}_50000.pt'}"} for s in SCENARIOS}}
     # (label, {seed: {scen: {key: exp_id}}}, key, regret report, regret args)
-    kinds = [("v4.4.3 基线（lr 3e-4，ent 0.005）", json.loads(BASE.read_text())["exp_ids"], ALGO, PREV / "regret_v4.4.3_pilot.md", []),
+    kinds = [("基线（lr 3e-4，ent 0.005，GPU 重跑）", exp_ids, "mask_ppo_base", OUT / "regret_base.md",
+              ["--manifest", rel(MANIFEST), "--key", "mask_ppo_base", "--label", f"v{VERSION} 基线结构感知 Mask PPO（GPU 重跑，种子 1、1M）"]),
              ("LR（lr 1e-4，ent 0.005）", exp_ids, "mask_ppo_lr", OUT / "regret_lr.md",
               ["--manifest", rel(MANIFEST), "--key", "mask_ppo_lr", "--label", f"v{VERSION}-LR 结构感知 Mask PPO（lr 1e-4，种子 1、1M）"]),
              ("ENT（lr 3e-4，ent 0.001）", exp_ids, "mask_ppo_ent", OUT / "regret_ent.md",
               ["--manifest", rel(MANIFEST), "--key", "mask_ppo_ent", "--label", f"v{VERSION}-ENT 结构感知 Mask PPO（ent 0.001，种子 1、1M）"]),
+             ("v4.4.3 基线（CPU，原试跑）", json.loads(BASE.read_text())["exp_ids"], ALGO, PREV / "regret_v4.4.3_pilot.md", []),
              ("ILP 监督参照", ref, ALGO, PREV / "regret_supervised_ref.md", [])]
     jobs = [(lb, DATA, s, ALGO, ids["1"][s][key]) for lb, ids, key, _, _ in kinds for s in SCENARIOS]
     with Pool(len(jobs)) as pool:
@@ -117,7 +123,9 @@ def write_report(exp_ids):
              f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
              "- 两个单变量实验，各只改一个量：LR = 学习率 3e-4 → 1e-4（熵系数 0.005 不变）；ENT = 熵系数 0.005 → 0.001（学习率 3e-4 不变）。",
              "- 其余全部与 v4.4.3 试跑相同：GAE λ = 0.95（v4.4.4 的 λ = 1 无效果）、结构感知网络（obs = raw）、数据 v4.3.1.4（p = 0.6）、需求降序、只选 ECU、"
-             "ar_pen 奖励、γ = 1、不提前结束、EXIT、40 环境 × 512 步、batch 256、10 epochs、clip 0.1、种子 1、1M 步、CPU。",
+             "ar_pen 奖励、γ = 1、不提前结束、EXIT、40 环境 × 512 步、batch 256、10 epochs、clip 0.1、种子 1、1M 步。",
+             "- 设备：为提速改在 GPU 上训练（每个场景一块卡）。基线在 GPU 上重跑，三行同设备可比；v4.4.3 原试跑（CPU）一行保留，"
+             "它与 GPU 重跑基线之间的差异可视为设备 / 单次运行的噪声幅度。",
              f"- 首要判断量：第 1–{EARLY} 步 regret（每个完成实例前 {EARLY} 步 regret 之和的平均，各步 regret 之和 = 绝对 gap）与第 1–{EARLY} 步选中最优的比例；"
              "其次是第 1 步选中最优、EXIT、开启 ECU 数 − ILP、被逼开启、相对 gap。",
              "- AR、ILP AR、开启 ECU 数在各自未 EXIT 的测试实例上平均；相对 gap = (ILP AR − AR) / ILP AR；Mask 违约率恒为 0。"
