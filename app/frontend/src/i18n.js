@@ -78,6 +78,10 @@ const D = {
   "单个进程占用的 CPU，按单核计：100% = 占满 1 个核（整机共 56 核）。GPU 训练的进程同样会占满 1 个核：环境推进、动作掩码与 rollout 循环都在 CPU 上":
     "CPU of a single process, per core: 100% = one full core (56 cores in total). GPU training processes also keep one core busy: environment steps, action masks and the rollout loop run on the CPU",
   "CPU（单核）": "CPU (per core)",
+  "同一命令下所有进程的 CPU 之和，按单核计：100% = 占满 1 个核（整机共 56 核）":
+    "sum of the CPU of every process with this command, per core: 100% = one full core (56 cores in total)",
+  "CPU（单核合计）": "CPU (per-core sum)", "生成报告（训练结束后）": "Report (after training)", "报告诊断占用 CPU": "report diagnostics CPU",
+  "进程数": "processes", "阶段": "stage",
   "结构感知网络": "structure-aware network", "AR gap · 相对": "AR gap · relative", "相对 gap": "relative gap", "EXIT 率": "EXIT rate",
   "网络 / 设备": "network / device", "网络 · 设备": "network · device", "利用率": "utilization", "显存": "GPU memory",
   "步/秒": "steps/s", "变体": "variant", "网络": "network", "设备": "device",
