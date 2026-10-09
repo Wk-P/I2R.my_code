@@ -1,7 +1,7 @@
 # 版本历史索引
 
 统一管理所有 git tag 对应的改动记录。版本号唯一真源见
-[src/shared/version_config.py](../shared/version_config.py)::`CURRENT_VERSION`
+[src/shared/version_config.py](../src/shared/version_config.py)::`CURRENT_VERSION`
 ——升级版本只改那一个文件，不在别处写死；这里只是历史变更记录，不是版本号来源。
 
 有独立详细文档（`version/vX.Y.Z.md`）的版本点文件名可跳转；只有 git tag
@@ -12,8 +12,8 @@
 |---|---|---|---|
 | v0.0.1 | 2026-06-24 | 初始版本 | [v0.0.1_vs_v0.1.0.md](v0.0.1_vs_v0.1.0.md) |
 | v0.1.0 | 2026-06-24 | 核心算法代码定型 | [v0.0.1_vs_v0.1.0.md](v0.0.1_vs_v0.1.0.md) |
-| v0.1.1 | 2026-07-02 | dashboard (FastAPI+Vue) + N_ENVS统一 + src/shared/整合，在v0.1.0核心算法代码基础上 | — |
-| v0.2.0 | 2026-07-02 | 场景/算法目录重构为 scenarios/ + src/shared/ 架构 | [v0.2.0.md](v0.2.0.md) |
+| v0.1.1 | 2026-07-02 | dashboard (FastAPI+Vue) + N_ENVS统一 + shared/整合，在v0.1.0核心算法代码基础上 | — |
+| v0.2.0 | 2026-07-02 | 场景/算法目录重构为 scenarios/ + shared/ 架构 | [v0.2.0.md](v0.2.0.md) |
 | v0.2.1 | 2026-07-02 | 部署可靠性修复（backend --reload、deploy.sh） | — |
 | v0.3.1 | 2026-07-03 | eq/gt/lt全场景feasibility-shaping实验 — lt场景success_rate上是负结果 | — |
 | v0.3.2 | 2026-07-03 | 回滚v0.3.1的feasibility-shaping实验，退回v0.2.1的env baseline | — |
@@ -49,7 +49,7 @@
 
 ## 新建版本时的操作步骤
 
-1. 改 [src/shared/version_config.py](../shared/version_config.py) 的 `CURRENT_VERSION`。
+1. 改 [src/shared/version_config.py](../src/shared/version_config.py) 的 `CURRENT_VERSION`。
 2. 写 `version/vX.Y.Z.md`（背景、改动、依据/实验结果、注意事项——参考 [v1.2.2.md](v1.2.2.md) 的格式），值得留档的版本才写；纯配置微调可以只打tag不写文档，但要把摘要补进这张表。
 3. 在这张表里加一行索引。
 4. `git add` + commit + `git tag -a vX.Y.Z -m "..."`。

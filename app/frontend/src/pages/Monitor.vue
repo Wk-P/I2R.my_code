@@ -68,7 +68,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
     <table v-else class="grid">
       <thead>
         <tr><th>批次</th><th>场景</th><th>算法</th><th title="奖励模式（早期试跑）或策略网络（v4.4.3）">变体</th><th>网络</th><th>设备</th><th>种子</th><th>exp_id</th>
-          <th class="w-progress">训练进度</th><th class="num" title="日志里最近一次 [train] 记录的平均速度（自启动以来）">步/秒</th><th class="num">CPU</th><th class="num">已运行</th><th class="num">PID</th></tr>
+          <th class="w-progress">训练进度</th><th class="num" title="日志里最近一次 [train] 记录的平均速度（自启动以来）">步/秒</th><th class="num" title="单个进程占用的 CPU，按单核计：100% = 占满 1 个核（整机共 56 核）。GPU 训练的进程同样会占满 1 个核：环境推进、动作掩码与 rollout 循环都在 CPU 上">CPU（单核）</th><th class="num">已运行</th><th class="num">PID</th></tr>
       </thead>
       <tbody>
         <tr v-for="p in training" :key="p.pid">
@@ -111,7 +111,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
   <section class="panel">
     <div class="panel-head"><h2>其他项目进程</h2></div>
     <table class="grid">
-      <thead><tr><th>进程</th><th class="num">CPU</th><th class="num">已运行</th><th class="num">PID</th></tr></thead>
+      <thead><tr><th>进程</th><th class="num" title="单个进程占用的 CPU，按单核计：100% = 占满 1 个核（整机共 56 核）。GPU 训练的进程同样会占满 1 个核：环境推进、动作掩码与 rollout 循环都在 CPU 上">CPU（单核）</th><th class="num">已运行</th><th class="num">PID</th></tr></thead>
       <tbody>
         <tr v-for="p in others" :key="p.pid">
           <td :title="p.cmd">{{ p.label }}</td>

@@ -66,6 +66,21 @@ const D = {
   "运行中（数字为训练进度 %）": "running (number = training progress %)", "运行中": "running", "运行 / 排队 / 中断": "running / queued / interrupted",
   "运行 / 排队": "running / queued", "运行详情": "Run Detail", "运行": "run", "进度": "progress", "进程": "process", "选择范围：": "Scope: ",
   "阶段5 · 论文最终实验": "Stage 5 · final paper experiments", "选择": "select",
+  // v4.4.3+ UI (GPU status, network / device, relative gap, EXIT) -- whole sentences first, so they are not split
+  "指标为已完成种子的均值 ± 标准差；AR = average resource utilization；AR gap = ILP AR − AR；相对 gap = (ILP AR − AR) / ILP AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例":
+    "Metrics are mean ± std over finished seeds; AR = average resource utilization; AR gap = ILP AR − AR; relative gap = (ILP AR − AR) / ILP AR; success_rate = share of test instances with all M services placed legally",
+  "奖励模式（早期试跑）或策略网络（v4.4.3：结构感知网络 / MLP）": "reward mode (early pilots) or policy network (v4.4.3: structure-aware network / MLP)",
+  "奖励模式（早期试跑）或策略网络（v4.4.3）": "reward mode (early pilots) or policy network (v4.4.3)",
+  "Maskable 选了 EXIT（无合法 ECU，回合结束）的测试实例比例；v4.3.8 之前没有 EXIT 动作":
+    "share of test instances where Maskable chose EXIT (no legal ECU, the episode ends); there is no EXIT action before v4.3.8",
+  "Maskable 选了 EXIT 的测试实例比例": "share of test instances where Maskable chose EXIT",
+  "日志里最近一次 [train] 记录的平均速度（自启动以来）": "average speed in the latest [train] log line (since start)",
+  "单个进程占用的 CPU，按单核计：100% = 占满 1 个核（整机共 56 核）。GPU 训练的进程同样会占满 1 个核：环境推进、动作掩码与 rollout 循环都在 CPU 上":
+    "CPU of a single process, per core: 100% = one full core (56 cores in total). GPU training processes also keep one core busy: environment steps, action masks and the rollout loop run on the CPU",
+  "CPU（单核）": "CPU (per core)",
+  "结构感知网络": "structure-aware network", "AR gap · 相对": "AR gap · relative", "相对 gap": "relative gap", "EXIT 率": "EXIT rate",
+  "网络 / 设备": "network / device", "网络 · 设备": "network · device", "利用率": "utilization", "显存": "GPU memory",
+  "步/秒": "steps/s", "变体": "variant", "网络": "network", "设备": "device",
 };
 const EXACT = { "有": "yes" };
 // 数字 + 量词：只在紧跟数字时替换，避免拆坏其他词
