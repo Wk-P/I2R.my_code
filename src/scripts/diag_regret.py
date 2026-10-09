@@ -132,8 +132,13 @@ def main():
                 tasks.append((s, k, t, dict(prefix), st))
                 prefix[st["svc"]] = st["a"]
         print(f"{len(traj)} trajectories, {len(tasks)} steps to solve", flush=True)
-        for s, k, t, vals in pool.imap_unordered(values, tasks, chunksize=4):
+        t_solve, every = time.time(), max(1, len(tasks) // 50)
+        for i, (s, k, t, vals) in enumerate(pool.imap_unordered(values, tasks, chunksize=4), 1):
             traj[(s, k)]["steps"][t]["vals"] = vals
+            if i % every == 0 or i == len(tasks):              # progress line, parsed by the panel
+                el = time.time() - t_solve
+                print(f"[regret] solved {i}/{len(tasks)} ({100 * i / len(tasks):.0f}%) | "
+                      f"elapsed {el / 60:.1f} min | eta {el / i * (len(tasks) - i) / 60:.1f} min", flush=True)
     print(f"solved in {(time.time() - t0) / 60:.1f} min", flush=True)
 
     pc = lambda v: f"{100 * v:.1f}%"

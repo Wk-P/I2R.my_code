@@ -75,3 +75,18 @@ const VARIANT_LABEL = { graph: "结构感知网络", mlp: "MLP" };
 export const variantLabel = (v) => VARIANT_LABEL[v] ?? v;
 export const netLabel = (n) => (n ? VARIANT_LABEL[n] ?? n : "—");
 export const deviceLabel = (d) => (!d ? "—" : d.startsWith("cuda") ? "GPU" : d === "cpu" ? "CPU" : d);
+
+// v4.4.11: report stage after training (per-step regret diagnostics), from /api/batches[...].report
+export const reporting = (b) => !!(b?.report && !b.report.finished);
+export function reportText(r, lang) {
+  if (!r) return "";
+  const en = lang === "en";
+  if (r.finished) return en ? "report ready" : "报告已生成";
+  if (r.stage !== "regret") return en ? "building report · replaying test instances" : "生成报告 · 回放测试实例";
+  const set = r.n ? `${r.k}/${r.n}` : `${r.k ?? 1}`;
+  const cur = r.current_pct != null ? ` · ${r.current_pct.toFixed(0)}%` : "";
+  const eta = r.eta_minutes != null ? (en ? ` · ~${Math.ceil(r.eta_minutes)} min left` : ` · 约剩 ${Math.ceil(r.eta_minutes)} 分钟`) : "";
+  return en ? `building report · regret diagnostic ${set}${cur}${eta}` : `生成报告 · regret 诊断 ${set}${cur}${eta}`;
+}
+// bar width for the report stage: overall when the number of diagnostics is known, else the current one
+export const reportPct = (r) => (r ? (r.finished ? 100 : r.overall_pct ?? r.current_pct ?? 0) : 0);

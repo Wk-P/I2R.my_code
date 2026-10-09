@@ -1253,6 +1253,55 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     }
 
 
+REPORT_RE = re.compile(r"^\[report\] regret (\d+)/(\d+)")
+REGRET_RE = re.compile(r"^\[regret\] solved (\d+)/(\d+) .*eta ([\d.]+) min")
+SOLVED_RE = re.compile(r"^solved in ([\d.]+) min")
+
+
+def _report_progress(batch_name: str) -> dict | None:
+    """v4.4.11: report stage of a batch (after training), from its driver log logs/run_<batch>_driver.log:
+    "[report] replay", "[report] regret k/n" (report scripts) and "[regret] solved x/y ... eta m min"
+    (src/scripts/diag_regret.py). Overall = (finished diagnostics + current fraction) / n; older scripts
+    without "[report] regret k/n" give the current diagnostic only (n = None). None before training ends."""
+    log = LOGS_ROOT / f"run_{batch_name}_driver.log"
+    if not log.is_file():
+        return None
+    with open(log, "rb") as f:
+        f.seek(0, 2)
+        f.seek(max(0, f.tell() - 400_000))
+        lines = f.read().decode("utf-8", "replace").splitlines()
+    done_at = max((i for i, l in enumerate(lines) if l.startswith("=== done")), default=None)
+    if done_at is None:
+        return None
+    after = lines[done_at + 1:]
+    finished = any(l.startswith("report -> ") and "/regret_" not in l for l in after)
+    k = n = None
+    x = y = eta = None
+    durations = [float(m.group(1)) for l in after if (m := SOLVED_RE.match(l))]
+    stage = "replay" if any(l.startswith("[report] replay") for l in after) else "starting"
+    for l in after:
+        if m := REPORT_RE.match(l):
+            k, n, x, y, eta = int(m.group(1)), int(m.group(2)), None, None, None
+            stage = "regret"
+        elif m := REGRET_RE.match(l):
+            x, y, eta = int(m.group(1)), int(m.group(2)), float(m.group(3))
+            stage = "regret"
+        elif l.endswith("steps to solve"):
+            stage, x, y, eta = "regret", 0, None, None
+    if k is None and stage == "regret":
+        k = len(durations) + (0 if x is not None and y and x == y else 1)   # old scripts: count finished diagnostics
+    cur = (x / y) if (x is not None and y) else 0.0
+    pct = None
+    if n:
+        pct = round(100 * min(1.0, ((k or 1) - 1 + cur) / n), 1)
+        if eta is not None and durations:
+            eta = eta + (n - (k or 1)) * (sum(durations) / len(durations))
+    return {"stage": "done" if finished else stage, "finished": finished, "k": k, "n": n,
+            "current_done": x, "current_total": y, "current_pct": round(100 * cur, 1) if y else None,
+            "overall_pct": 100.0 if finished else pct, "eta_minutes": None if finished or eta is None else round(eta, 1),
+            "updated": log.stat().st_mtime}
+
+
 @app.get("/api/batches")
 def list_batches(all: bool = False, branch: str | None = None):
     """Batches under logs/ (one subdirectory each, described by a
@@ -1267,7 +1316,11 @@ def list_batches(all: bool = False, branch: str | None = None):
         if not d.is_dir():
             continue
         st = _batch_state(d.name, live)
-        if st is None or (not all and st["status"] != "running"):
+        if st is None:
+            continue
+        st["report"] = _report_progress(d.name) if st["status"] != "running" else None
+        reporting = bool(st["report"] and not st["report"]["finished"] and time.time() - st["report"]["updated"] < 3600)
+        if not all and st["status"] != "running" and not reporting:
             continue
         if branch and st["branch"] != branch:
             continue
@@ -1331,6 +1384,7 @@ def get_batch_progress(batch_name: str):
     rows.sort(key=lambda x: (scen_order.get(x["scenario"], 9), x["algo"], x["variant"]))
     st["rows"] = rows
     st["elapsed_seconds"] = _elapsed(st)
+    st["report"] = _report_progress(batch_name) if st["status"] != "running" else None
     return st
 
 

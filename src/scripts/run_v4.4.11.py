@@ -45,6 +45,7 @@ REWARD, NORM, OBS, GAMMA, NET = "ar_pen", "none", "base", 1.0, "graph"
 # manifest key -> (label, extra paper_rl.train args); keys match the pilot manifest
 VARIANTS = {"mask_ppo_base": ("基线（critic + GAE 的 advantage）", None), "mask_ppo_group": ("同实例 4 条轨迹，实例内基线", None)}
 NEW = "mask_ppo_group"
+REGRET_KEYS = [NEW]                                                        # regret computed here; the baseline reuses v4.4.5's
 LABEL_EN = {"mask_ppo_base": "baseline (critic + GAE advantage)", "mask_ppo_group": "4 trajectories per instance, instance-wise baseline"}
 RESULTS = ROOT / "results" / "unified"
 EARLY = 5
@@ -85,7 +86,7 @@ def launch(seed, scen, key, exp_ids):
     return proc, log
 
 
-def regret(seed, key, manifest):
+def regret(seed, key, manifest, step=None):
     """diag_regret summary of one (seed, variant) over the 3 scenarios; the baseline reuses v4.4.5's."""
     if key != NEW:
         md = PREV / ("regret_base.md" if seed == 1 else f"regret_s{seed}_base.md")
@@ -93,6 +94,8 @@ def regret(seed, key, manifest):
     md = OUT / f"regret_s{seed}_group.md"
     js = md.with_suffix(".json")
     if not js.exists():
+        if step:                                                # progress line, parsed by the panel
+            print(f"[report] regret {step[0]}/{step[1]} | seed {seed} {key}", flush=True)
         subprocess.run([PY, str(ROOT / "src" / "scripts" / "diag_regret.py"), "--out", str(md), "--seed", str(seed),
                         "--manifest", str(manifest.relative_to(ROOT)), "--key", key,
                         "--label", f"v{VERSION} 结构感知 Mask PPO {VARIANTS[key][0]}（种子 {seed}、1M、GPU）",
@@ -108,6 +111,7 @@ def write_report(exp_ids):
     seeds = SEEDS
     man = {sd: MANIFEST for sd in SEEDS}
     jobs = [(key, DATA, s, ALGO, ids[str(sd)][s][key], "model_*", sd) for sd in seeds for key in VARIANTS for s in SCENARIOS]
+    print("[report] replay", flush=True)
     with Pool(len(jobs)) as pool:
         out = pool.map(replay, jobs)
     res = {}
@@ -117,9 +121,13 @@ def write_report(exp_ids):
         res[(key, s, sd)] = {"exit": 1 - len(insts) / n, "rel": (ilp - ar) / ilp,
                              "dact": np.mean([x["act"] - x["ilp_act"] for x in insts]),
                              "forced": sum(o["kind"] == "forced" for o in opens) / n}
+    todo = [(sd, key) for sd in seeds for key in REGRET_KEYS if not (OUT / f"regret_s{sd}_{key.removeprefix('mask_ppo_')}.json").exists()]
+    i_todo = 0
     for sd in seeds:
         for key in VARIANTS:
-            g = regret(sd, key, man[sd])
+            if (sd, key) in todo:
+                i_todo += 1
+            g = regret(sd, key, man[sd], (i_todo, len(todo)) if (sd, key) in todo else None)
             for s in SCENARIOS:
                 res[(key, s, sd)].update({"r15": sum(g[s]["regret_t"][:EARLY]), "p15": float(np.mean(g[s]["opt_rate_t"][:EARLY])),
                                           "p1": g[s]["opt_rate_t"][0]})

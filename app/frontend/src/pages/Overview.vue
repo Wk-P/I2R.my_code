@@ -2,7 +2,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { store, trainingProcs, spaceLabel } from "../store.js";
 import { getBatches, getExperiments } from "../api.js";
-import { algoLabel, statusLabel, statusClass } from "../labels.js";
+import { algoLabel, statusLabel, statusClass, reporting, reportText, reportPct } from "../labels.js";
+import { langRef as curLang } from "../i18n.js";
 import { pct, fmt, shortTime } from "../format.js";
 
 const batches = ref([]);
@@ -19,8 +20,8 @@ onMounted(() => { timer = setInterval(load, 15000); });
 watch(() => store.viewBranch, load, { immediate: true });
 onUnmounted(() => clearInterval(timer));
 
-const runningBatches = computed(() => batches.value.filter((b) => b.status === "running"));
-const recentBatches = computed(() => batches.value.filter((b) => b.status !== "running").slice(0, 5));
+const runningBatches = computed(() => batches.value.filter((b) => b.status === "running" || reporting(b)));
+const recentBatches = computed(() => batches.value.filter((b) => b.status !== "running" && !reporting(b)).slice(0, 5));
 const recentRuns = computed(() =>
   [...exps.value].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 10));
 const loadPct = computed(() => {
@@ -68,8 +69,14 @@ const loadPct = computed(() => {
           <td><a :href="`#/batches/${b.batch_name}`">{{ b.batch_name }}</a></td>
           <td>{{ b.version ?? "—" }}</td>
           <td>
-            <div class="bar"><div class="bar-fill" :style="{ width: b.overall_pct + '%' }"></div></div>
-            <span class="bar-text">{{ b.done }}/{{ b.total_runs }}（{{ b.overall_pct }}%）</span>
+            <template v-if="reporting(b)">
+              <div class="bar"><div class="bar-fill bar-fill--report" :style="{ width: reportPct(b.report) + '%' }"></div></div>
+              <span class="bar-text" data-no-i18n>{{ reportText(b.report, curLang) }}</span>
+            </template>
+            <template v-else>
+              <div class="bar"><div class="bar-fill" :style="{ width: b.overall_pct + '%' }"></div></div>
+              <span class="bar-text">{{ b.done }}/{{ b.total_runs }}（{{ b.overall_pct }}%）</span>
+            </template>
           </td>
           <td>{{ b.running }} / {{ b.queued }}</td>
           <td>{{ shortTime(b.started_at) }}</td>

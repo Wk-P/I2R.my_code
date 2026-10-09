@@ -338,3 +338,8 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 .lang-switch button:hover:not(.on) { color: var(--text); }
 .lang-switch button.on { background: var(--primary); color: #fff; font-weight: 600; cursor: default; }
 .lang-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* report stage after training (regret diagnostics) */
+.bar-fill--report { background: var(--warn); }
+.report-note { margin-top: 3px; color: var(--warn); white-space: nowrap; }
+.kpi--wide { grid-column: span 2; }

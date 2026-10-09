@@ -2,7 +2,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { store, spaceLabel } from "../store.js";
 import { getBatches } from "../api.js";
-import { statusLabel, statusClass } from "../labels.js";
+import { statusLabel, statusClass, reporting, reportText, reportPct } from "../labels.js";
+import { langRef as curLang } from "../i18n.js";
 import { shortTime, steps } from "../format.js";
 
 const batches = ref([]);
@@ -70,7 +71,8 @@ const groups = computed(() => {
         <tr v-for="b in g.items" :key="b.batch_name" class="clickable" @click="go(`#/batches/${b.batch_name}`)">
           <td class="indent"><a :href="`#/batches/${b.batch_name}`">{{ b.batch_name }}</a></td>
           <td><span class="tag">{{ b.kind === "eval" ? "评估" : "训练" }}</span></td>
-          <td><span class="badge" :class="statusClass(b.status)">{{ statusLabel(b.status) }}</span></td>
+          <td><span class="badge" :class="statusClass(b.status)">{{ statusLabel(b.status) }}</span>
+            <div v-if="reporting(b)" class="small report-note" data-no-i18n>{{ reportText(b.report, curLang) }}</div></td>
           <td>{{ b.version ?? "—" }}</td>
           <td class="dim">{{ b.branch ?? "—" }}</td>
           <td class="num">{{ b.kind === "eval" ? "—" : steps(b.steps) }}</td>

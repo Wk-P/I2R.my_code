@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { getBatch } from "../api.js";
-import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel } from "../labels.js";
+import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel, reporting, reportText, reportPct } from "../labels.js";
+import { langRef as curLang } from "../i18n.js";
 import { pct, fmt, pm, shortTime, secToHuman, steps } from "../format.js";
 
 const props = defineProps({ name: { type: String, required: true } });
@@ -88,6 +89,11 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <div class="bar bar--kpi"><div class="bar-fill" :style="{ width: data.overall_pct + '%' }"></div></div></div>
       <div class="kpi"><div class="kpi-label">已完成</div><div class="kpi-value">{{ data.done }}<span class="kpi-unit">/ {{ data.total_runs }}</span></div></div>
       <div class="kpi"><div class="kpi-label">运行 / 排队 / 中断{{ data.skipped ? " / 未运行" : "" }}</div><div class="kpi-value kpi-value--sm">{{ data.running }} / {{ data.queued }} / {{ data.stopped }}{{ data.skipped ? " / " + data.skipped : "" }}</div></div>
+      <div v-if="data.report && !data.report.finished" class="kpi kpi--wide" data-no-i18n>
+        <div class="kpi-label">{{ curLang === "en" ? "Report (after training)" : "生成报告（训练结束后）" }}</div>
+        <div class="kpi-value kpi-value--sm">{{ reportPct(data.report).toFixed(0) }}%</div>
+        <div class="bar bar--kpi"><div class="bar-fill bar-fill--report" :style="{ width: reportPct(data.report) + '%' }"></div></div>
+        <div class="kpi-foot">{{ reportText(data.report, curLang) }}</div></div>
       <div class="kpi"><div class="kpi-label">已用时</div><div class="kpi-value kpi-value--sm">{{ secToHuman(data.elapsed_seconds) }}</div>
         <div class="kpi-foot">最后更新 {{ shortTime(data.last_updated) }}</div></div>
     </div>
