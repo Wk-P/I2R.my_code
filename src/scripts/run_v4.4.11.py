@@ -45,6 +45,7 @@ REWARD, NORM, OBS, GAMMA, NET = "ar_pen", "none", "base", 1.0, "graph"
 # manifest key -> (label, extra paper_rl.train args); keys match the pilot manifest
 VARIANTS = {"mask_ppo_base": ("基线（critic + GAE 的 advantage）", None), "mask_ppo_group": ("同实例 4 条轨迹，实例内基线", None)}
 NEW = "mask_ppo_group"
+LABEL_EN = {"mask_ppo_base": "baseline (critic + GAE advantage)", "mask_ppo_group": "4 trajectories per instance, instance-wise baseline"}
 RESULTS = ROOT / "results" / "unified"
 EARLY = 5
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -94,7 +95,8 @@ def regret(seed, key, manifest):
     if not js.exists():
         subprocess.run([PY, str(ROOT / "src" / "scripts" / "diag_regret.py"), "--out", str(md), "--seed", str(seed),
                         "--manifest", str(manifest.relative_to(ROOT)), "--key", key,
-                        "--label", f"v{VERSION} 结构感知 Mask PPO {VARIANTS[key][0]}（种子 {seed}、1M、GPU）"],
+                        "--label", f"v{VERSION} 结构感知 Mask PPO {VARIANTS[key][0]}（种子 {seed}、1M、GPU）",
+                        "--label-en", f"v{VERSION} structure-aware Mask PPO, {LABEL_EN[key]} (seed {seed}, 1M, GPU)"],
                        cwd=ROOT, check=True)
     return json.loads(js.read_text())
 
@@ -128,38 +130,78 @@ def write_report(exp_ids):
     f4 = lambda v: f"{v:.4f}"
     f2 = lambda v: f"{v:+.2f}"
     f2u = lambda v: f"{v:.2f}"
-    cols = [("相对 gap", "rel", pc), (f"第 1–{EARLY} 步 regret", "r15", f4), (f"第 1–{EARLY} 步选中最优", "p15", pc),
-            ("第 1 步选中最优", "p1", pc), ("EXIT 率", "exit", pc), ("开启 ECU 数 − ILP", "dact", f2), ("被逼开启/实例", "forced", f2u)]
-    lines = [f"# v{VERSION} 同实例多轨迹 PPO（实例内基线）", "",
-             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
-             "- 唯一改动：advantage 的来源（`--group-k 4`，`src/paper_rl/group_ppo.py`）。40 个环境分成 10 组、每组 K = 4；同组每次都在同一个训练实例上"
-             "用当前策略各采样一条完整轨迹，轨迹 k 的每一步 A = G_k − b_x，b_x = (1/4) Σ_k G_k（γ = 1，G_k 为该轨迹回报）。advantage 不再经过 critic 和 GAE；"
-             "critic 仍以 G_k 为目标训练（PPO 损失不变），但不参与 advantage。每轮只收完整的组，凑满 20480 条转移即更新，未完成的组丢弃（这些步数仍计入 1M 预算）。",
-             "- ILP 完全不参与训练。测试不变：每个测试实例一次确定性（argmax）rollout，不做 best-of-K。",
-             "- 校验：同组 4 条轨迹实例相同；逐条轨迹 adv = G_k − b_x、ret = G_k（误差 3e−8，float32）；每组 advantage 之和为 0；重算 log-prob 与采样时一致；动作全部合法。",
-             "- 其余全部不变：结构感知网络（共享编码器、原 ECU 打分头）、ar_pen 奖励、lr 3e-4、熵系数 0.005、clip 0.1、batch 256、10 epochs、γ = 1、EXIT、需求降序、GPU、1M 步。",
-             f"- 基线 = v4.4.5 在 GPU 上训练的三种子基线，直接复用；新模型 manifest：`{MANIFEST.relative_to(ROOT)}`。",
-             "- 每个模型都在它自己训练种子的测试集上评估；相对 gap 先逐种子计算再取平均；表中为三种子均值 ± 样本标准差。",
-             f"- 第 1–{EARLY} 步 regret 与选中最优的比例来自 `src/scripts/diag_regret.py`（各种子测试集前 400 个实例）。"
-             "噪声参照：同配置三种子 SD 0.4–0.7pp，同种子重跑可差 1.4–2.0pp；EQ 基线 10.2% 很可能偏高（其他四个变体均为 9.4–9.5%）。", ""]
-    lines += ["## 三种子汇总", "", "| 场景 | 模型 | " + " | ".join(c[0] for c in cols) + " |", "|---|---|" + "---|" * len(cols)]
+    for lang in ("zh", "en"):
+        lines = render(lang, res, seeds, ms, pc, f4, f2, f2u)
+        out = REPORT if lang == "zh" else REPORT.with_suffix(".en.md")
+        out.write_text("\n".join(lines))
+        print(f"report -> {out}", flush=True)
+
+
+def render(lang, res, seeds, ms, pc, f4, f2, f2u):
+    """The report in Chinese (zh) or English (en); same data, same tables."""
+    zh = lang == "zh"
+    T = lambda z, e: z if zh else e
+    lb = lambda key: VARIANTS[key][0] if zh else LABEL_EN[key]
+    cols = [(T("相对 gap", "Relative gap"), "rel", pc), (T(f"第 1–{EARLY} 步 regret", f"Steps 1–{EARLY} regret"), "r15", f4),
+            (T(f"第 1–{EARLY} 步选中最优", f"Steps 1–{EARLY} optimal-action rate"), "p15", pc),
+            (T("第 1 步选中最优", "Step-1 optimal-action rate"), "p1", pc), (T("EXIT 率", "EXIT rate"), "exit", pc),
+            (T("开启 ECU 数 − ILP", "Active ECUs − ILP"), "dact", f2), (T("被逼开启/实例", "Forced openings / instance"), "forced", f2u)]
+    if zh:
+        lines = [f"# v{VERSION} 同实例多轨迹 PPO（实例内基线）", "",
+                 f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+                 "- 唯一改动：advantage 的来源（`--group-k 4`，`src/paper_rl/group_ppo.py`）。40 个环境分成 10 组、每组 K = 4；同组每次都在同一个训练实例上"
+                 "用当前策略各采样一条完整轨迹，轨迹 k 的每一步 A = G_k − b_x，b_x = (1/4) Σ_k G_k（γ = 1，G_k 为该轨迹回报）。advantage 不再经过 critic 和 GAE；"
+                 "critic 仍以 G_k 为目标训练（PPO 损失不变），但不参与 advantage。每轮只收完整的组，凑满 20480 条转移即更新，未完成的组丢弃（这些步数仍计入 1M 预算）。",
+                 "- ILP 完全不参与训练。测试不变：每个测试实例一次确定性（argmax）rollout，不做 best-of-K。",
+                 "- 校验：同组 4 条轨迹实例相同；逐条轨迹 adv = G_k − b_x、ret = G_k（误差 3e−8，float32）；每组 advantage 之和为 0；重算 log-prob 与采样时一致；动作全部合法。",
+                 "- 其余全部不变：结构感知网络（共享编码器、原 ECU 打分头）、ar_pen 奖励、lr 3e-4、熵系数 0.005、clip 0.1、batch 256、10 epochs、γ = 1、EXIT、需求降序、GPU、1M 步。",
+                 f"- 基线 = v4.4.5 在 GPU 上训练的三种子基线，直接复用；新模型 manifest：`{MANIFEST.relative_to(ROOT)}`。",
+                 "- 每个模型都在它自己训练种子的测试集上评估；相对 gap 先逐种子计算再取平均；表中为三种子均值 ± 样本标准差。",
+                 f"- 第 1–{EARLY} 步 regret 与选中最优的比例来自 `src/scripts/diag_regret.py`（各种子测试集前 400 个实例）。"
+                 "噪声参照：同配置三种子 SD 0.4–0.7pp，同种子重跑可差 1.4–2.0pp；EQ 基线 10.2% 很可能偏高（其他四个变体均为 9.4–9.5%）。", ""]
+    else:
+        lines = [f"# v{VERSION} Same-instance multi-trajectory PPO (instance-wise baseline)", "",
+                 f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}",
+                 "- Single change: the source of the advantage (`--group-k 4`, `src/paper_rl/group_ppo.py`). The 40 environments form 10 groups of "
+                 "K = 4; each group runs one complete trajectory per member with the current policy on the same training instance, and every step of "
+                 "trajectory k gets A = G_k − b_x, b_x = (1/4) Σ_k G_k (γ = 1, G_k is the trajectory return). The advantage no longer goes through "
+                 "the critic or GAE; the critic is still trained with target G_k (the PPO loss is unchanged) but does not enter the advantage. "
+                 "A rollout keeps complete groups only and updates once 20480 transitions are collected; unfinished groups are discarded "
+                 "(their steps still count towards the 1M budget).",
+                 "- The ILP is not used in training at all. Evaluation is unchanged: one deterministic (argmax) rollout per test instance, no best-of-K.",
+                 "- Checks: the 4 trajectories of a group share the instance; per trajectory adv = G_k − b_x and ret = G_k (error 3e−8, float32); "
+                 "advantages sum to 0 within each group; recomputed log-probs match those at sampling; all actions legal.",
+                 "- Everything else unchanged: structure-aware network (shared encoder, original ECU head), ar_pen reward, lr 3e-4, entropy "
+                 "coefficient 0.005, clip 0.1, batch 256, 10 epochs, γ = 1, EXIT, descending demand, GPU, 1M steps.",
+                 f"- Baseline = the v4.4.5 three-seed GPU baseline, reused; manifest of the new models: `{MANIFEST.relative_to(ROOT)}`.",
+                 "- Every model is evaluated on the test split of its own training seed; the relative gap is computed per seed and then "
+                 "averaged; tables show the mean ± sample std over three seeds.",
+                 f"- Steps 1–{EARLY} regret and optimal-action rates come from `src/scripts/diag_regret.py` (first 400 instances of each seed's "
+                 "test split). Noise reference: three-seed SD 0.4–0.7pp for the same configuration, and a rerun of the same seed can differ by "
+                 "1.4–2.0pp; the EQ baseline of 10.2% is probably high (the other four variants all give 9.4–9.5%).", ""]
+    lines += [T("## 三种子汇总", "## Three-seed summary"), "",
+              T("| 场景 | 模型 | ", "| Scenario | Model | ") + " | ".join(c[0] for c in cols) + " |", "|---|---|" + "---|" * len(cols)]
     for s in SCENARIOS:
-        for key, (lb, _) in VARIANTS.items():
-            lines.append(f"| {s.upper()} | {lb} | " + " | ".join(ms([res[(key, s, sd)][c] for sd in seeds], f) for _, c, f in cols) + " |")
-    lines += ["", "三场景平均（每个种子先对三场景取平均，再对种子求均值 ± SD）：", "",
-              "| 模型 | 相对 gap | " + f"第 1–{EARLY} 步 regret | 第 1–{EARLY} 步选中最优 | EXIT 率 |", "|---|---|---|---|---|"]
-    for key, (lb, _) in VARIANTS.items():
+        for key in VARIANTS:
+            lines.append(f"| {s.upper()} | {lb(key)} | " + " | ".join(ms([res[(key, s, sd)][c] for sd in seeds], f) for _, c, f in cols) + " |")
+    lines += ["", T("三场景平均（每个种子先对三场景取平均，再对种子求均值 ± SD）：",
+                    "Average over the three scenarios (per seed first, then mean ± SD over seeds):"), "",
+              T("| 模型 | 相对 gap | ", "| Model | Relative gap | ")
+              + T(f"第 1–{EARLY} 步 regret | 第 1–{EARLY} 步选中最优 | EXIT 率 |",
+                  f"Steps 1–{EARLY} regret | Steps 1–{EARLY} optimal-action rate | EXIT rate |"), "|---|---|---|---|---|"]
+    for key in VARIANTS:
         avg = lambda c: [np.mean([res[(key, s, sd)][c] for s in SCENARIOS]) for sd in seeds]
-        lines.append(f"| {lb} | {ms(avg('rel'), pc)} | {ms(avg('r15'), f4)} | {ms(avg('p15'), pc)} | {ms(avg('exit'), pc)} |")
-    lines += ["", "## 逐种子", "", "| 场景 | 种子 | 模型 | " + " | ".join(c[0] for c in cols) + " |", "|---|---|---|" + "---|" * len(cols)]
+        lines.append(f"| {lb(key)} | {ms(avg('rel'), pc)} | {ms(avg('r15'), f4)} | {ms(avg('p15'), pc)} | {ms(avg('exit'), pc)} |")
+    lines += ["", T("## 逐种子", "## Per seed"), "",
+              T("| 场景 | 种子 | 模型 | ", "| Scenario | Seed | Model | ") + " | ".join(c[0] for c in cols) + " |",
+              "|---|---|---|" + "---|" * len(cols)]
     for s in SCENARIOS:
         for sd in seeds:
-            for key, (lb, _) in VARIANTS.items():
+            for key in VARIANTS:
                 r = res[(key, s, sd)]
-                lines.append(f"| {s.upper()} | {sd} | {lb} | " + " | ".join(f(r[c]) for _, c, f in cols) + " |")
+                lines.append(f"| {s.upper()} | {sd} | {lb(key)} | " + " | ".join(f(r[c]) for _, c, f in cols) + " |")
     lines.append("")
-    REPORT.write_text("\n".join(lines))
-    print(f"report -> {REPORT}", flush=True)
+    return lines
 
 
 def main():
