@@ -77,7 +77,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
                 exit_action: bool = False, m: int = 0, action_mode: str = "ecu", net: str = "mlp", device: str = "cpu",
                 gae_lambda: float | None = None, lr: float | None = None, ent_coef: float | None = None,
                 glob_std: bool = False, separate: bool = False, pair_head: bool = False, group_k: int = 0,
-                plan: bool = False, plan_decay: bool = False):
+                plan: bool = False, plan_decay: bool = False, glob3: bool = False):
     if learner == "ppo":
         kw = dict(policy="MlpPolicy", env=env, learning_rate=C.PPO_LR if lr is None else lr, n_steps=C.PPO_N_STEPS,
                   batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS, gamma=C.PPO_GAMMA if gamma is None else gamma,
@@ -86,7 +86,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
         if net == "graph":                              # v4.4.3: structure-aware policy, PPO settings unchanged
             assert mech == "mask" and action_mode == "ecu", "--net graph: Mask PPO, ECU action only"
             from paper_rl.graph_policy import GraphMaskablePolicy
-            kw.update(policy=GraphMaskablePolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, glob_std=glob_std, separate=separate, pair_head=pair_head, plan=plan, plan_decay=plan_decay))
+            kw.update(policy=GraphMaskablePolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, glob_std=glob_std, separate=separate, pair_head=pair_head, plan=plan, plan_decay=plan_decay, glob3=glob3))
         if mech == "mask" and group_k:                 # v4.4.11: same-instance groups, instance-wise baseline
             from paper_rl.group_ppo import GroupMaskablePPO
             return GroupMaskablePPO(group_k=group_k, group_seed=seed, **kw)
@@ -274,6 +274,8 @@ def main():
                     help="v4.4.10: --net graph only; score ECU j by MLP([h_svc, h_ecu, h_svc*h_ecu, h_glob])")
     ap.add_argument("--plan", action="store_true",
                     help="v4.4.12: --net graph only; global plan matrix P = F(s_0), ECU logits P[i_t, j] + per-step score")
+    ap.add_argument("--glob3", action="store_true",
+                    help="v4.4.13: --net graph only; global token input = exactly [M_rem / M, AR_t, sigma_util,t]")
     ap.add_argument("--plan-decay", action="store_true",
                     help="v4.4.13: with --plan, weight the plan term by beta_t = (M - t) / M")
     ap.add_argument("--group-k", type=int, default=0,
@@ -302,7 +304,7 @@ def main():
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | separate_critic={a.separate_critic} | pair_head={a.pair_head} | group_k={a.group_k} | plan={a.plan} | plan_decay={a.plan_decay} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | separate_critic={a.separate_critic} | pair_head={a.pair_head} | group_k={a.group_k} | plan={a.plan} | plan_decay={a.plan_decay} | glob3={a.glob3} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
@@ -312,7 +314,7 @@ def main():
                                              action_mode=a.action, order=a.order, order_seed=a.order_seed)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
-    model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay)
+    model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay, a.glob3)
     bc_info = None
     if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
         assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
@@ -365,7 +367,7 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
-        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "plan": a.plan, "plan_decay": a.plan_decay, "order": a.order, "order_seed": a.order_seed,
+        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
         **({"gae_lambda": C.PPO_GAE_LAMBDA if a.gae_lambda is None else a.gae_lambda,
             "lr": C.PPO_LR if a.lr is None else a.lr,
             "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef} if learner == "ppo" else {}),

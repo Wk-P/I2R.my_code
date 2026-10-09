@@ -8,6 +8,7 @@ serves supervised tests and (later) PPO.
 Tokens: 1 global + N ECUs + M services. Node features:
   global : AR so far, unplaced share, unplaced demand / total capacity, free capacity / total capacity
            [+ 2 sigma_util with glob_std (v4.4.6): std of u_j / c_j over the active ECUs, scaled to [0, 1]]
+           glob3 (v4.4.13, the professor's state summary): exactly [M_rem / M, AR_t, sigma_util,t] -- nothing else
   ECU j  : c_j / c_max, free_j / c_max, active, feasible for the current service, hosted / M, load_j / c_j
   svc k  : d_k / c_max, placed, is current, feasible ECUs / N, conflicts with other unplaced / M
 Relations (added to the attention logits through a learned weight per relation, layer and head):
@@ -31,7 +32,7 @@ import torch.nn as nn
 N_REL = 4
 
 
-def build(caps, reqs, adj, assign, t, glob_std: bool = False):
+def build(caps, reqs, adj, assign, t, glob_std: bool = False, glob3: bool = False):
     """Raw state -> (node features: glob [B,4 or 5], ecu [B,N,6], svc [B,M,5]), relations [B,R,L,L], mask [B,N+1], ar [B]."""
     B, N = caps.shape
     M = reqs.shape[1]
@@ -56,8 +57,12 @@ def build(caps, reqs, adj, assign, t, glob_std: bool = False):
     m_ecu = feas[ar_idx, tc] & (t < M).unsqueeze(1)
     mask = torch.cat([m_ecu, ~m_ecu.any(1, keepdim=True)], 1)
     tot = caps.sum(1)
-    gl = [ar, unpl.float().mean(1), (reqs * unpl).sum(1) / tot, free.clamp(min=0).sum(1) / tot]
-    if glob_std:                                    # v4.4.6: spread of utilisation over the active ECUs
+    if glob3:                                       # v4.4.13: [M_rem / M, AR_t, sigma_util,t]
+        var = (((util - ar.unsqueeze(1)) ** 2) * active).sum(1) / active.sum(1).clamp(min=1)
+        gl = [unpl.float().mean(1), ar, var.clamp(min=0).sqrt()]
+    else:
+        gl = [ar, unpl.float().mean(1), (reqs * unpl).sum(1) / tot, free.clamp(min=0).sum(1) / tot]
+    if glob_std and not glob3:                                    # v4.4.6: spread of utilisation over the active ECUs
         var = (((util - ar.unsqueeze(1)) ** 2) * active).sum(1) / active.sum(1).clamp(min=1)
         gl.append(2 * var.clamp(min=0).sqrt())
     glob = torch.stack(gl, 1)
@@ -130,13 +135,15 @@ class PlanEncoder(nn.Module):
 
 class GraphPolicyNet(nn.Module):
     def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, pair_head: bool = False,
-                 plan: bool = False, plan_decay: bool = False):
+                 plan: bool = False, plan_decay: bool = False, glob3: bool = False):
         super().__init__()
+        assert not (glob3 and glob_std), "glob3 already contains sigma_util"
+        self.glob3 = glob3
         self.glob_std, self.pair_head, self.plan, self.plan_decay = glob_std, pair_head, plan, plan_decay
         assert plan or not plan_decay, "plan_decay needs plan"
         if plan:                                        # v4.4.12: global plan matrix from s_0
             self.plan_enc = PlanEncoder(d, heads, layers, glob_std)
-        self.inp = nn.ModuleList([nn.Linear(5 if glob_std else 4, d), nn.Linear(6, d), nn.Linear(5, d)])
+        self.inp = nn.ModuleList([nn.Linear(3 if glob3 else 5 if glob_std else 4, d), nn.Linear(6, d), nn.Linear(5, d)])
         self.type_emb = nn.Parameter(torch.zeros(3, d))
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
         self.ln = nn.LayerNorm(d)
@@ -149,7 +156,7 @@ class GraphPolicyNet(nn.Module):
 
     def forward(self, caps, reqs, adj, assign, t):
         """-> masked logits [B,N+1], value [B], mask [B,N+1], ar [B]"""
-        feats, rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std)
+        feats, rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std, self.glob3)
         N = caps.shape[1]
         x = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
         h_ecu = x[:, 1:1 + N]
