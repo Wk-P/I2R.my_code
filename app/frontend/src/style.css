@@ -330,3 +330,11 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 .queue-head { font-size: 13px; color: var(--text-dim); margin: 6px 0 8px; }
 .queue-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .queue-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fafbfc; }
+
+/* language switch: both options visible, the current one highlighted */
+.lang-switch { display: inline-flex; height: 28px; padding: 2px; border: 1px solid var(--border-strong); border-radius: 999px; background: #fff; }
+.lang-switch button { font: inherit; font-size: 12px; min-width: 40px; padding: 0 10px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--text-dim); cursor: pointer; }
+.lang-switch button:hover:not(.on) { color: var(--text); }
+.lang-switch button.on { background: var(--primary); color: #fff; font-weight: 600; cursor: default; }
+.lang-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }

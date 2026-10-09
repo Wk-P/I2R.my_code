@@ -13,7 +13,6 @@ import VersionDetail from "./pages/VersionDetail.vue";
 import PaperDraft from "./components/PaperDraft.vue";
 import PaperDraftEn from "./components/PaperDraftEn.vue";
 import { langRef as curLang, setLang } from "./i18n.js";
-const toggleLang = () => setLang(curLang.value === "en" ? "zh" : "en");
 
 // Hash routes:
 //   #/                       总览
@@ -119,7 +118,10 @@ const updated = computed(() =>
             CPU 负载 <b>{{ loadPct === null ? "—" : loadPct + "%" }}</b>
           </span>
           <span class="chip chip--plain">更新 {{ updated }}</span>
-          <button class="chip" title="中文 / English" @click="toggleLang">{{ curLang === "en" ? "中文" : "EN" }}</button>
+          <div class="lang-switch" role="group" aria-label="Language / 语言" data-no-i18n>
+            <button type="button" :class="{ on: curLang !== 'en' }" :aria-pressed="curLang !== 'en'" @click="setLang('zh')">中文</button>
+            <button type="button" :class="{ on: curLang === 'en' }" :aria-pressed="curLang === 'en'" @click="setLang('en')">EN</button>
+          </div>
         </div>
       </header>
 

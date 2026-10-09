@@ -107,7 +107,7 @@ export const langRef = ref(lang);       // reactive copy for components that loa
 const orig = new WeakMap();      // text node -> original Chinese
 const done = new WeakMap();      // text node -> what we wrote
 const ATTRS = ["title", "placeholder", "aria-label"];
-const skip = (n) => n.parentElement?.closest?.("article.paper, pre, code, textarea, input");
+const skip = (n) => n.parentElement?.closest?.("article.paper, pre, code, textarea, input, [data-no-i18n]");
 
 function doText(n) {
   if (skip(n)) return;

@@ -110,6 +110,7 @@ def main():
     ap.add_argument("--key", default=ALGO, help="manifest key of the run (v4.4.3: mask_ppo_mlp = MLP control)")
     ap.add_argument("--label", default="v4.3.8 试跑的从零训练 Mask PPO（MLP，种子 1、1M 步，p = 0.6 数据）")
     ap.add_argument("--out", default=str(REPORT))
+    ap.add_argument("--label-en", default=None, help="English model label for the .en.md report (default: built from --key / --manifest)")
     ap.add_argument("--seed", type=int, default=SEED, help="v4.4.5: training seed of the run (selects its test split)")
     a = ap.parse_args()
     SEED = a.seed                                      # set before the Pool forks, so the workers see it
@@ -137,13 +138,30 @@ def main():
 
     pc = lambda v: f"{100 * v:.1f}%"
     f4 = lambda v: f"{v:.4f}"
-    lines = ["# 逐步 regret 分解（用 ILP 测量，不训练）", "",
-             f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/diag_regret.py`；耗时 {(time.time() - t0) / 60:.1f} 分钟。",
-             f"- 模型：{a.label}，在种子 {SEED} 测试集的前 {a.n} 个实例上确定性回放。",
-             "- V*(s_t) = 固定已做的放置、其余由 ILP（Dinkelbach）最优完成时能达到的最终 AR；Regret(s_t, a) = V*(s_t) − V*(执行 a 之后)。"
-             "沿策略自己的轨迹逐步相加，恰好等于该实例的绝对 gap（ILP AR − AR）。",
-             f"- 最优动作 = Regret ≤ {EPS:g} 的合法动作（容差防 ILP 数值误差）。同容量的空 ECU 互换等价，只求一次但各算一个动作。",
-             "- EXIT 实例单独统计：第一次把状态推进到「ILP 已无可行完成」的步号。", ""]
+    zh, en = [], []                                     # v4.4.11: every report in Chinese and English
+
+    def L(z, e=None):                                   # one line in both languages (e = z if identical)
+        zh.append(z)
+        en.append(z if e is None else e)
+
+    label_en = a.label_en or f"model '{a.key}' of {a.manifest if not a.ref else a.ref}, seed {SEED}"
+    L("# 逐步 regret 分解（用 ILP 测量，不训练）", "# Per-step regret decomposition (measured with the ILP, no training)")
+    L("")
+    L(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/diag_regret.py`；耗时 {(time.time() - t0) / 60:.1f} 分钟。",
+      f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/diag_regret.py`; took {(time.time() - t0) / 60:.1f} min.")
+    L(f"- 模型：{a.label}，在种子 {SEED} 测试集的前 {a.n} 个实例上确定性回放。",
+      f"- Model: {label_en}, replayed deterministically on the first {a.n} instances of the seed-{SEED} test split.")
+    L("- V*(s_t) = 固定已做的放置、其余由 ILP（Dinkelbach）最优完成时能达到的最终 AR；Regret(s_t, a) = V*(s_t) − V*(执行 a 之后)。"
+      "沿策略自己的轨迹逐步相加，恰好等于该实例的绝对 gap（ILP AR − AR）。",
+      "- V*(s_t) = the final AR reachable when the placements made so far are fixed and the rest is completed optimally by the ILP "
+      "(Dinkelbach); Regret(s_t, a) = V*(s_t) − V*(after a). Summed along the policy's own trajectory it equals the instance's "
+      "absolute gap (ILP AR − AR).")
+    L(f"- 最优动作 = Regret ≤ {EPS:g} 的合法动作（容差防 ILP 数值误差）。同容量的空 ECU 互换等价，只求一次但各算一个动作。",
+      f"- Optimal action = a legal action with Regret ≤ {EPS:g} (tolerance against ILP numerical error). Empty ECUs of equal "
+      "capacity are interchangeable: solved once, but each counts as an action.")
+    L("- EXIT 实例单独统计：第一次把状态推进到「ILP 已无可行完成」的步号。",
+      "- EXIT instances are reported separately: the first step after which the ILP has no feasible completion.")
+    L("")
     summary = {}
     for s in SCENARIOS:
         ok, ex = [], []
@@ -180,47 +198,74 @@ def main():
                       "regret_t": [float(np.mean([r["regs"][t] for r in ok if len(r["regs"]) > t])) for t in range(M)],
                       "regret_share_t": [sum(r["regs"][t] for r in ok if len(r["regs"]) > t) / tot if tot else 0.0 for t in range(M)],
                       "n_ok": len(ok), "n_ex": len(ex)}
-        lines += [f"## {s.upper()}（M = {M}）", "",
-                  f"完成的实例 {len(ok)} 个，EXIT / 中途无可行完成 {len(ex)} 个。逐步 regret 之和与绝对 gap 的最大偏差 {tele:.1e}（核对 telescoping）。", "",
-                  "| 指标 | 值 |", "|---|---|",
-                  f"| 平均绝对 gap（= 平均 Σ regret） | {f4(np.mean([r['gap'] for r in ok]))} |",
-                  f"| PPO 每步 regret：均值 / 中位数 | {f4(np.mean(all_regs))} / {f4(np.median(all_regs))} |",
-                  f"| PPO 选中最优动作的比例 | {pc(np.mean([p for r in ok for p in r['picked']]))} |",
-                  f"| 每步合法动作数 / 其中最优动作数（均值） | {np.mean([x for r in ok for x in r['nleg']]):.2f} / {np.mean([x for r in ok for x in r['nopt']]):.2f} |",
-                  f"| 最优动作唯一的步所占比例 | {pc(np.mean([x == 1 for r in ok for x in r['nopt']]))} |",
-                  f"| 每个实例有 regret 的步数（均值） | {np.mean([sum(x > EPS for x in r['regs']) for r in ok]):.2f} |"]
+        L(f"## {s.upper()}（M = {M}）", f"## {s.upper()} (M = {M})")
+        L("")
+        L(f"完成的实例 {len(ok)} 个，EXIT / 中途无可行完成 {len(ex)} 个。逐步 regret 之和与绝对 gap 的最大偏差 {tele:.1e}（核对 telescoping）。",
+          f"{len(ok)} completed instances, {len(ex)} with EXIT / no feasible completion on the way. Max deviation between the sum of "
+          f"per-step regrets and the absolute gap: {tele:.1e} (telescoping check).")
+        L("")
+        L("| 指标 | 值 |", "| Metric | Value |")
+        L("|---|---|")
+        L(f"| 平均绝对 gap（= 平均 Σ regret） | {f4(np.mean([r['gap'] for r in ok]))} |",
+          f"| Mean absolute gap (= mean Σ regret) | {f4(np.mean([r['gap'] for r in ok]))} |")
+        L(f"| PPO 每步 regret：均值 / 中位数 | {f4(np.mean(all_regs))} / {f4(np.median(all_regs))} |",
+          f"| PPO regret per step: mean / median | {f4(np.mean(all_regs))} / {f4(np.median(all_regs))} |")
+        L(f"| PPO 选中最优动作的比例 | {pc(np.mean([p for r in ok for p in r['picked']]))} |",
+          f"| Share of steps where PPO picks an optimal action | {pc(np.mean([p for r in ok for p in r['picked']]))} |")
+        nl, no = np.mean([x for r in ok for x in r['nleg']]), np.mean([x for r in ok for x in r['nopt']])
+        L(f"| 每步合法动作数 / 其中最优动作数（均值） | {nl:.2f} / {no:.2f} |",
+          f"| Legal actions / optimal actions per step (mean) | {nl:.2f} / {no:.2f} |")
+        L(f"| 最优动作唯一的步所占比例 | {pc(np.mean([x == 1 for r in ok for x in r['nopt']]))} |",
+          f"| Share of steps with a unique optimal action | {pc(np.mean([x == 1 for r in ok for x in r['nopt']]))} |")
+        nr = np.mean([sum(x > EPS for x in r['regs']) for r in ok])
+        L(f"| 每个实例有 regret 的步数（均值） | {nr:.2f} |", f"| Steps with regret per instance (mean) | {nr:.2f} |")
         thirds = [(0, M // 3), (M // 3, 2 * M // 3), (2 * M // 3, M)]
         for lo, hi in thirds:
             part = sum(sum(r["regs"][lo:hi]) for r in ok)
-            lines.append(f"| 第 {lo + 1}–{hi} 步贡献的 gap 占比 | {pc(part / tot) if tot else '—'} |")
+            v = pc(part / tot) if tot else "—"
+            L(f"| 第 {lo + 1}–{hi} 步贡献的 gap 占比 | {v} |", f"| Share of the gap from steps {lo + 1}–{hi} | {v} |")
         # regret steps vs later forced opens
         before = [x for r in ok for t, x in enumerate(r["regs"]) if x > EPS and any(f > t for f in r["forced"])]
         at_f = [x for r in ok for t, x in enumerate(r["regs"]) if x > EPS and t in r["forced"]]
         lag = [min(f for f in r["forced"] if f > t) - t for r in ok for t, x in enumerate(r["regs"])
                if x > EPS and any(f > t for f in r["forced"])]
         rsum = sum(x for r in ok for x in r["regs"] if x > EPS)
-        lines += [f"| 有 regret 的步之后还会出现被逼开启：regret 占比 | {pc(sum(before) / rsum) if rsum else '—'} |",
-                  f"| 有 regret 的步本身就是被逼开启：regret 占比 | {pc(sum(at_f) / rsum) if rsum else '—'} |",
-                  f"| 有 regret 的步到下一次被逼开启的步数（均值） | {np.mean(lag):.2f} |" if lag else "| 有 regret 的步到下一次被逼开启的步数 | — |"]
+        vb, va_ = (pc(sum(before) / rsum), pc(sum(at_f) / rsum)) if rsum else ("—", "—")
+        L(f"| 有 regret 的步之后还会出现被逼开启：regret 占比 | {vb} |",
+          f"| Regret at steps followed by a forced opening: share of regret | {vb} |")
+        L(f"| 有 regret 的步本身就是被逼开启：regret 占比 | {va_} |",
+          f"| Regret at steps that are themselves forced openings: share of regret | {va_} |")
+        vl = f"{np.mean(lag):.2f}" if lag else "—"
+        L(f"| 有 regret 的步到下一次被逼开启的步数（均值） | {vl} |",
+          f"| Steps from a regret step to the next forced opening (mean) | {vl} |")
         if ex:
             it = [r["inf_t"] for r in ex if r["inf_t"] is not None]
-            lines.append(f"| EXIT 实例：第一次无可行完成的步号（1 起，均值 / 中位数） | "
-                         f"{np.mean(it) + 1:.2f} / {np.median(it) + 1:.0f}（{len(it)} 个） |" if it else "| EXIT 实例 | — |")
-        lines += ["", "按步号：", "", "| 步 | 平均 regret | gap 占比 | 有 regret 的实例比例 | 合法动作数 | 最优动作数 | PPO 选中最优 |",
-                  "|---|---|---|---|---|---|---|"]
+            if it:
+                L(f"| EXIT 实例：第一次无可行完成的步号（1 起，均值 / 中位数） | {np.mean(it) + 1:.2f} / {np.median(it) + 1:.0f}（{len(it)} 个） |",
+                  f"| EXIT instances: first step with no feasible completion (1-based, mean / median) | "
+                  f"{np.mean(it) + 1:.2f} / {np.median(it) + 1:.0f} ({len(it)} instances) |")
+            else:
+                L("| EXIT 实例 | — |", "| EXIT instances | — |")
+        L("")
+        L("按步号：", "By step:")
+        L("")
+        L("| 步 | 平均 regret | gap 占比 | 有 regret 的实例比例 | 合法动作数 | 最优动作数 | PPO 选中最优 |",
+          "| Step | Mean regret | Share of gap | Instances with regret | Legal actions | Optimal actions | PPO picks optimal |")
+        L("|---|---|---|---|---|---|---|")
         for t in range(M):
             rs = [r["regs"][t] for r in ok if len(r["regs"]) > t]
             if not rs:
                 continue
-            lines.append(f"| {t + 1} | {f4(np.mean(rs))} | {pc(sum(rs) / tot) if tot else '—'} | {pc(np.mean([x > EPS for x in rs]))} | "
-                         f"{np.mean([r['nleg'][t] for r in ok]):.2f} | {np.mean([r['nopt'][t] for r in ok]):.2f} | "
-                         f"{pc(np.mean([r['picked'][t] for r in ok]))} |")
-        lines.append("")
+            L(f"| {t + 1} | {f4(np.mean(rs))} | {pc(sum(rs) / tot) if tot else '—'} | {pc(np.mean([x > EPS for x in rs]))} | "
+              f"{np.mean([r['nleg'][t] for r in ok]):.2f} | {np.mean([r['nopt'][t] for r in ok]):.2f} | "
+              f"{pc(np.mean([r['picked'][t] for r in ok]))} |")
+        L("")
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines))
+    out.write_text("\n".join(zh))
+    out.with_suffix(".en.md").write_text("\n".join(en))
     out.with_suffix(".json").write_text(json.dumps(summary))
-    print(f"report -> {out}")
+    print(f"report -> {out} (+ .en.md)")
 
 
 if __name__ == "__main__":
