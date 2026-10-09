@@ -20,7 +20,8 @@ Relations (added to the attention logits through a learned weight per relation, 
   the instance -- recovered exactly from any s_t by clearing the assignment and setting t = 0 -- and
   forms a service x ECU plan matrix P_ij = <W_s h_i(s_0), W_e h_j(s_0)> / sqrt(d), fixed for the whole
   episode. ECU logits become P[i_t, j] + (the usual per-step score). W_e starts at zero, so P = 0 and the
-  policy equals the plain one at initialisation.
+  policy equals the plain one at initialisation. plan_decay (v4.4.13): the plan term is weighted by
+  beta_t = (M - t) / M (1 at the first placement, 1/M at the last), so the per-step score takes over.
 """
 from __future__ import annotations
 
@@ -129,9 +130,10 @@ class PlanEncoder(nn.Module):
 
 class GraphPolicyNet(nn.Module):
     def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, pair_head: bool = False,
-                 plan: bool = False):
+                 plan: bool = False, plan_decay: bool = False):
         super().__init__()
-        self.glob_std, self.pair_head, self.plan = glob_std, pair_head, plan
+        self.glob_std, self.pair_head, self.plan, self.plan_decay = glob_std, pair_head, plan, plan_decay
+        assert plan or not plan_decay, "plan_decay needs plan"
         if plan:                                        # v4.4.12: global plan matrix from s_0
             self.plan_enc = PlanEncoder(d, heads, layers, glob_std)
         self.inp = nn.ModuleList([nn.Linear(5 if glob_std else 4, d), nn.Linear(6, d), nn.Linear(5, d)])
@@ -162,7 +164,10 @@ class GraphPolicyNet(nn.Module):
         if self.plan:                                   # plan row of the current service: P[i_t, :]
             M = reqs.shape[1]
             P = self.plan_enc(caps, reqs, adj)
-            ecu_logits = ecu_logits + P[torch.arange(P.shape[0], device=P.device), t.clamp(max=M - 1)]
+            row = P[torch.arange(P.shape[0], device=P.device), t.clamp(max=M - 1)]
+            if self.plan_decay:                         # v4.4.13: beta_t = (M - t) / M
+                row = row * ((M - t.clamp(max=M - 1)).float() / M).unsqueeze(1)
+            ecu_logits = ecu_logits + row
         logits = torch.cat([ecu_logits, self.exit_head(x[:, 0])], 1)
         value = self.value_head(torch.cat([x[:, 0], x[:, 1:].mean(1)], -1)).squeeze(-1)
         return logits.masked_fill(~mask, -1e9), value, mask, ar
