@@ -185,6 +185,23 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
     return Cb()
 
 
+def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str):
+    """v4.4.15: save the model the first time num_timesteps reaches each of `steps`."""
+    from stable_baselines3.common.callbacks import BaseCallback
+
+    class Ckpt(BaseCallback):
+        def __init__(self):
+            super().__init__()
+            self.todo = list(steps)
+
+        def _on_step(self) -> bool:
+            while self.todo and self.num_timesteps >= self.todo[0]:
+                self.model.save(str(run_dir / f"ckpt_{self.todo.pop(0)}_{exp_id}"))
+            return True
+
+    return Ckpt()
+
+
 # ── evaluation ──────────────────────────────────────────────────────────────
 def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base",
              full_episode: bool = False, exit_action: bool = False, action_mode: str = "ecu",
@@ -274,6 +291,8 @@ def main():
                     help="v4.4.10: --net graph only; score ECU j by MLP([h_svc, h_ecu, h_svc*h_ecu, h_glob])")
     ap.add_argument("--plan", action="store_true",
                     help="v4.4.12: --net graph only; global plan matrix P = F(s_0), ECU logits P[i_t, j] + per-step score")
+    ap.add_argument("--checkpoints", default=None,
+                    help="v4.4.15: comma-separated step counts at which to save ckpt_<step>_<exp_id>.zip (learning curve)")
     ap.add_argument("--train-pool", default=None,
                     help="v4.4.14: train on this ILP-verified instance pool (JSON list, e.g. results/sup_diag/<scen>.json, "
                          "{scen} is substituted) instead of the 1600-instance split; the test split is unchanged")
@@ -341,17 +360,21 @@ def main():
                         "bc_only_ar": round(float(np.mean([e["ar"] for e in ok_bc])), 6) if ok_bc else None,
                         "bc_only_ilp_ar": round(float(np.mean([e["ar_star"] for e in ok_bc])), 6) if ok_bc else None})
         print(f"  [bc] {bc_info}", flush=True)
-    cb = make_callback(mech, a.steps, outdir, exp_id)
+    cb = main_cb = make_callback(mech, a.steps, outdir, exp_id)
+    extra = []
     if a.grad_diag:                                     # v4.4.8: actor / critic gradient conflict on the encoder
         assert a.net == "graph" and not a.separate_critic, "--grad-diag: shared graph encoder only"
-        from stable_baselines3.common.callbacks import CallbackList
         from paper_rl.grad_diag import GradDiagCallback
-        cb = CallbackList([cb, GradDiagCallback(run_dir / "grad_cos.csv")])
+        extra.append(GradDiagCallback(run_dir / "grad_cos.csv"))
+    if a.checkpoints:                                   # v4.4.15: save the model at these step counts
+        extra.append(checkpoint_callback(sorted(int(x) for x in a.checkpoints.split(",")), run_dir, exp_id))
+    if extra:
+        from stable_baselines3.common.callbacks import CallbackList
+        cb = CallbackList([main_cb, *extra])
     t0 = time.time()
     model.learn(total_timesteps=a.steps, callback=cb)
     train_s = time.time() - t0
-    if a.grad_diag:
-        cb = cb.callbacks[0]
+    cb = main_cb
     lam = cb.lam if mech == "lagrange" else 0.0
     model.save(str(run_dir / f"model_{exp_id}_v{VERSION}-{a.reward}"))
 
@@ -374,7 +397,7 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
-        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
+        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "checkpoints": a.checkpoints, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
         **({"gae_lambda": C.PPO_GAE_LAMBDA if a.gae_lambda is None else a.gae_lambda,
             "lr": C.PPO_LR if a.lr is None else a.lr,
             "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef} if learner == "ppo" else {}),
