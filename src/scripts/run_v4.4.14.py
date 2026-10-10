@@ -250,10 +250,13 @@ def main():
         if ret != 0:
             failed.append(label)
     print(f"=== done {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(failed)} failed ===", flush=True)
+    from shared.report_mail import send_failure, send_report       # email (.env.email); never fails the run
     if failed:
         print("FAILED:", failed, flush=True)
+        send_failure(f"v{VERSION}", failed, log_dir=LOG_DIR.relative_to(ROOT), manifest=MANIFEST.relative_to(ROOT))
         return
     write_report(exp_ids)
+    send_report(f"v{VERSION}", REPORT, manifest=MANIFEST.relative_to(ROOT), driver_log=f"logs/run_v{VERSION}_driver.log")
 
 
 if __name__ == "__main__":

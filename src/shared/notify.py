@@ -57,7 +57,9 @@ def _config() -> dict[str, str | None]:
     return {key: os.environ.get(key, file_values.get(key)) for key in _KEYS}
 
 
-def send_notification(subject: str, body: str) -> bool:
+def send_notification(subject: str, body: str, html: str | None = None,
+                      attachments: list[str | Path] | None = None) -> bool:
+    """Plain-text body; optional HTML alternative and file attachments (text files as UTF-8)."""
     cfg = _config()
     to_addr   = cfg["NOTIFY_EMAIL_TO"]
     smtp_user = cfg["NOTIFY_SMTP_USER"]
@@ -76,6 +78,13 @@ def send_notification(subject: str, body: str) -> bool:
     msg["From"]    = smtp_user
     msg["To"]      = to_addr
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
+    for f in attachments or []:
+        f = Path(f)
+        if f.is_file():
+            msg.add_attachment(f.read_bytes(), maintype="text", subtype="markdown" if f.suffix == ".md" else "plain",
+                               filename=f.name)
 
     try:
         context = ssl.create_default_context()
