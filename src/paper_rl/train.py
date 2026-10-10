@@ -131,7 +131,7 @@ def scale_reward(env, scale: float):
 
 
 # ── training callback (logging + Lagrangian dual ascent) ────────────────────
-def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
+def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start: int = 0):
     from stable_baselines3.common.callbacks import BaseCallback
     from shared.paths import write_progress
 
@@ -143,7 +143,7 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
             self._viol = deque(maxlen=C.LAMBDA_UPDATE_WINDOW)
             self._n_ep = 0
             self._since = 0
-            self._next = C.PROGRESS_LOG_EVERY_STEPS
+            self._next = start + C.PROGRESS_LOG_EVERY_STEPS   # v4.4.16: a resumed run starts at `start`
             self._t0 = time.time()
 
         def _on_step(self) -> bool:
@@ -163,7 +163,7 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str):
                 sr = np.mean([r[3] for r in last]) if last else 0.0
                 lam = f" | lambda={self.lam:.3f}" if mech == "lagrange" else ""
                 print(f"  [train] step={self.num_timesteps:,}/{total_steps:,} ({pct:5.1f}%) | "
-                      f"eps={len(self.rows)} | success(last500)={sr:.3f} | steps/s={self.num_timesteps / el:,.0f}{lam}",
+                      f"eps={len(self.rows)} | success(last500)={sr:.3f} | steps/s={(self.num_timesteps - start) / el:,.0f}{lam}",
                       flush=True)
                 write_progress(outdir, step=self.num_timesteps, total_steps=total_steps, pct=round(pct, 1),
                                episodes=len(self.rows), exp_id=exp_id)
@@ -291,6 +291,8 @@ def main():
                     help="v4.4.10: --net graph only; score ECU j by MLP([h_svc, h_ecu, h_svc*h_ecu, h_glob])")
     ap.add_argument("--plan", action="store_true",
                     help="v4.4.12: --net graph only; global plan matrix P = F(s_0), ECU logits P[i_t, j] + per-step score")
+    ap.add_argument("--resume", default=None,
+                    help="v4.4.16: path of a saved model to continue (weights, optimiser state, step count); --steps = steps to add")
     ap.add_argument("--checkpoints", default=None,
                     help="v4.4.15: comma-separated step counts at which to save ckpt_<step>_<exp_id>.zip (learning curve)")
     ap.add_argument("--train-pool", default=None,
@@ -340,7 +342,14 @@ def main():
                                              action_mode=a.action, order=a.order, order_seed=a.order_seed)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
     gamma = a.gamma if a.gamma is not None else (C.PPO_GAMMA if learner == "ppo" else C.DQN_GAMMA)
-    model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay, a.glob3)
+    resumed = None
+    if a.resume:                                        # v4.4.16: continue a saved run (weights, optimiser, step count)
+        src = Path(a.resume) if Path(a.resume).is_absolute() else ROOT / a.resume
+        model = model_class(learner, mech).load(str(src), env=venv, device=a.device)
+        resumed = {"from": str(src.relative_to(ROOT)) if src.is_relative_to(ROOT) else str(src), "at_step": int(model.num_timesteps)}
+        print(f"  [resume] {resumed['from']} at step {resumed['at_step']:,}; +{a.steps:,} steps", flush=True)
+    else:
+        model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay, a.glob3)
     bc_info = None
     if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
         assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
@@ -360,7 +369,8 @@ def main():
                         "bc_only_ar": round(float(np.mean([e["ar"] for e in ok_bc])), 6) if ok_bc else None,
                         "bc_only_ilp_ar": round(float(np.mean([e["ar_star"] for e in ok_bc])), 6) if ok_bc else None})
         print(f"  [bc] {bc_info}", flush=True)
-    cb = main_cb = make_callback(mech, a.steps, outdir, exp_id)
+    start = resumed["at_step"] if resumed else 0
+    cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start)
     extra = []
     if a.grad_diag:                                     # v4.4.8: actor / critic gradient conflict on the encoder
         assert a.net == "graph" and not a.separate_critic, "--grad-diag: shared graph encoder only"
@@ -372,7 +382,7 @@ def main():
         from stable_baselines3.common.callbacks import CallbackList
         cb = CallbackList([main_cb, *extra])
     t0 = time.time()
-    model.learn(total_timesteps=a.steps, callback=cb)
+    model.learn(total_timesteps=a.steps, callback=cb, reset_num_timesteps=not resumed)
     train_s = time.time() - t0
     cb = main_cb
     lam = cb.lam if mech == "lagrange" else 0.0
@@ -397,7 +407,7 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
-        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "checkpoints": a.checkpoints, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
+        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "checkpoints": a.checkpoints, "resumed": resumed, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
         **({"gae_lambda": C.PPO_GAE_LAMBDA if a.gae_lambda is None else a.gae_lambda,
             "lr": C.PPO_LR if a.lr is None else a.lr,
             "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef} if learner == "ppo" else {}),
@@ -414,7 +424,7 @@ def main():
             "dead_end_rate": round(float(np.mean([e["dead_end"] for e in ev])), 6),
             "exit_rate": round(float(np.mean([e["exited"] for e in ev])), 6),
         },
-        "training": {"total_steps": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
+        "training": {"total_steps": start + a.steps, "steps_this_run": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,
                      **({"final_lambda": round(lam, 6)} if mech == "lagrange" else {})},
     }
