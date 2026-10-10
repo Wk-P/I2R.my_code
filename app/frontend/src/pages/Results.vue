@@ -211,7 +211,7 @@ function drill(row, s) {
 
 <template>
   <div class="page-head">
-    <h1>实验结果</h1>
+    <h1>运行明细</h1>
     <div class="page-sub">层级：版本 → 批次 → 场景 → 算法 → 单次运行 · 先选范围（版本或批次），再按场景、算法筛选，可切换明细 / 汇总对比</div>
   </div>
 
@@ -325,7 +325,7 @@ function drill(row, s) {
             <button v-for="(m, k) in METRICS" :key="k" :class="{ on: f.metric === k }" @click="f.metric = k">{{ m.label }}</button>
           </div>
         </div>
-        <table class="grid pivot">
+        <div class="table-scroll"><table class="grid pivot">
           <thead>
             <tr><th>模型</th><th>约束处理</th><th v-if="pivot.hasVariant">变体</th><th v-for="s in pivot.scens" :key="s" class="num">{{ s.toUpperCase() }}</th></tr>
           </thead>
@@ -343,7 +343,7 @@ function drill(row, s) {
               </td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
         <div class="note">单元格为筛选范围内所有运行的均值 ± 样本标准差（n 为运行数），绿色为该列最优。点击单元格进入对应明细。AR = average resource utilization（优化目标），AR gap = ILP AR − AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例。跨批次汇总时请先在左侧限定批次，避免混入不同代码版本。</div>
       </section>
     </div>

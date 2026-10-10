@@ -423,6 +423,133 @@ def get_tags():
     return tags
 
 
+# ── experiment versions: reports under paper_contents/v*/ (v4.4.14 panel redesign) ──
+PAPER_DIR = PROJECT_ROOT / "paper_contents"
+REPORT_NAMES = ("report", "seeds_report", "pilot_report")          # primary report preference
+_GAP_HEAD = ("测试集相对 gap", "相对 gap", "Test relative gap", "Relative gap")
+_SCENS = ("LT", "EQ", "GT")
+
+
+def _vkey(v: str):
+    return tuple(int(x) for x in re.findall(r"\d+", v))
+
+
+def _pct(cell: str):
+    m = re.match(r"\s*(-?[\d.]+)%", cell)
+    return float(m.group(1)) if m else None
+
+
+def _parse_report(text: str) -> dict:
+    """Title, the "single change" sentence, and the relative test gap per (scenario, model) from the
+    first table that has one (summary table, or one table per "## LT/EQ/GT" section); per-seed tables skipped."""
+    lines = text.splitlines()
+    title = next((l[2:].strip() for l in lines if l.startswith("# ")), "")
+    change = ""
+    for l in lines:
+        m = re.match(r"^- (唯一改动[^：:]*|两个单变量实验[^：:]*|Single change[^:]*)[：:]\s*(.*)", l)
+        if m:
+            change = re.split(r"(?<=[。.])\s", m.group(2), 1)[0]
+            break
+    gaps, models, section, i = {}, [], None, 0
+    while i < len(lines):
+        l = lines[i]
+        m = re.match(r"^##\s+(LT|EQ|GT)\b", l)
+        if m:
+            section = m.group(1)
+        if l.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[-| :]+\|?$", lines[i + 1].strip()):
+            head = [c.strip() for c in l.strip().strip("|").split("|")]
+            rows = []
+            j = i + 2
+            while j < len(lines) and lines[j].startswith("|"):
+                rows.append([c.strip() for c in lines[j].strip().strip("|").split("|")])
+                j += 1
+            gcol = next((head.index(h) for h in _GAP_HEAD if h in head), None)
+            mcol = next((head.index(h) for h in ("模型", "Model") if h in head), None)
+            scol = next((head.index(h) for h in ("场景", "Scenario") if h in head), None)
+            skip = any(h in head for h in ("种子", "Seed"))
+            if gcol is not None and mcol is not None and not skip:
+                for r in rows:
+                    if len(r) <= max(gcol, mcol):
+                        continue
+                    sc = r[scol] if scol is not None else section
+                    v = _pct(r[gcol])
+                    if sc in _SCENS and v is not None and (sc, r[mcol]) not in gaps:
+                        gaps[(sc, r[mcol])] = v
+                        if r[mcol] not in models:
+                            models.append(r[mcol])
+            i = j
+            continue
+        i += 1
+    out = {"title": title, "change": change, "models": models,
+           "gaps": {mdl: {sc: gaps.get((sc, mdl)) for sc in _SCENS} for mdl in models}}
+    refs = [m for m in models if re.search(r"参照|reference", m, re.I)]
+    variants = [m for m in models[1:] if m not in refs]
+    out["refs"], out["variants"] = refs, variants
+    if models:
+        new, base = (variants[-1] if variants else models[-1]), models[0]
+        g = out["gaps"][new]
+        out["new_model"], out["base_model"] = new, base
+        if all(g[s] is not None for s in _SCENS):
+            out["new_avg"] = round(sum(g.values()) / 3, 2)
+        b = out["gaps"][base]
+        if base != new and all(b[s] is not None for s in _SCENS):
+            out["base_avg"] = round(sum(b.values()) / 3, 2)
+    return out
+
+
+def _version_reports(vdir: Path) -> list[Path]:
+    files = [vdir / f"{n}.md" for n in REPORT_NAMES if (vdir / f"{n}.md").is_file()]
+    return files
+
+
+@app.get("/api/reports")
+def list_reports():
+    """One entry per paper_contents/v*/ directory that has a report: version, title, change, test gaps
+    of the new variant (last model in the summary) and of the baseline (first model), report files."""
+    out = []
+    for d in PAPER_DIR.glob("v*"):
+        if not d.is_dir() or not re.fullmatch(r"v[\d.]+", d.name):
+            continue
+        files = _version_reports(d)
+        if not files:
+            continue
+        primary = files[0]
+        info = _parse_report(primary.read_text(encoding="utf-8"))
+        en = primary.with_name(primary.stem + ".en.md")
+        info_en = _parse_report(en.read_text(encoding="utf-8")) if en.is_file() else None
+        out.append({"version": d.name, "report": primary.name, "has_en": en.is_file(),
+                    "reports": [f.name for f in files], "updated": primary.stat().st_mtime, **info,
+                    "en": {k: info_en.get(k) for k in ("title", "change", "new_model", "base_model", "variants", "refs")} if info_en else None})
+    out.sort(key=lambda r: _vkey(r["version"]), reverse=True)
+    return {"reports": out}
+
+
+@app.get("/api/reports/{version}")
+def get_report(version: str, file: str | None = None, lang: str = "zh"):
+    """Markdown of one report of a version (default: the primary one); lang=en serves <name>.en.md when present.
+    Also lists every other markdown file of the version (diagnostics) for the detail page."""
+    d = PAPER_DIR / version
+    if not re.fullmatch(r"v[\d.]+", version) or not d.is_dir():
+        raise HTTPException(404)
+    files = _version_reports(d)
+    if file:
+        if "/" in file or not (d / file).is_file():
+            raise HTTPException(404)
+        path = d / file
+    elif files:
+        path = files[0]
+    else:
+        raise HTTPException(404)
+    shown = path
+    if lang == "en" and not path.stem.endswith(".en"):
+        en = path.with_name(path.stem + ".en.md")
+        if en.is_file():
+            shown = en
+    others = sorted(f.name for f in d.glob("*.md") if not f.name.endswith(".en.md"))
+    return {"version": version, "file": path.name, "shown": shown.name, "lang_fallback": lang == "en" and shown == path,
+            "content": shown.read_text(encoding="utf-8"), "files": others, "parsed": _parse_report(shown.read_text(encoding="utf-8"))}
+
+
 @app.get("/api/tags/{tag}/doc")
 def get_tag_doc(tag: str, lang: str = "zh"):
     path = _tag_doc_path(tag)

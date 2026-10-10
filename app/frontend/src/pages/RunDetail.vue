@@ -37,7 +37,7 @@ const img = (file) => resultFile(props.branch, props.scenario, props.algo, props
 
 <template>
   <div class="crumbs">
-    <a href="#/results">实验结果</a> /
+    <a href="#/results">运行明细</a> /
     <a :href="`#/results?branch=${encodeURIComponent(branch)}`">{{ branch }}</a> /
     <template v-if="row?.version"><a :href="versionLink">{{ row.version }}</a> / </template>
     <template v-if="row?.batch"><a :href="`#/batches/${row.batch}`">{{ row.batch }}</a> / </template>
@@ -68,18 +68,18 @@ const img = (file) => resultFile(props.branch, props.scenario, props.algo, props
     <div class="two-col two-col--wide">
       <section class="panel">
         <div class="panel-head"><h2>基本信息</h2></div>
-        <table class="kv">
+        <div class="table-scroll"><table class="kv">
           <tr><th>分支</th><td>{{ branch }}</td></tr>
           <tr><th>版本 / 批次</th><td>{{ row.version ?? "—" }} / {{ row.batch ?? "—" }}</td></tr>
           <tr><th>训练 / 测试实例数</th><td>{{ row.train_count ?? "—" }} / {{ row.test_count ?? "—" }}</td></tr>
           <tr><th>训练回合数</th><td>{{ row.train_episodes?.toLocaleString() ?? "—" }}</td></tr>
           <tr><th>训练末 50 回合 AR</th><td>{{ fmt(row.train_ar_last50) }}</td></tr>
           <tr><th>结果目录</th><td class="mono small">results/{{ branch }}/{{ scenario }}/{{ algo }}/{{ run }}/</td></tr>
-        </table>
+        </table></div>
       </section>
       <section v-if="siblings.length > 1" class="panel">
         <div class="panel-head"><h2>同组其他种子</h2></div>
-        <table class="grid">
+        <div class="table-scroll"><table class="grid">
           <thead><tr><th>种子</th><th>exp_id</th><th class="num" title="success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例">success_rate</th><th class="num" title="AR = average resource utilization（平均资源利用率，优化目标）">AR</th></tr></thead>
           <tbody>
             <tr v-for="s in siblings" :key="s.run" :class="{ current: s.run === run }">
@@ -89,7 +89,7 @@ const img = (file) => resultFile(props.branch, props.scenario, props.algo, props
               <td class="num">{{ fmt(s.test_ar_mean) }}</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </section>
     </div>
 

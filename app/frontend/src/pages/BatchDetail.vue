@@ -71,7 +71,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
 </script>
 
 <template>
-  <div class="crumbs"><a href="#/batches">批次管理</a> / {{ name }}</div>
+  <div class="crumbs"><a href="#/versions">实验版本</a> / <a v-if="data?.version" :href="`#/versions/v${String(data.version).replace(/^v/, '')}`">v{{ String(data.version).replace(/^v/, "") }}</a><template v-if="data?.version"> / </template>{{ name }}</div>
   <div v-if="missing" class="empty">找不到批次 {{ name }}</div>
   <div v-else-if="!data" class="empty">加载中…</div>
   <template v-else>
@@ -81,7 +81,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <div class="page-sub" v-if="!isEval">版本 {{ data.version ?? "—" }} · 分支 {{ data.branch }} · {{ steps(data.steps) }} 步 · 开始于 {{ shortTime(data.started_at) }}</div>
         <div class="page-sub" v-else>评估批次（不训练）· 版本 {{ data.version ?? "—" }} · {{ data.workers ?? "—" }} 个并行进程 · 开始于 {{ shortTime(data.started_at) }}</div>
       </div>
-      <a v-if="!isEval" class="btn" :href="resultsLink">在实验结果中对比 →</a>
+      <a v-if="!isEval" class="btn" :href="resultsLink">在运行明细中对比 →</a>
     </div>
 
     <div class="kpis">
@@ -108,7 +108,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
     <section v-if="isEval" class="panel">
       <p v-if="data.description" class="eval-desc">{{ data.description }}</p>
       <p class="dim small">报告：<code>{{ data.report ?? "—" }}</code>（全部完成后生成）。指标在整个评估结束、写出原始结果后显示；运行中只显示各任务的状态与单次耗时。</p>
-      <table class="grid">
+      <div class="table-scroll"><table class="grid">
         <thead>
           <tr>
             <th>场景</th><th>方法</th><th>种子</th>
@@ -158,7 +158,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             </tr>
           </template>
         </tbody>
-      </table>
+      </table></div>
       <div class="legend">
         <span><i class="seed seed--done"></i>已完成</span>
         <span><i class="seed seed--running"></i>运行中</span>
@@ -169,7 +169,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
     </section>
 
     <section v-else class="panel">
-      <table class="grid">
+      <div class="table-scroll"><table class="grid">
         <thead>
           <tr>
             <th>场景</th><th>模型</th><th>约束处理</th><th v-if="hasVariant" title="奖励模式（早期试跑）或策略网络（v4.4.3）">变体</th><th v-if="hasNet">网络 / 设备</th><th>种子</th>
@@ -204,7 +204,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <td class="num" :class="{ warn: r.test_exit_rate_mean }">{{ pct(r.test_exit_rate_mean) }}</td>
           </tr>
         </tbody>
-      </table>
+      </table></div>
       <div class="legend">
         <span><i class="seed seed--done"></i>已完成（可点击查看）</span>
         <span><i class="seed seed--running"></i>运行中（数字为训练进度 %）</span>

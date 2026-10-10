@@ -82,6 +82,15 @@ const D = {
     "sum of the CPU of every process with this command, per core: 100% = one full core (56 cores in total)",
   "CPU（单核合计）": "CPU (per-core sum)", "生成报告（训练结束后）": "Report (after training)", "报告诊断占用 CPU": "report diagnostics CPU",
   "进程数": "processes", "阶段": "stage",
+  // v4.4.14 panel redesign
+  "每个版本一行：改了什么、新变体在三个场景的测试集相对 gap 和相对基线的变化；点击查看完整报告。目标：三场景 gap 都降到 5% 以下。":
+    "One row per version: what changed, the new variant's test relative gap in the three scenarios and the change against its baseline; click for the full report. Target: all three gaps below 5%.",
+  "个 tag，摘要来自 version/VERSION.md": " tags, summaries from version/VERSION.md", "全部 git 版本": "All git versions",
+  "搜索版本号或改动…": "search version or change…", "训练或生成报告中 · 实验版本 →": "training or building the report · versions →",
+  "测试集相对 gap 走势": "Test relative gap by version", "在运行明细中对比 →": "compare in Run details →",
+  "最近完成的运行": "Recently finished runs", "进行中的批次": "Active batches", "该版本的批次": "Batches of this version",
+  "全部版本 →": "all versions →", "运行明细 →": "run details →", "实验版本": "Versions", "运行明细": "Run details",
+  "全部批次": "All batches", "三场景平均": "3-scenario mean", "相对基线": "vs baseline", "改动": "change", "任务": "jobs",
   "结构感知网络": "structure-aware network", "AR gap · 相对": "AR gap · relative", "相对 gap": "relative gap", "EXIT 率": "EXIT rate",
   "网络 / 设备": "network / device", "网络 · 设备": "network · device", "利用率": "utilization", "显存": "GPU memory",
   "步/秒": "steps/s", "变体": "variant", "网络": "network", "设备": "device",

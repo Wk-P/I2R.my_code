@@ -343,3 +343,18 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 .bar-fill--report { background: var(--warn); }
 .report-note { margin-top: 3px; color: var(--warn); white-space: nowrap; }
 .kpi--wide { grid-column: span 2; }
+
+/* v4.4.14: nothing may push the page wider than the viewport -- wide tables scroll inside their panel */
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.two-col > *, .kpis > *, .results-main, .panel { min-width: 0; }
+.prose-md { font-size: 14px; line-height: 1.65; color: var(--text); overflow-wrap: anywhere; }
+.prose-md h2 { font-size: 18px; margin: 18px 0 8px; } .prose-md h3 { font-size: 15px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.prose-md h4 { font-size: 14px; margin: 14px 0 6px; } .prose-md p { margin: 6px 0; } .prose-md ul { padding-left: 20px; margin: 6px 0; }
+.prose-md li { margin: 3px 0; color: var(--text-dim); } .prose-md li b { color: var(--text); }
+.prose-md code { font-family: var(--font-mono); font-size: 12px; background: #f3f5f8; padding: 1px 4px; border-radius: 4px; }
+.prose-md .table-wrap { overflow-x: auto; margin: 8px 0 14px; } .prose-md table.grid { width: auto; }
+.delta-good { color: var(--ok); font-weight: 600; } .delta-bad { color: var(--bad); font-weight: 600; } .delta-flat { color: var(--text-dim); }
+.change-cell { white-space: normal !important; min-width: 260px; max-width: 520px; color: var(--text-dim); line-height: 1.45; }
+.gap-cell { font-variant-numeric: tabular-nums; }
+.target-chip { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-dim); }
+.file-tabs { display: flex; flex-wrap: wrap; gap: 6px; }

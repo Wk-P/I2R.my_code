@@ -42,7 +42,7 @@ const groups = computed(() => {
 
 <template>
   <div class="page-head">
-    <h1>批次管理</h1>
+    <h1>全部批次</h1>
     <div class="page-sub">{{ spaceLabel(store.viewBranch) }} 的训练批次与评估批次，按版本分组；点击查看各任务的状态与汇总结果</div>
   </div>
 
@@ -55,7 +55,7 @@ const groups = computed(() => {
   <section class="panel">
     <div v-if="loading" class="empty">加载中…</div>
     <div v-else-if="!shown.length" class="empty">没有符合条件的批次</div>
-    <table v-else class="grid">
+    <div class="table-scroll" v-else><table class="grid">
       <thead>
         <tr><th>批次</th><th>类型</th><th>状态</th><th>版本</th><th>分支</th><th class="num">步数</th><th class="w-progress">进度</th>
           <th class="num">完成</th><th class="num">运行</th><th class="num">排队</th><th class="num">中断</th><th>开始</th><th>最后更新</th></tr>
@@ -88,6 +88,6 @@ const groups = computed(() => {
           <td>{{ shortTime(b.last_updated) }}</td>
         </tr>
       </tbody>
-    </table>
+    </table></div>
   </section>
 </template>

@@ -81,7 +81,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
   <section class="panel">
     <div class="panel-head"><h2>训练任务</h2></div>
     <div v-if="!training.length" class="empty">当前没有训练任务在运行</div>
-    <table v-else class="grid">
+    <div class="table-scroll" v-else><table class="grid">
       <thead>
         <tr><th>批次</th><th>场景</th><th>算法</th><th title="奖励模式（早期试跑）或策略网络（v4.4.3）">变体</th><th>网络</th><th>设备</th><th>种子</th><th>exp_id</th>
           <th class="w-progress">训练进度</th><th class="num" title="日志里最近一次 [train] 记录的平均速度（自启动以来）">步/秒</th><th class="num" title="单个进程占用的 CPU，按单核计：100% = 占满 1 个核（整机共 56 核）。GPU 训练的进程同样会占满 1 个核：环境推进、动作掩码与 rollout 循环都在 CPU 上">CPU（单核）</th><th class="num">已运行</th><th class="num">PID</th></tr>
@@ -106,7 +106,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
           <td class="num mono dim">{{ p.pid }}</td>
         </tr>
       </tbody>
-    </table>
+    </table></div>
     <div class="note">训练进度来自各任务日志中最近一次 [train] 记录（旧实现每 20 万步、paper_rl 每 10 万步写一次），刚启动或处于 ILP / 评估阶段时显示 0%。</div>
   </section>
 
@@ -126,7 +126,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
 
   <section v-if="reportBatches.length" class="panel">
     <div class="panel-head"><h2>生成报告（训练结束后）</h2></div>
-    <table class="grid">
+    <div class="table-scroll"><table class="grid">
       <thead><tr><th>批次</th><th class="w-progress">进度</th><th>阶段</th></tr></thead>
       <tbody>
         <tr v-for="b in reportBatches" :key="b.batch_name">
@@ -136,12 +136,12 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
           <td data-no-i18n>{{ reportText(b.report, curLang) }}</td>
         </tr>
       </tbody>
-    </table>
+    </table></div>
   </section>
 
   <section class="panel">
     <div class="panel-head"><h2>其他项目进程</h2></div>
-    <table class="grid">
+    <div class="table-scroll"><table class="grid">
       <thead><tr><th>进程</th><th class="num">进程数</th><th class="num" title="同一命令下所有进程的 CPU 之和，按单核计：100% = 占满 1 个核（整机共 56 核）">CPU（单核合计）</th><th class="num">已运行</th><th class="num">PID</th></tr></thead>
       <tbody>
         <tr v-for="g in othersGrouped" :key="g.cmd">
@@ -152,6 +152,6 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
           <td class="num mono dim">{{ g.pid }}</td>
         </tr>
       </tbody>
-    </table>
+    </table></div>
   </section>
 </template>

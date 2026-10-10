@@ -17,10 +17,10 @@ import { langRef as curLang, setLang } from "./i18n.js";
 // Hash routes:
 //   #/                       总览
 //   #/monitor                训练监控
-//   #/batches[/<name>]       批次管理 / 批次详情
-//   #/results                实验结果
+//   #/batches[/<name>]       全部批次 / 批次详情（导航归入「实验版本」）
+//   #/results                运行明细
 //   #/run/<branch>/<scen>/<algo>/<run>   运行详情
-//   #/versions[/<tag>]       版本记录 / 版本详情
+//   #/versions[/<tag>]       实验版本（报告时间线）/ 版本详情（报告）
 //   #/paper                  论文草稿
 const hash = ref(window.location.hash || "#/");
 const menuOpen = ref(false);   // mobile navigation drawer
@@ -38,19 +38,18 @@ const route = computed(() => {
   let m;
   if ((m = h.match(/^\/run\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/)))
     return { page: "run", nav: "results", props: { branch: m[1], scenario: m[2], algo: m[3], run: m[4] } };
-  if ((m = h.match(/^\/batches\/(.+)$/))) return { page: "batch", nav: "batches", props: { name: m[1] } };
+  if ((m = h.match(/^\/batches\/(.+)$/))) return { page: "batch", nav: "versions", props: { name: m[1] } };
   if ((m = h.match(/^\/versions\/(.+)$/))) return { page: "version", nav: "versions", props: { tag: m[1] } };
   const simple = { "/monitor": "monitor", "/batches": "batches", "/results": "results", "/versions": "versions", "/paper": "paper" };
   const page = simple[h] ?? "overview";
-  return { page, nav: page, props: {} };
+  return { page, nav: page === "batches" ? "versions" : page, props: {} };
 });
 
 const NAV = [
   { key: "overview", href: "#/", icon: "▦", label: "总览" },
   { key: "monitor", href: "#/monitor", icon: "◉", label: "训练监控" },
-  { key: "batches", href: "#/batches", icon: "☰", label: "批次管理" },
-  { key: "results", href: "#/results", icon: "▤", label: "实验结果" },
-  { key: "versions", href: "#/versions", icon: "⎇", label: "版本记录" },
+  { key: "versions", href: "#/versions", icon: "⎇", label: "实验版本" },
+  { key: "results", href: "#/results", icon: "▤", label: "运行明细" },
   { key: "paper", href: "#/paper", icon: "✎", label: "论文草稿" },
 ];
 

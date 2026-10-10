@@ -26,3 +26,7 @@ export const getTagDoc = (tag, lang = "zh") => get(`/api/tags/${encodeURICompone
 export const resultFile = (branch, scenario, algo, run, file) =>
   `/api/results/${scenario}/${algo}/${run}/${file}${q(branch)}`;
 export const getResults = (branch) => get(`/api/results${q(branch)}`, []);
+// v4.4.14: experiment reports (paper_contents/v*/report.md)
+export const getReports = () => get("/api/reports", { reports: [] });
+export const getReport = (version, file = null, lang = "zh") =>
+  get(`/api/reports/${encodeURIComponent(version)}?lang=${lang}${file ? "&file=" + encodeURIComponent(file) : ""}`);
