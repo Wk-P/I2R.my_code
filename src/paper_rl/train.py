@@ -274,6 +274,9 @@ def main():
                     help="v4.4.10: --net graph only; score ECU j by MLP([h_svc, h_ecu, h_svc*h_ecu, h_glob])")
     ap.add_argument("--plan", action="store_true",
                     help="v4.4.12: --net graph only; global plan matrix P = F(s_0), ECU logits P[i_t, j] + per-step score")
+    ap.add_argument("--train-pool", default=None,
+                    help="v4.4.14: train on this ILP-verified instance pool (JSON list, e.g. results/sup_diag/<scen>.json, "
+                         "{scen} is substituted) instead of the 1600-instance split; the test split is unchanged")
     ap.add_argument("--glob3", action="store_true",
                     help="v4.4.13: --net graph only; global token input = exactly [M_rem / M, AR_t, sigma_util,t]")
     ap.add_argument("--plan-decay", action="store_true",
@@ -298,13 +301,17 @@ def main():
     mech, learner = split_algo(a.algo)
     torch.set_num_threads(C.PPO_TORCH_THREADS if learner == "ppo" else C.DQN_TORCH_THREADS)
     data, train, test = split_instances(a.scen, a.seed)
+    if a.train_pool:                                    # v4.4.14: many unique (ILP-verified) training instances
+        pool = json.loads((ROOT / a.train_pool.format(scen=a.scen)).read_text())
+        assert all(x.get("ar_star", 0) > 0 for x in pool), "every training instance must have an ILP optimum"
+        train = pool
     n, m = data["N"], data["M"]
     outdir = results_dir(a.scen, a.algo)
     exp_id = resolve_exp_id(outdir)
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | separate_critic={a.separate_critic} | pair_head={a.pair_head} | group_k={a.group_k} | plan={a.plan} | plan_decay={a.plan_decay} | glob3={a.glob3} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | separate_critic={a.separate_critic} | pair_head={a.pair_head} | group_k={a.group_k} | train={len(train)} | plan={a.plan} | plan_decay={a.plan_decay} | glob3={a.glob3} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
@@ -367,7 +374,7 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
-        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
+        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
         **({"gae_lambda": C.PPO_GAE_LAMBDA if a.gae_lambda is None else a.gae_lambda,
             "lr": C.PPO_LR if a.lr is None else a.lr,
             "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef} if learner == "ppo" else {}),
