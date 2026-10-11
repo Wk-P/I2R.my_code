@@ -151,7 +151,12 @@ def _algo_key(data: dict) -> str | None:
                 "version", "commit", "algo", "mechanism", "learner", "reward_mode",
                 "reward_norm", "obs", "gamma", "full_episode", "exit_action", "action_mode", "seed", "data",
                 # v4.4.3: policy network / torch device
-                "net", "device")
+                "net", "device",
+                # v4.4.16: resume metadata (a dict -- it was taken for the result block before)
+                "resumed")
+    # paper_rl writes the algo name itself: its block is data[data["algo"]] (v4.4.16 -- no more guessing)
+    if isinstance(data.get("algo"), str) and isinstance(data.get(data["algo"]), dict):
+        return data["algo"]
     # The algo block is always a dict; skipping scalars keeps a newly added
     # metadata field from taking down /api/experiments again.
     return next((k for k, v in data.items() if k not in reserved and isinstance(v, dict)), None)

@@ -103,7 +103,13 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
               gamma=C.DQN_GAMMA if gamma is None else gamma, train_freq=C.DQN_TRAIN_FREQ, gradient_steps=C.DQN_GRADIENT_STEPS,
               target_update_interval=C.DQN_TARGET_UPDATE, exploration_fraction=C.DQN_EXPLORATION_FRACTION,
               exploration_final_eps=C.DQN_EXPLORATION_FINAL_EPS,
-              policy_kwargs=dict(net_arch=C.DQN_NET_ARCH), device="cpu", verbose=0, seed=seed)
+              policy_kwargs=dict(net_arch=C.DQN_NET_ARCH), device=device, verbose=0, seed=seed)
+    if net == "graph":                                  # v4.5.2: structure-aware Q-network, same DQN settings
+        assert mech == "mask" and action_mode == "ecu", "--net graph with DQN / DDQN: Maskable, ECU action only"
+        from paper_rl.graph_dqn import GraphDQNPolicy
+        kw.update(policy=GraphDQNPolicy, policy_kwargs=dict(n_ecu=n, n_svc=m))
+        cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
+        return cls(mask_start=None, raw_dims=(n, m), exit_action=exit_action, **kw)
     if mech == "mask":
         cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
         return cls(mask_start=mask_slice(n, m, action_mode).start, exit_action=exit_action, **kw)
@@ -227,10 +233,37 @@ def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_
 
 
 # ── outputs ─────────────────────────────────────────────────────────────────
-def plot_curve(rows, ar_star, path: Path, title: str) -> None:
+def curve_history(run_dir: Path) -> tuple[list, list[int]]:
+    """v4.4.16: training-curve rows of the runs this run was resumed from (oldest first, each cut at the
+    step where the next one took over) and the resume steps -- so a continued run plots its whole history."""
+    rows, marks, d = [], [], run_dir
+    chain = []
+    while True:
+        try:
+            res = json.loads((d / "results.json").read_text())
+        except (OSError, json.JSONDecodeError):
+            break
+        src = (res.get("resumed") or {}).get("from")
+        if not src:
+            break
+        at = int(res["resumed"]["at_step"])
+        d = (ROOT / src).parent
+        chain.append((d, at))
+    for d, at in reversed(chain):
+        with open(d / "training_curve.csv") as f:
+            prev = [tuple(float(x) for x in r) for r in list(csv.reader(f))[1:]]
+        rows = [r for r in rows if r[0] <= prev[0][0]] if rows and prev else rows
+        rows += [r for r in prev if r[0] <= at]
+        marks.append(at)
+    return rows, marks
+
+
+def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[int]] | None = None) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    if history and history[0]:                          # prepend the runs this one continues (v4.4.16)
+        rows = list(history[0]) + list(rows)
     if not rows:
         return
     a = np.array(rows, dtype=float)
@@ -247,6 +280,8 @@ def plot_curve(rows, ar_star, path: Path, title: str) -> None:
     ax[3].set_ylabel("violation rate"); ax[3].set_ylim(-0.02, 1.02); ax[3].legend(); ax[3].set_xlabel("training steps")
     for x in ax:
         x.grid(alpha=0.3)
+        for mk in (history[1] if history else []):    # where a continued run took over
+            x.axvline(mk, color="gray", ls=":", lw=1)
     ax[0].set_title(title)
     plt.tight_layout(); plt.savefig(path, dpi=120); plt.close()
 
@@ -443,7 +478,8 @@ def main():
                     "episode_cap_violated", "episode_conflict_violated", "lambda"])
         w.writerows(cb.rows)
     plot_curve(cb.rows, ilp_ar, run_dir / "training_curve.png",
-               f"{algo_label(a.algo)} — {a.scen.upper()} — reward={a.reward} — {a.steps:,} steps")
+               f"{algo_label(a.algo)} — {a.scen.upper()} — reward={a.reward} — {start + a.steps:,} steps"
+               + (f" (resumed at {start:,})" if resumed else ""), history=curve_history(run_dir) if resumed else None)
     print(f"  saved -> {run_dir}", flush=True)
 
 

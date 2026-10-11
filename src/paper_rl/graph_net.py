@@ -156,6 +156,11 @@ class GraphPolicyNet(nn.Module):
 
     def forward(self, caps, reqs, adj, assign, t):
         """-> masked logits [B,N+1], value [B], mask [B,N+1], ar [B]"""
+        logits, value, mask, ar = self.scores(caps, reqs, adj, assign, t)
+        return logits.masked_fill(~mask, -1e9), value, mask, ar
+
+    def scores(self, caps, reqs, adj, assign, t):
+        """-> unmasked scores [B,N+1] (ECUs + EXIT; used as Q-values by graph DQN, v4.5.2), value [B], mask, ar"""
         feats, rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std, self.glob3)
         N = caps.shape[1]
         x = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
@@ -177,7 +182,7 @@ class GraphPolicyNet(nn.Module):
             ecu_logits = ecu_logits + row
         logits = torch.cat([ecu_logits, self.exit_head(x[:, 0])], 1)
         value = self.value_head(torch.cat([x[:, 0], x[:, 1:].mean(1)], -1)).squeeze(-1)
-        return logits.masked_fill(~mask, -1e9), value, mask, ar
+        return logits, value, mask, ar
 
 
 def state_from_env(env):

@@ -70,22 +70,40 @@ class DoubleDQN(DQN):
 class MaskableDQN(DQN):
     """DQN with a hard action mask read from obs[mask_start : mask_start+N]."""
 
-    def __init__(self, *args, mask_start: int | None = None, exit_action: bool = False, **kwargs):
+    def __init__(self, *args, mask_start: int | None = None, exit_action: bool = False,
+                 raw_dims: tuple[int, int] | None = None, **kwargs):
         # mask_start defaults to None only so that DQN.load() (which calls
         # __init__ without it and then restores attributes from the zip)
         # works; training always passes it explicitly.
         self.mask_start = mask_start
         self.exit_action = exit_action      # last action = EXIT, valid iff no ECU is feasible
+        # v4.5.2: raw observation (structure-aware network) -> (N, M); the mask is then computed from the
+        # raw state by paper_rl.graph_net.build, the same feasibility as PlacementEnv.action_masks()
+        self.raw_dims = raw_dims
         super().__init__(*args, **kwargs)
+
+    def _raw_mask_th(self, obs: th.Tensor) -> th.Tensor:
+        from paper_rl.graph_net import build, decode_raw
+        n, m = self.raw_dims
+        _, _, mask, _ = build(*decode_raw(obs.float(), n, m))          # [B, N+1]: ECUs + EXIT (valid iff none feasible)
+        if getattr(self, "exit_action", False):
+            return mask
+        ecu = mask[:, :n]
+        return ecu | ~ecu.any(dim=1, keepdim=True)
 
     # ── mask helpers ─────────────────────────────────────────────────────────
     def _mask_np(self, obs: np.ndarray) -> np.ndarray:
+        if getattr(self, "raw_dims", None):
+            return self._raw_mask_th(th.as_tensor(np.asarray(obs, dtype=np.float32).reshape(-1, obs.shape[-1]))).numpy().reshape(
+                *obs.shape[:-1], -1)
         n = self.action_space.n - getattr(self, "exit_action", False)
         m = obs[..., self.mask_start:self.mask_start + n] > 0.5
         empty = ~m.any(axis=-1, keepdims=True)
         return np.concatenate([m, empty], axis=-1) if getattr(self, "exit_action", False) else m | empty
 
     def _mask_th(self, obs: th.Tensor) -> th.Tensor:
+        if getattr(self, "raw_dims", None):
+            return self._raw_mask_th(obs)
         n = self.action_space.n - getattr(self, "exit_action", False)
         m = obs[:, self.mask_start:self.mask_start + n] > 0.5
         empty = ~m.any(dim=1, keepdim=True)
