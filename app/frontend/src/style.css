@@ -358,3 +358,4 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 .gap-cell { font-variant-numeric: tabular-nums; }
 .target-chip { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-dim); }
 .file-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.badge--bad { color: var(--bad); background: var(--bad-soft); }

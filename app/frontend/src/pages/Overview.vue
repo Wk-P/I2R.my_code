@@ -1,14 +1,13 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { store, trainingProcs, spaceLabel } from "../store.js";
-import { getBatches, getExperiments, getReports } from "../api.js";
+import { getBatches, getReports } from "../api.js";
 import GapTrend from "../components/GapTrend.vue";
 import { algoLabel, statusLabel, statusClass, reporting, reportText, reportPct } from "../labels.js";
 import { langRef as curLang } from "../i18n.js";
 import { pct, fmt, shortTime } from "../format.js";
 
 const batches = ref([]);
-const exps = ref([]);
 const reports = ref([]);
 let timer = null;
 const go = (h) => (window.location.hash = h);
@@ -16,7 +15,6 @@ const go = (h) => (window.location.hash = h);
 async function load() {
   if (!store.viewBranch) return;
   batches.value = (await getBatches(true, store.viewBranch)).batches;
-  exps.value = await getExperiments(store.viewBranch);
   reports.value = (await getReports()).reports;
 }
 onMounted(() => { timer = setInterval(load, 15000); });
@@ -25,8 +23,6 @@ onUnmounted(() => clearInterval(timer));
 
 const runningBatches = computed(() => batches.value.filter((b) => b.status === "running" || reporting(b)));
 const recentBatches = computed(() => batches.value.filter((b) => b.status !== "running" && !reporting(b)).slice(0, 5));
-const recentRuns = computed(() =>
-  [...exps.value].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 10));
 // best three-scenario mean so far (new variant of each version) and its distance to the 5% target
 const bestRep = computed(() => reports.value.filter((r) => r.new_avg != null)
   .reduce((a, r) => (!a || r.new_avg < a.new_avg ? r : a), null));
@@ -65,11 +61,6 @@ const loadPct = computed(() => {
       <div class="kpi-value kpi-value--sm">LT {{ latestRep.gaps[latestRep.new_model].LT?.toFixed(1) }}% · EQ {{ latestRep.gaps[latestRep.new_model].EQ?.toFixed(1) }}% · GT {{ latestRep.gaps[latestRep.new_model].GT?.toFixed(1) }}%</div>
       <div class="kpi-foot">{{ en ? (latestRep.en?.new_model ?? "new variant") : latestRep.new_model }}</div>
     </a>
-    <div class="kpi">
-      <div class="kpi-label">CPU 负载</div>
-      <div class="kpi-value">{{ loadPct === null ? "—" : loadPct + "%" }}</div>
-      <div class="kpi-foot">{{ store.system?.cpu_count ?? "—" }} 核</div>
-    </div>
   </div>
 
   <section class="panel">
@@ -103,26 +94,7 @@ const loadPct = computed(() => {
     </table></div>
   </section>
 
-  <div class="two-col">
-    <section class="panel">
-      <div class="panel-head"><h2>最近完成的运行</h2><a href="#/results">运行明细 →</a></div>
-      <div class="table-scroll"><table class="grid">
-        <thead><tr><th>时间</th><th>场景</th><th>算法</th><th>批次</th><th class="num" title="success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例">success_rate</th><th class="num" title="AR = average resource utilization（平均资源利用率，优化目标）">AR</th></tr></thead>
-        <tbody>
-          <tr v-for="r in recentRuns" :key="r.scenario + r.algo + r.run">
-            <td>{{ shortTime(r.created_at) }}</td>
-            <td><span class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
-            <td><a :href="`#/run/${store.viewBranch}/${r.scenario}/${r.algo}/${r.run}`">{{ algoLabel(r.algo) }}</a>
-              <span v-if="r.variant" class="tag">{{ r.variant }}</span></td>
-            <td class="dim">{{ r.batch ?? "—" }}</td>
-            <td class="num">{{ pct(r.test_success_rate) }}</td>
-            <td class="num">{{ fmt(r.test_ar_mean) }}</td>
-          </tr>
-        </tbody>
-      </table></div>
-    </section>
-
-    <section class="panel">
+  <section class="panel">
       <div class="panel-head"><h2>最近结束的批次</h2><a href="#/batches">全部批次 →</a></div>
       <div class="table-scroll"><table class="grid">
         <thead><tr><th>批次</th><th>状态</th><th>完成</th><th>最后更新</th></tr></thead>
@@ -136,5 +108,4 @@ const loadPct = computed(() => {
         </tbody>
       </table></div>
     </section>
-  </div>
 </template>

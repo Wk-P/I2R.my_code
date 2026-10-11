@@ -33,3 +33,5 @@ export const getResults = (branch) => get(`/api/results${q(branch)}`, []);
 export const getReports = () => get("/api/reports", { reports: [] });
 export const getReport = (version, file = null, lang = "zh") =>
   get(`/api/reports/${encodeURIComponent(version)}?lang=${lang}${file ? "&file=" + encodeURIComponent(file) : ""}`);
+// serial experiment queue (read-only; managed by src/scripts/queue_runner.py)
+export const getQueue = () => get("/api/queue", { items: [], paused: false, runner: "unknown" });

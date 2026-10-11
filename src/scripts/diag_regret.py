@@ -100,7 +100,7 @@ def test_split_cache(scen):
 
 
 def main():
-    global SEED
+    global SEED, ALGO
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=400)
     ap.add_argument("--workers", type=int, default=48)
@@ -111,8 +111,10 @@ def main():
     ap.add_argument("--label", default="v4.3.8 试跑的从零训练 Mask PPO（MLP，种子 1、1M 步，p = 0.6 数据）")
     ap.add_argument("--out", default=str(REPORT))
     ap.add_argument("--label-en", default=None, help="English model label for the .en.md report (default: built from --key / --manifest)")
+    ap.add_argument("--algo", default=ALGO, help="v4.5: results/<scen>/<algo>/ of the run (mask_ppo, mask_dqn, mask_ddqn)")
     ap.add_argument("--seed", type=int, default=SEED, help="v4.4.5: training seed of the run (selects its test split)")
     a = ap.parse_args()
+    ALGO = a.algo                                      # set before the Pool forks, so the workers see it
     SEED = a.seed                                      # set before the Pool forks, so the workers see it
     t0 = time.time()
     if a.ref:

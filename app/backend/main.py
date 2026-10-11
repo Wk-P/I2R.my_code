@@ -1058,7 +1058,8 @@ def _manifest_runs(manifest: dict) -> list[dict]:
             if k in SCENARIOS and run["scenario"] is None:
                 run["scenario"] = k
             elif k in keys and run["algo"] is None:
-                run["algo"] = key_algo
+                # v4.5: manifest["variants"][key]["algo"] -- a batch may mix algos (Mask-DQN and Mask-DDQN)
+                run["algo"] = (manifest.get("variants") or {}).get(k, {}).get("algo") or key_algo
                 variant.append(keys[k])
             elif k in algos and run["algo"] is None:
                 run["algo"] = k
@@ -1082,7 +1083,10 @@ def _manifest_runs(manifest: dict) -> list[dict]:
     modes = list(keys.values()) if keys else (manifest.get("modes") or [""])
     if scens and algos:
         have = {(r["scenario"], r["algo"], r["variant"], r["seed"]) for r in runs}
-        for mode, scen, algo, seed in itertools.product(modes, scens, manifest["algos"], seeds):
+        vmap = manifest.get("variants") or {}
+        combos = ([(keys[k], v["algo"]) for k, v in vmap.items() if k in keys] if vmap
+                  else [(m, al) for m in modes for al in manifest["algos"]])
+        for (mode, algo), scen, seed in itertools.product(combos, scens, seeds):
             seed = int(seed) if seed is not None else None
             if (scen, algo, mode, seed) not in have:
                 runs.append({"scenario": scen, "algo": algo, "seed": seed, "variant": mode, "exp_id": None})
@@ -1434,6 +1438,27 @@ def _report_progress(batch_name: str) -> dict | None:
             "current_done": x, "current_total": y, "current_pct": round(100 * cur, 1) if y else None,
             "overall_pct": 100.0 if finished else pct, "eta_minutes": None if finished or eta is None else round(eta, 1),
             "updated": log.stat().st_mtime}
+
+
+QUEUE_PATH = LOGS_ROOT / "queue.json"
+
+
+@app.get("/api/queue")
+def get_queue():
+    """Read-only view of the serial experiment queue (logs/queue.json, managed by src/scripts/queue_runner.py
+    from the command line) and whether its runner service is active."""
+    try:
+        q = json.loads(QUEUE_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        q = {"items": [], "paused": False, "updated": None}
+    try:
+        active = subprocess.run(["systemctl", "--user", "is-active", "my-code-queue.service"],
+                                capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        active = "unknown"
+    return {"items": [{k: it.get(k) for k in ("id", "status", "wait_for", "added", "started", "finished", "exit", "log", "cmd")}
+                      for it in q.get("items", [])],
+            "paused": bool(q.get("paused")), "updated": q.get("updated"), "runner": active}
 
 
 @app.get("/api/batches")
