@@ -138,7 +138,7 @@ def main():
             gtxt = f"{100 * np.mean(gaps):.1f}% ± {100 * np.std(gaps, ddof=1):.1f}%" if len(gaps) > 1 else f"{100 * gaps[0]:.1f}%"
             for part, key in ((T("整条 episode", "full episode"), "ms"), (T("仅前向", "forward only"), "fwd_ms")):
                 b = st([r[key] for r in rows])
-                L.append(f"| {s.upper()} | {T('网络', 'network')}：{part} | {gtxt} | " + " | ".join(f(x) for x in b)
+                L.append(f"| {s.upper()} | {T('网络：', 'network: ')}{part} | {gtxt} | " + " | ".join(f(x) for x in b)
                          + f" | {ia[0] / b[0]:.0f}× | {ia[1] / b[1]:.0f}× |")
         L.append("")
         out[lang] = L
