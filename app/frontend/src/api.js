@@ -23,8 +23,11 @@ export const getExperiments = (branch) => get(`/api/experiments${q(branch)}`, []
 export const getHistory = (scenario, algo, branch) => get(`/api/history/${scenario}/${algo}${q(branch)}`, []);
 export const getTags = () => get("/api/tags", []);
 export const getTagDoc = (tag, lang = "zh") => get(`/api/tags/${encodeURIComponent(tag)}/doc?lang=${lang}`);
+// Plots can be redrawn in place, and the Cloudflare tunnel rewrites Cache-Control to max-age=14400 for .png,
+// so a per-page-load token makes every load fetch the current image (browser and edge cache key on the URL).
+const BUST = Date.now();
 export const resultFile = (branch, scenario, algo, run, file) =>
-  `/api/results/${scenario}/${algo}/${run}/${file}${q(branch)}`;
+  `/api/results/${scenario}/${algo}/${run}/${file}${q(branch)}${branch ? "&" : "?"}v=${BUST}`;
 export const getResults = (branch) => get(`/api/results${q(branch)}`, []);
 // v4.4.14: experiment reports (paper_contents/v*/report.md)
 export const getReports = () => get("/api/reports", { reports: [] });
