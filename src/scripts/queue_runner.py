@@ -167,9 +167,14 @@ def run() -> None:
                 continue
             log = ROOT / cur["log"]
             log.parent.mkdir(parents=True, exist_ok=True)
-            with open(log, "w") as fh:
-                proc = subprocess.Popen(cur["cmd"], cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                        start_new_session=True)
+            try:
+                with open(log, "w") as fh:
+                    proc = subprocess.Popen(cur["cmd"], cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                            start_new_session=True)
+            except OSError as e:                # bad command: fail this item and stop, do not crash the runner
+                update(cur["id"], status="failed", finished=now(), exit=None, error=str(e))
+                mail(f"队列：{cur['id']} 无法启动，队列已停止", f"{cur['id']} 启动失败：{e}\n命令：{' '.join(cur['cmd'])}")
+                continue
             update(cur["id"], status="running", pid=proc.pid, started=now())
             print(f"[queue] {now()} start {cur['id']} pid={proc.pid}", flush=True)
             mail(f"队列：开始 {cur['id']}", f"{cur['id']} 已开始（pid {proc.pid}）。\n命令：{' '.join(cur['cmd'])}\n日志：{cur['log']}")
@@ -191,7 +196,8 @@ def main():
     a_add.add_argument("id")
     a_add.add_argument("--wait-for", default=None, help="regex: start only when no process command line matches it")
     a_add.add_argument("--log", default=None)
-    a_add.add_argument("command", nargs=argparse.REMAINDER)
+    # the experiment command is everything after "--" (split by hand: argparse.REMAINDER after a positional
+    # also swallows options such as --wait-for)
     a_rm = sub.add_parser("remove")
     a_rm.add_argument("id")
     a_mv = sub.add_parser("move")
@@ -202,7 +208,10 @@ def main():
     sub.add_parser("list")
     sub.add_parser("resume")
     sub.add_parser("run")
-    a = ap.parse_args()
+    argv = sys.argv[1:]
+    command = argv[argv.index("--") + 1:] if "--" in argv else []
+    a = ap.parse_args(argv[:argv.index("--")] if "--" in argv else argv)
+    a.command = command
     if a.cmd == "run":
         return run()
     with locked():
@@ -216,8 +225,8 @@ def main():
 def edit(a) -> None:
     items = load()
     if a.cmd == "add":
-        cmd = a.command[1:] if a.command[:1] == ["--"] else a.command
-        assert cmd, "no command given"
+        cmd = a.command
+        assert cmd, "no command given (put it after --)"
         assert all(it["id"] != a.id for it in items), f"{a.id} already in the queue"
         items.append({"id": a.id, "cmd": cmd, "wait_for": a.wait_for, "status": "queued", "log": a.log or f"logs/run_{a.id}_driver.log",
                       "added": now(), "started": None, "finished": None, "pid": None, "exit": None})
