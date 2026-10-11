@@ -30,8 +30,22 @@ const onHash = () => {
   hash.value = window.location.hash || "#/";
   if (hash.value.split("?")[0] !== prev) window.scrollTo(0, 0);
 };
-onMounted(() => { window.addEventListener("hashchange", onHash); startPolling(); });
-onUnmounted(() => window.removeEventListener("hashchange", onHash));
+// Whole-row click: a table row that contains a link opens its first link when clicked anywhere, except on a
+// control of its own, while selecting text, or when the row already has its own click handler (.clickable).
+function onRowClick(e) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  if (e.target.closest("a, button, input, select, textarea, summary, label")) return;
+  if (window.getSelection()?.toString()) return;
+  const tr = e.target.closest("table.grid tbody tr");
+  if (!tr || tr.classList.contains("clickable")) return;
+  const a = tr.querySelector("a[href]");
+  if (!a) return;
+  const href = a.getAttribute("href");
+  if (href.startsWith("#")) window.location.hash = href;
+  else window.location.href = href;
+}
+onMounted(() => { window.addEventListener("hashchange", onHash); document.addEventListener("click", onRowClick); startPolling(); });
+onUnmounted(() => { window.removeEventListener("hashchange", onHash); document.removeEventListener("click", onRowClick); });
 
 const route = computed(() => {
   const h = decodeURIComponent(hash.value.replace(/^#/, "").split("?")[0]) || "/";
