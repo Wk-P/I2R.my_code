@@ -258,7 +258,9 @@ def curve_history(run_dir: Path) -> tuple[list, list[int]]:
     return rows, marks
 
 
-def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[int]] | None = None) -> None:
+def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[int]] | None = None,
+               x_max: float | None = None) -> None:
+    """x_max: total training steps (resumed history included); the step axis is fixed to [0, x_max]."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -281,7 +283,7 @@ def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[
     ax[3].set_ylabel("violation rate"); ax[3].set_ylim(-0.02, 1.02); ax[3].legend(); ax[3].set_xlabel("training steps")
     for x in ax:
         x.grid(alpha=0.3)
-        x.set_xlim(left=0)                               # the step axis always starts at 0
+        x.set_xlim(0, x_max if x_max else max(float(ts[-1]), 1.0))   # step axis: 0 .. total steps
         for mk in (history[1] if history else []):    # where a continued run took over
             x.axvline(mk, color="gray", ls=":", lw=1)
     ax[0].set_title(title)
@@ -481,7 +483,8 @@ def main():
         w.writerows(cb.rows)
     plot_curve(cb.rows, ilp_ar, run_dir / "training_curve.png",
                f"{algo_label(a.algo)} — {a.scen.upper()} — reward={a.reward} — {start + a.steps:,} steps"
-               + (f" (resumed at {start:,})" if resumed else ""), history=curve_history(run_dir) if resumed else None)
+               + (f" (resumed at {start:,})" if resumed else ""), history=curve_history(run_dir) if resumed else None,
+               x_max=start + a.steps)
     print(f"  saved -> {run_dir}", flush=True)
 
 

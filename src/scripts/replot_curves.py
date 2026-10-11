@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Redraw training_curve.png of finished paper_rl runs from training_curve.csv + results.json (2026-10-11:
-step axis from 0, trailing-mean smoothing that starts at the first episode).
+step axis fixed to [0, total steps], trailing-mean smoothing that starts at the first episode).
     .venv/bin/python src/scripts/replot_curves.py [--since 2026-10-01]
 """
 import argparse
@@ -24,7 +24,8 @@ def one(d: Path):
         start = int(res["at_step"]) if res else 0
         title = (f"{algo_label(r['algo'])} — {r['scenario'].upper()} — reward={r['reward_mode']} — {tr['total_steps']:,} steps"
                  + (f" (resumed at {start:,})" if res else ""))
-        plot_curve(rows, r["ilp"]["ar"], d / "training_curve.png", title, history=curve_history(d) if res else None)
+        plot_curve(rows, r["ilp"]["ar"], d / "training_curve.png", title, history=curve_history(d) if res else None,
+                   x_max=tr["total_steps"])
         return None
     except Exception as e:
         return f"{d}: {e}"

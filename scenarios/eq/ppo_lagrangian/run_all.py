@@ -346,6 +346,8 @@ def plot_training_curve(cb: LagrangeCallback, ilp_ar: float,
 
     plt.tight_layout()
     path = outdir / "training_curve.png"
+    for _ax in plt.gcf().axes:                      # step axis: 0 .. total steps
+        _ax.set_xlim(0, C.TOTAL_STEPS)
     plt.savefig(path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"  Saved -> {path}")
