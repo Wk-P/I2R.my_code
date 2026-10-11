@@ -1547,6 +1547,23 @@ def get_batch_progress(batch_name: str):
     return st
 
 
+ICONS = ["favicon.ico", "favicon.svg", "favicon-16x16.png", "favicon-32x32.png", "favicon-48x48.png", "apple-touch-icon.png",
+         "apple-touch-icon-precomposed.png", "apple-touch-icon-120x120.png", "apple-touch-icon-152x152.png",
+         "apple-touch-icon-167x167.png", "icon-192.png", "icon-512.png", "site.webmanifest"]
+
+
+@app.get("/{name}", include_in_schema=False)
+def icon(name: str):
+    """Icons from app/frontend/public (copied into static/ by the Vite build). iOS also probes
+    apple-touch-icon-precomposed.png on its own; it gets the normal 180px icon."""
+    if name not in ICONS:
+        raise HTTPException(404)
+    path = APP_DIR / "static" / ("apple-touch-icon.png" if name == "apple-touch-icon-precomposed.png" else name)
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     html = (APP_DIR / "static" / "index.html").read_text()
