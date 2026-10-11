@@ -279,6 +279,7 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
                     label=f"{name} (smoothed w={C.SMOOTH_W})")
             ax.set_ylabel(ylabel, fontsize=11)
             ax.grid(alpha=0.3)
+            ax.set_xlim(left=0)
         axes[0].axhline(0.0, color="black", linewidth=0.8, alpha=0.4)
         axes[1].axhline(ilp_ar, color="red", linestyle="--", linewidth=1.5,
                         label=f"ILP Optimal  AR={ilp_ar:.4f}")

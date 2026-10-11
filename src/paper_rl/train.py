@@ -262,14 +262,15 @@ def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from shared.ilp_utils import moving_avg
     if history and history[0]:                          # prepend the runs this one continues (v4.4.16)
         rows = list(history[0]) + list(rows)
     if not rows:
         return
     a = np.array(rows, dtype=float)
     w = max(1, min(C.SMOOTH_W, len(a) // 10))
-    sm = lambda y: np.convolve(y, np.ones(w) / w, mode="valid")
-    ts = a[w - 1:, 0]
+    sm = lambda y: moving_avg(y, w)[0]                  # trailing mean: the curve starts at the first episode
+    ts = a[:, 0]
     fig, ax = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
     ax[0].plot(ts, sm(a[:, 1]), color="steelblue"); ax[0].set_ylabel("Episode reward")
     ax[1].plot(ts, sm(a[:, 2]), color="seagreen", label="AR")
@@ -280,6 +281,7 @@ def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[
     ax[3].set_ylabel("violation rate"); ax[3].set_ylim(-0.02, 1.02); ax[3].legend(); ax[3].set_xlabel("training steps")
     for x in ax:
         x.grid(alpha=0.3)
+        x.set_xlim(left=0)                               # the step axis always starts at 0
         for mk in (history[1] if history else []):    # where a continued run took over
             x.axvline(mk, color="gray", ls=":", lw=1)
     ax[0].set_title(title)

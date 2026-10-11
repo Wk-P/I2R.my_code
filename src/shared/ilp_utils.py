@@ -301,7 +301,10 @@ def check_scenario_feasibility(scenarios: list) -> dict:
 # ── Plotting helper ───────────────────────────────────────────────────────────
 
 def moving_avg(arr, w):
+    """Trailing mean over the last w points (fewer at the start), so the smoothed curve starts at the
+    first point instead of w - 1 points in. Returns (smoothed, offset=0)."""
     arr = np.asarray(arr, dtype=float)
-    if len(arr) < w:
-        return arr, 0
-    return np.convolve(arr, np.ones(w) / w, mode="valid"), w - 1
+    c = np.concatenate([[0.0], np.cumsum(arr)])
+    i = np.arange(1, len(arr) + 1)
+    lo = np.maximum(i - w, 0)
+    return (c[i] - c[lo]) / (i - lo), 0
