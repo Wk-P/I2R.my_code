@@ -583,7 +583,9 @@ def get_result_file(scenario: str, algo: str, run: str, filename: str, branch: s
     path = _results_root(branch) / scenario / algo / run / filename
     if not path.is_file():
         raise HTTPException(404)
-    return FileResponse(path)
+    # plots can be regenerated in place (v4.4.16: continued runs redrawn with their history) --
+    # make the browser revalidate (ETag) instead of showing a heuristically cached old image
+    return FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
 MONITOR_STATE_PATH = APP_DIR / "monitor_state.json"
