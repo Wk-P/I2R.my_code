@@ -35,4 +35,5 @@ export const getReport = (version, file = null, lang = "zh") =>
   get(`/api/reports/${encodeURIComponent(version)}?lang=${lang}${file ? "&file=" + encodeURIComponent(file) : ""}`);
 // serial experiment queue (read-only; managed by src/scripts/queue_runner.py)
 export const getGpuHistory = (since = 0) => get(`/api/gpu_history?since=${since}`, { interval: 2, window: 1800, samples: [] });
+export const getCurves = (lang = "zh") => get(`/api/curves?lang=${lang}`, { versions: [] });
 export const getQueue = () => get("/api/queue", { items: [], paused: false, runner: "unknown" });

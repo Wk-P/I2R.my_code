@@ -58,6 +58,8 @@ h2 { font-size: 15px; margin: 0; font-weight: 650; }
   position: sticky; top: 0; z-index: 10;
 }
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 8px; }
+/* English labels are longer: keep every top-bar item on one line (the language buttons, chips, labels) */
+.topbar-left > *, .topbar-right > *, .topbar .chip, .topbar button, .branch-select > span { white-space: nowrap; flex-shrink: 0; }
 .global-search { width: 300px; }
 .content { padding: 20px 24px 40px; max-width: 1680px; width: 100%; }
 

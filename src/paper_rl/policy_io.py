@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-RESULTS = ROOT / "results" / "unified"
+RESULTS = ROOT / "results" / __import__("os").environ.get("RESULTS_SPACE", "unified")   # v5.0.0: follow RESULTS_SPACE
 
 
 def load_policy(scen: str, algo: str, exp_id: str, pattern: str = "model_*", n: int = 0, m: int = 0):

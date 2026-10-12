@@ -23,7 +23,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-RESULTS = ROOT / "results" / "unified"
+RESULTS = ROOT / "results" / __import__("os").environ.get("RESULTS_SPACE", "unified")   # v5.0.0: follow RESULTS_SPACE
 REPORT = ROOT / "paper_contents" / "v4.4.2" / "regret_diag.md"
 SCENARIOS = ["lt", "eq", "gt"]
 DATA, MANIFEST, ALGO, SEED = "v4.3.1.4", "logs/v4.3.8_pilot/manifest.json", "mask_ppo", 1

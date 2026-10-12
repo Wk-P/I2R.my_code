@@ -10,6 +10,7 @@ import Results from "./pages/Results.vue";
 import RunDetail from "./pages/RunDetail.vue";
 import Versions from "./pages/Versions.vue";
 import VersionDetail from "./pages/VersionDetail.vue";
+import Charts from "./pages/Charts.vue";
 import PaperDraft from "./components/PaperDraft.vue";
 import PaperDraftEn from "./components/PaperDraftEn.vue";
 import { langRef as curLang, setLang } from "./i18n.js";
@@ -54,7 +55,7 @@ const route = computed(() => {
     return { page: "run", nav: "results", props: { branch: m[1], scenario: m[2], algo: m[3], run: m[4] } };
   if ((m = h.match(/^\/batches\/(.+)$/))) return { page: "batch", nav: "versions", props: { name: m[1] } };
   if ((m = h.match(/^\/versions\/(.+)$/))) return { page: "version", nav: "versions", props: { tag: m[1] } };
-  const simple = { "/monitor": "monitor", "/batches": "batches", "/results": "results", "/versions": "versions", "/paper": "paper" };
+  const simple = { "/monitor": "monitor", "/batches": "batches", "/results": "results", "/versions": "versions", "/paper": "paper", "/charts": "charts" };
   const page = simple[h] ?? "overview";
   return { page, nav: page === "batches" ? "versions" : page, props: {} };
 });
@@ -63,6 +64,7 @@ const NAV = [
   { key: "overview", href: "#/", icon: "▦", label: "总览" },
   { key: "monitor", href: "#/monitor", icon: "◉", label: "训练监控" },
   { key: "versions", href: "#/versions", icon: "⎇", label: "实验版本" },
+  { key: "charts", href: "#/charts", icon: "◔", label: "图表" },
   { key: "results", href: "#/results", icon: "▤", label: "运行明细" },
   { key: "paper", href: "#/paper", icon: "✎", label: "论文草稿" },
 ];
@@ -147,6 +149,7 @@ const updated = computed(() =>
         <Results v-else-if="route.page === 'results'" />
         <RunDetail v-else-if="route.page === 'run'" v-bind="route.props" />
         <Versions v-else-if="route.page === 'versions'" />
+        <Charts v-else-if="route.page === 'charts'" />
         <VersionDetail v-else-if="route.page === 'version'" v-bind="route.props" />
         <PaperDraftEn v-else-if="route.page === 'paper' && curLang === 'en'" />
         <PaperDraft v-else-if="route.page === 'paper'" />

@@ -148,7 +148,7 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
     class Cb(BaseCallback):
         def __init__(self):
             super().__init__()
-            self.rows = []          # (timestep, reward, ar, success, valid, cap>0, conf>0, lambda)
+            self.rows = []          # (timestep, reward, ar, success, valid, cap>0, conf>0, lambda, exited (v5.0.0))
             self.lam = C.LAMBDA_INIT
             self._viol = deque(maxlen=C.LAMBDA_UPDATE_WINDOW)
             self._n_ep = 0
@@ -163,7 +163,7 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
                 success = info["valid_placed"] == self.training_env.get_attr("M", 0)[0]
                 self.rows.append((self.num_timesteps, float(info["episode"]["r"]), info["ar"], int(success),
                                   info["valid_placed"], int(info["capacity_violations"] > 0),
-                                  int(info["conflict_violations"] > 0), self.lam))
+                                  int(info["conflict_violations"] > 0), self.lam, int(info["exited"])))
                 if mech == "lagrange":
                     self._dual(info["viol_rate_ep"])
             if self.num_timesteps >= self._next:
@@ -281,7 +281,7 @@ def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[
         rows = list(history[0]) + list(rows)
     if not rows:
         return
-    a = np.array(rows, dtype=float)
+    a = np.array([r[:8] for r in rows], dtype=float)    # v5.0.0 rows carry a 9th column (exited); history may have 8
     w = max(1, min(C.SMOOTH_W, len(a) // 10))
     sm = lambda y: moving_avg(y, w)[0]                  # trailing mean: the curve starts at the first episode
     ts = a[:, 0]
@@ -292,7 +292,10 @@ def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[
     ax[2].plot(ts, sm(a[:, 3]), color="mediumseagreen"); ax[2].set_ylabel("success_rate"); ax[2].set_ylim(-0.02, 1.02)
     ax[3].plot(ts, sm(a[:, 5]), color="tomato", label="capacity violation")
     ax[3].plot(ts, sm(a[:, 6]), color="darkorange", label="privacy violation")
-    ax[3].set_ylabel("violation rate"); ax[3].set_ylim(-0.02, 1.02); ax[3].legend(); ax[3].set_xlabel("training steps")
+    ex = np.array([(r[0], r[8]) for r in rows if len(r) > 8], dtype=float)   # v5.0.0: EXIT (Maskable), rows that record it
+    if len(ex) and ex[:, 1].any():
+        ax[3].plot(ex[:, 0], moving_avg(ex[:, 1], w)[0], color="purple", label="EXIT")
+    ax[3].set_ylabel("violation / EXIT rate"); ax[3].set_ylim(-0.02, 1.02); ax[3].legend(); ax[3].set_xlabel("training steps")
     for x in ax:
         x.grid(alpha=0.3)
         x.set_xlim(0, x_max if x_max else max(float(ts[-1]), 1.0))   # step axis: 0 .. total steps
@@ -365,7 +368,7 @@ def main():
 
     import torch
     from stable_baselines3.common.monitor import Monitor
-    from stable_baselines3.common.vec_env import DummyVecEnv
+    from paper_rl.vec_env import FastDummyVecEnv as DummyVecEnv    # v5.0.0: no per-step deepcopy of the infos
     from shared.paths import VERSION, resolve_exp_id, results_dir
 
     if a.net == "graph":
@@ -495,7 +498,7 @@ def main():
     with open(run_dir / "training_curve.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["timestep", "episode_reward", "episode_ar", "episode_success", "episode_valid_placed",
-                    "episode_cap_violated", "episode_conflict_violated", "lambda"])
+                    "episode_cap_violated", "episode_conflict_violated", "lambda", "episode_exited"])
         w.writerows(cb.rows)
     plot_curve(cb.rows, ilp_ar, run_dir / "training_curve.png",
                f"{algo_label(a.algo)} — {a.scen.upper()} — reward={a.reward} — {start + a.steps:,} steps"

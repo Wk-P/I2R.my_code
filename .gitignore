@@ -47,3 +47,10 @@ build/
 chat.md
 GPU_FAN*.sh
 **/.cache/
+
+# deploy: secrets and build-time exports
+deploy/.env
+deploy/ref-src/
+
+
+*.zip

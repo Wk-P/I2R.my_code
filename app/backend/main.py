@@ -524,9 +524,109 @@ def list_reports():
         info_en = _parse_report(en.read_text(encoding="utf-8")) if en.is_file() else None
         out.append({"version": d.name, "report": primary.name, "has_en": en.is_file(),
                     "reports": [f.name for f in files], "updated": primary.stat().st_mtime, **info,
-                    "en": {k: info_en.get(k) for k in ("title", "change", "new_model", "base_model", "variants", "refs")} if info_en else None})
+                    "en": {k: info_en.get(k) for k in ("title", "change", "new_model", "base_model", "variants", "refs", "models")} if info_en else None})
     out.sort(key=lambda r: _vkey(r["version"]), reverse=True)
     return {"reports": out}
+
+
+_STEP_RE = re.compile(r"^([\d.]+)M$")
+_VAL_RE = re.compile(r"^(-?[\d.]+)%(?:\s*±\s*([\d.]+)%)?$")
+
+
+def _md_tables(lines):
+    """Markdown pipe tables of a block of lines: [(header cells, [row cells])]."""
+    out, cur = [], None
+    for ln in lines:
+        if ln.startswith("|"):
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            if cur is None:
+                cur = (cells, [])
+            elif not all(set(c) <= set("-: ") for c in cells):
+                cur[1].append(cells)
+        elif cur is not None:
+            out.append(cur)
+            cur = None
+    if cur is not None:
+        out.append(cur)
+    return out
+
+
+def _val(cell):
+    m = _VAL_RE.match(cell.strip())
+    return (float(m[1]), float(m[2]) if m[2] else None) if m else (None, None)
+
+
+def _parse_curves(text: str, default_label: str) -> dict:
+    """Learning curves of a report: {metric: [{label, scen, points: [[step_M, mean, std], ...]}]}, metric in
+    gap (test relative gap) / train_gap / fail (test failure or EXIT rate). Two layouts: v4.5.x / v5 ("## 学习曲线：
+    测试集相对 gap" + "### LT" per scenario, one column per model) and v4.4.15-17 (one table: 场景 | 步数 | 测试集相对 gap |
+    训练集相对 gap | 测试 EXIT 率 ...; the version's own model)."""
+    lines = text.splitlines()
+    out: dict = {}
+    sec = [i for i, ln in enumerate(lines) if ln.startswith("## ")] + [len(lines)]
+    for a, b in zip(sec, sec[1:]):
+        head = lines[a]
+        if not (head.startswith("## 学习曲线") or head.startswith("## Learning curve")):
+            continue
+        metric = ("fail" if ("未通过率" in head or "failure rate" in head) else
+                  "avg" if ("三场景平均" in head or "mean over the three" in head) else "gap")
+        block = lines[a + 1:b]
+        if metric == "avg":
+            for hdr, rows in _md_tables(block):
+                for j, lab in enumerate(hdr[1:], 1):
+                    pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[j])] for r in rows if _STEP_RE.match(r[0]) and _val(r[j])[0] is not None]
+                    if pts:
+                        out.setdefault("gap", []).append({"label": lab, "scen": "AVG", "points": pts})
+            continue
+        subs = [i for i, ln in enumerate(block) if ln.startswith("### ")] + [len(block)]
+        if len(subs) > 1:                                # per-scenario layout
+            for c, d in zip(subs, subs[1:]):
+                scen = block[c][4:].strip().upper()
+                for hdr, rows in _md_tables(block[c + 1:d]):
+                    for j, lab in enumerate(hdr[1:], 1):
+                        pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[j])] for r in rows
+                               if j < len(r) and _STEP_RE.match(r[0]) and _val(r[j])[0] is not None]
+                        if pts:
+                            out.setdefault(metric, []).append({"label": lab, "scen": scen, "points": pts})
+            continue
+        for hdr, rows in _md_tables(block):              # one-table layout (v4.4.15-17)
+            cols = {"gap": next((k for k, h in enumerate(hdr) if h in ("测试集相对 gap", "Test relative gap")), None),
+                    "train_gap": next((k for k, h in enumerate(hdr) if h in ("训练集相对 gap", "Training-set relative gap", "Train relative gap")), None),
+                    "fail": next((k for k, h in enumerate(hdr) if "EXIT" in h and "逐" not in h and "per seed" not in h.lower()), None)}
+            if len(hdr) < 3 or cols["gap"] is None:
+                continue
+            for m, k in cols.items():
+                if k is None:
+                    continue
+                for scen in ("LT", "EQ", "GT"):
+                    pts = [[float(_STEP_RE.match(r[1])[1]), *_val(r[k])] for r in rows
+                           if r[0].upper() == scen and _STEP_RE.match(r[1]) and _val(r[k])[0] is not None]
+                    if pts:
+                        out.setdefault(m, []).append({"label": default_label, "scen": scen, "points": pts})
+    return out
+
+
+@app.get("/api/curves")
+def list_curves(lang: str = "zh"):
+    """v5.0.0 panel charts: the learning curves parsed from every version's report (lang=en: the .en.md report)."""
+    res = []
+    for d in PAPER_DIR.glob("v*"):
+        if not d.is_dir() or not re.fullmatch(r"v[\d.]+", d.name):
+            continue
+        files = _version_reports(d)
+        if not files:
+            continue
+        p = files[0]
+        if lang == "en" and p.with_name(p.stem + ".en.md").is_file():
+            p = p.with_name(p.stem + ".en.md")
+        text = p.read_text(encoding="utf-8")
+        info = _parse_report(text)
+        curves = _parse_curves(text, info.get("new_model") or d.name)
+        if curves:
+            res.append({"version": d.name, "title": info.get("title"), "interim": "中间报告" in text or "Interim report" in text,
+                        "curves": curves})
+    res.sort(key=lambda r: _vkey(r["version"]), reverse=True)
+    return {"versions": res}
 
 
 @app.get("/api/reports/{version}")
@@ -1675,7 +1775,13 @@ def get_queue():
         active = subprocess.run(["systemctl", "--user", "is-active", "my-code-queue.service"],
                                 capture_output=True, text=True, timeout=5).stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        active = "unknown"
+        active = ""
+    if active not in ("active", "inactive", "failed", "activating", "deactivating"):   # v5.0.0: no systemd (Docker)
+        try:
+            alive = subprocess.run(["pgrep", "-f", "queue_runner.py run"], capture_output=True, timeout=5).returncode == 0
+            active = "active" if alive else "inactive"
+        except (OSError, subprocess.SubprocessError):
+            active = "unknown"
     return {"items": [{k: it.get(k) for k in ("id", "status", "wait_for", "added", "started", "finished", "exit", "log", "cmd")}
                       for it in q.get("items", [])],
             "paused": bool(q.get("paused")), "updated": q.get("updated"), "runner": active}

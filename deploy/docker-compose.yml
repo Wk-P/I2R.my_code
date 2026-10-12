@@ -1,0 +1,44 @@
+# my_code lab: one container for training + panel + queue, optional Cloudflare tunnel.
+#   cd deploy && ./install.sh            (one-click; see deploy/README.md)
+#   docker compose -f deploy/docker-compose.yml up -d lab
+# Settings come from deploy/.env (template: deploy/.env.example).
+name: mycode
+
+services:
+  lab:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: mycode-lab:${IMAGE_TAG:-latest}
+    container_name: mycode-lab
+    restart: unless-stopped
+    ports:
+      - "${PANEL_PORT:-8081}:8081"
+    # MPS and PyTorch shared memory need the host IPC namespace
+    ipc: host
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ${DATA_ROOT:?set DATA_ROOT in deploy/.env}/results:/app/results
+      - ${DATA_ROOT}/logs:/app/logs
+      - ${DATA_ROOT}/paper_contents:/app/paper_contents
+      - ${DATA_ROOT}/config:/app/config
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # stopping or recreating this container ends every running experiment: use the queue, not restarts
+    stop_grace_period: 30s
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: mycode-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
+    depends_on: [lab]
+    profiles: [tunnel]

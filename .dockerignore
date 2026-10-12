@@ -1,0 +1,25 @@
+# Build context for deploy/Dockerfile: code only. Experiment data is mounted, never baked in.
+.git
+.venv
+.venv-gpu
+**/__pycache__
+**/*.pyc
+results
+logs
+archive
+notion
+papers
+thinkings
+techo
+old-*
+data/**/.cache
+app/frontend/node_modules
+app/backend/static/assets
+app/backend/static/index.html
+deploy/.env
+deploy/data
+.env.email
+*.log
+chat.md
+CLAUDE.md
+GPU_FAN_*.sh

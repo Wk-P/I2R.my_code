@@ -7,7 +7,7 @@
                code is also run twice to show how deterministic the GPU itself is.
     speed      K concurrent structure-aware runs (--algo mask_dqn: the v5.0.1 workload), steps/s per configuration
                (--configs): A old code | B new code, CUDA graphs off | C B + NUMA binding | D C + MPS | E new code
-               (CUDA graphs on, the v5.0.0 default). Results (2026-10-12): Mask-DQN x 18: A 1.00 / B 1.20 / C 1.19 /
+               (CUDA graphs on, the v5.0.0 default) | F E + MPS. Results (2026-10-12): Mask-DQN x 18: A 1.00 / B 1.20 / C 1.19 /
                D 1.16 / E 1.46; Mask-PPO x 9: A 1.00 / E 1.06 (logs/check_v5/speed_*.md).
 
     .venv/bin/python src/scripts/check_v5.py identical
@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "src" / "scripts"))
 OUT = ROOT / "logs" / "check_v5"
 PY, PY_GPU = str(ROOT / ".venv" / "bin" / "python"), str(ROOT / ".venv-gpu" / "bin" / "python")
-OLD_SRC = "/home/soar009/github/my_code/src"
+OLD_SRC = os.environ.get("V5_REF_SRC", "/home/soar009/github/my_code/src")   # reference (pre-v5) code; the Docker image sets it
 POOL = "results/sup_diag/{scen}.json"
 COMMON = ["--reward", "ar_pen", "--reward-norm", "none", "--obs", "base", "--gamma", "1.0", "--full-episode", "--exit-action",
           "--seed", "1"]
@@ -59,10 +59,12 @@ def same_run(a: Path, b: Path) -> tuple[bool, str]:
     """(identical?, detail): training_curve.csv byte for byte, then every saved parameter."""
     import torch
     from paper_rl.train import model_class
-    if (a / "training_curve.csv").read_bytes() != (b / "training_curve.csv").read_bytes():
-        ra = list(csv.reader(open(a / "training_curve.csv")))
-        rb = list(csv.reader(open(b / "training_curve.csv")))
-        k = next((i for i, (x, y) in enumerate(zip(ra, rb)) if x != y), min(len(ra), len(rb)))
+    # the reference run's columns must match string for string; v5.0.0 only appends episode_exited at the end
+    ra = list(csv.reader(open(a / "training_curve.csv")))
+    rb = list(csv.reader(open(b / "training_curve.csv")))
+    w = min(len(ra[0]), len(rb[0]))
+    if len(ra) != len(rb) or any(x[:w] != y[:w] for x, y in zip(ra, rb)):
+        k = next((i for i, (x, y) in enumerate(zip(ra, rb)) if x[:w] != y[:w]), min(len(ra), len(rb)))
         return False, f"training_curve.csv differs from row {k} ({len(ra)} vs {len(rb)} rows)"
     res = json.loads((a / "results.json").read_text())
     from paper_rl.train import split_algo
@@ -76,13 +78,21 @@ def same_run(a: Path, b: Path) -> tuple[bool, str]:
 def identical(a):
     cases = [("mask_dqn", "graph", 20000), ("mask_ddqn", "graph", 20000), ("mask_ppo", "graph", 41000), ("mask_dqn", "mlp", 20000)]
     rows = []
-    for dev in ("cpu", "cuda"):
+    mps_extra = {}
+    if a.mps:                                       # v5.0.2: the new-code GPU runs inside MPS
+        sys.path.insert(0, str(ROOT / "src" / "scripts"))
+        import importlib
+        v5 = importlib.import_module("run_v5")
+        v5.mps_start()
+        mps_extra = v5.mps_env()
+    for dev in (("cuda",) if a.mps else ("cpu", "cuda")):
         for algo, net, steps in cases:
             if dev == "cuda" and net == "mlp":
                 continue
             tag = f"{dev}_{algo}_{net}"
             runs = {"old": train(a.old_src, "check_v5_old", algo, net, steps, dev, OUT / "identical" / f"{tag}_old.log", wait=False),
-                    "new": train(str(ROOT / "src"), "check_v5_new", algo, net, steps, dev, OUT / "identical" / f"{tag}_new.log", wait=False)}
+                    "new": train(str(ROOT / "src"), "check_v5_new", algo, net, steps, dev, OUT / "identical" / f"{tag}_new.log",
+                                 extra_env=mps_extra if dev == "cuda" else None, wait=False)}
             if dev == "cuda":                       # GPU determinism of the reference code itself
                 runs["old2"] = train(a.old_src, "check_v5_old2", algo, net, steps, dev, OUT / "identical" / f"{tag}_old2.log", wait=False)
             for k, p in runs.items():
@@ -93,9 +103,13 @@ def identical(a):
             rows.append((dev, algo, net, steps, ok, detail, ref))
             print(f"[identical] {tag}: {'IDENTICAL' if ok else 'DIFFERENT'} -- {detail}"
                   + (f" | old vs old: {'identical' if ref[0] else 'different'} ({ref[1]})" if ref else ""), flush=True)
+    if a.mps:
+        v5.mps_stop()
+    name = "identical_mps" if a.mps else "identical"
     for lang in ("zh", "en"):
         zh = lang == "zh"
-        L = ["# v5.0.0 训练一致性检查" if zh else "# v5.0.0 training-identity check", "",
+        L = [("# v5.0.0 训练一致性检查" if zh else "# v5.0.0 training-identity check") + (" (MPS)" if a.mps else ""), "",
+             *(["新代码一侧的 GPU 训练在 MPS 内运行。" if zh else "The new-code GPU runs execute inside MPS.", ""] if a.mps else []),
              (f"同一种子、同样步数，参照代码 `{a.old_src}` 与本分支代码各训练一次，比较 training_curve.csv（逐字节）与全部模型参数。"
               "GPU 上参照代码再跑一次，用来判断 GPU 本身是否确定。" if zh else
               f"Same seed and steps, once with the reference code `{a.old_src}` and once with this branch; training_curve.csv "
@@ -107,8 +121,11 @@ def identical(a):
             yes, no = ("是", "否") if zh else ("yes", "no")
             L.append(f"| {dev} | {algo} | {net} | {steps:,} | {yes if ok else no} | {detail} | "
                      f"{'—' if ref is None else (yes if ref[0] else no) + ' (' + ref[1] + ')'} |")
-        (OUT / ("identical.md" if zh else "identical.en.md")).write_text("\n".join(L) + "\n")
-    print(f"-> {OUT / 'identical.md'}", flush=True)
+        (OUT / (f"{name}.md" if zh else f"{name}.en.md")).write_text("\n".join(L) + "\n")
+    print(f"-> {OUT / (name + '.md')}", flush=True)
+    for _, _, _, _, ok, _, _ in rows:               # a queued campaign behind this check must not start on a difference
+        if not ok:
+            sys.exit(1)
 
 
 def rate(log: Path, lo: int) -> float | None:
@@ -129,10 +146,11 @@ def speed(a):
     import importlib
     v5 = importlib.import_module("run_v5")
     nodes = v5.gpu_nodes()
-    gpus = sorted(nodes)
+    gpus = [int(g) for g in a.gpus.split(",")] if a.gpus else sorted(nodes)
     new, off = str(ROOT / "src"), {"V5_CUDA_GRAPHS": "0"}
     configs = {"A": (a.old_src, False, False, {}), "B": (new, False, False, off), "C": (new, True, False, off),
-               "D": (new, True, True, off), "E": (new, False, False, {})}
+               "D": (new, True, True, off), "E": (new, False, False, {}),
+               "F": (new, False, True, {})}                # F = E + MPS (the GPU-bound PPO case)
     rows = []
     for name in a.configs.split(","):
         src, numa, mps, extra = configs[name]
@@ -179,6 +197,8 @@ def main():
     ap.add_argument("--steps", type=int, default=200_000)
     ap.add_argument("--algo", default="mask_dqn")
     ap.add_argument("--configs", default="A,B,E")
+    ap.add_argument("--gpus", default=None, help="comma-separated GPU indices to use (default: all)")
+    ap.add_argument("--mps", action="store_true", help="identical: run the new-code GPU runs inside MPS (GPU cases only)")
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     identical(a) if a.what == "identical" else speed(a)

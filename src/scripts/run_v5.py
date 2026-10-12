@@ -5,8 +5,10 @@ PPO / DQN hyper-parameters from paper_rl/config.py, the same for both networks.
 
     5.0.1  Mask-DQN / Mask-DDQN x {MLP, Transformer}, the 1600-instance split (the v4.5.3 experiment, redone with the
            v5.0.0 code); the 50k half is v4.5.2
-    5.0.2  Transformer x {unconstrained, Lagrangian, Repair} x {PPO, DQN, DDQN}, 50k instances; Maskable references:
-           PPO v4.4.15-17, DQN / DDQN v4.5.2
+    5.0.2  Transformer x {unconstrained, Lagrangian, Repair} x {PPO, DQN, DDQN} + Maskable PPO, 50k instances (90 runs);
+           Maskable DQN / DDQN from v4.5.2 (same setting, one continuous 20M run each; the v5.0.0 code trains them
+           bit-identically, so re-running them would reproduce the same models). Maskable PPO is re-trained here because
+           v4.4.15-17 reached 20M by resuming twice (5M -> 10M -> 20M).
 
 Speed-ups that leave training unchanged (v5.0.0, checked by src/scripts/check_v5.py: training is bit-identical to the
 v4.5 code on CPU and GPU): Mask DQN / DDQN build the state features once for Q-values and mask (1.20x total throughput
@@ -61,6 +63,7 @@ CONFIG = {
               "title": ("Mask-DQN / Mask-DDQN：训练实例数（1600 vs 5 万）× 步数", "Mask-DQN / Mask-DDQN: training instances (1600 vs 50k) x steps"),
               "parallel": 36, "gpu_round_robin": True},
     "5.0.2": {"variants": {
+                           "ppo_mask": ("mask_ppo", "graph", True, "Maskable PPO", "Maskable PPO"),   # one continuous 20M run
                            "ppo_none": ("ppo", "graph", True, "无约束 PPO", "Unconstrained PPO"),
                            "ppo_lagrange": ("lagrange_ppo", "graph", True, "Lagrangian PPO", "Lagrangian PPO"),
                            "ppo_repair": ("repair_ppo", "graph", True, "Repair PPO", "Repair PPO"),
@@ -71,16 +74,21 @@ CONFIG = {
                            "ddqn_lagrange": ("lagrange_ddqn", "graph", True, "Lagrangian DDQN", "Lagrangian DDQN"),
                            "ddqn_repair": ("repair_ddqn", "graph", True, "Repair DDQN", "Repair DDQN"),
                            },
-              "title": ("结构感知网络：无约束 / Lagrangian / Repair × PPO / DQN / DDQN（5 万实例、20M）",
-                        "Structure-aware network: unconstrained / Lagrangian / Repair x PPO / DQN / DDQN (50k instances, 20M)"),
-              "parallel": 36, "gpu_round_robin": True, "time_bench": True},
+              "title": ("结构感知网络：无约束 / Lagrangian / Maskable / Repair × PPO / DQN / DDQN（5 万实例、20M）",
+                        "Structure-aware network: unconstrained / Lagrangian / Maskable / Repair x PPO / DQN / DDQN (50k instances, 20M)"),
+              "parallel": 36, "gpu_round_robin": True, "time_bench": True,
+              # v5.0.2 (second launch): one learner family at a time, so they do not crowd each other out on the GPUs.
+              # DQN / DDQN first (CPU-bound, CUDA graphs: 1.46x), then PPO (GPU-bound: MPS 1.56x with 12 runs,
+              # check_v5 speed_mask_ppo.md); an interim report after each stage but the last.
+              "stages": [{"name": "DQN / DDQN", "learners": ["dqn", "ddqn"], "parallel": 27, "mps": True},
+                         {"name": "PPO", "learners": ["ppo"], "parallel": 36, "mps": True}]},
 }
 
 
 def references(version):
     """(label zh, label en, algo, [(seed, scen, exp_id, pattern, step)]) of the curves to compare against."""
     refs = []
-    if version == "5.0.2":                          # Maskable PPO (Transformer), 50k: v4.4.15 (1/3/5M), v4.4.16 (7.5/10M), v4.4.17 (15/20M)
+    if version == "5.0.2-ppo-chain":                # not used: Maskable PPO is trained in 5.0.2 itself (one continuous run): v4.4.15 (1/3/5M), v4.4.16 (7.5/10M), v4.4.17 (15/20M)
         pts = []
         for ver, key, plan in (("v4.4.15", "mask_ppo_pool5m", [("ckpt_1000000_*", 1e6), ("ckpt_3000000_*", 3e6), ("model_*", 5e6)]),
                                ("v4.4.16", "mask_ppo_pool10m", [("ckpt_7500000_*", 7.5e6), ("model_*", 10e6)]),
@@ -98,7 +106,7 @@ def references(version):
             ids = json.loads(man.read_text())["exp_ids"]
             for key, lz, le in (("dqn_graph", "Maskable DQN（v4.5.2）", "Maskable DQN (v4.5.2)"),
                                 ("ddqn_graph", "Maskable DDQN（v4.5.2）", "Maskable DDQN (v4.5.2)")):
-                algo = REF_452["variants"][key][0]
+                algo = REF_452[key][0]
                 pts = [(sd, s, ids[str(sd)][s][key], pat, st) for sd in SEEDS for s in SCENARIOS
                        for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)] if ids.get(str(sd), {}).get(s, {}).get(key)]
                 refs.append((lz, le, algo, True, pts))
@@ -106,7 +114,7 @@ def references(version):
         man = ROOT / "logs" / "v4.5.2" / "manifest.json"
         if man.exists():
             ids = json.loads(man.read_text())["exp_ids"]
-            for key, (algo, net, _, lz, le) in REF_452["variants"].items():
+            for key, (algo, net, _, lz, le) in REF_452.items():
                 pts = [(sd, s, ids[str(sd)][s][key], pat, st) for sd in SEEDS for s in SCENARIOS
                        for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)] if ids.get(str(sd), {}).get(s, {}).get(key)]
                 refs.append((lz, le, algo, True, pts))
@@ -181,8 +189,9 @@ def launch(V, seed, scen, key, exp_ids):
             env.update(mps_env())
     pre = ["numactl", f"--cpunodebind={node}", f"--preferred={node}"] if V["numa"] else []
     cmd = pre + [PY_GPU if gpu else PY, "-u", "-m", "paper_rl.train", "--scen", scen, "--algo", algo, "--net", net,
-           "--reward", "ar_pen", "--reward-norm", "none", "--obs", "base", "--gamma", "1.0", "--full-episode", "--exit-action",
+           "--reward", "ar_pen", "--reward-norm", "none", "--obs", "base", "--gamma", "1.0", "--full-episode",
            "--steps", str(STEPS), "--checkpoints", ",".join(map(str, CKPTS)), "--seed", str(seed)]
+    cmd += ["--exit-action"] if algo.startswith("mask_") else []   # EXIT exists for Maskable only (PlacementEnv ignores it otherwise)
     cmd += ["--device", "cuda"] if gpu else []
     cmd += ["--train-pool", POOL] if pool else []
     proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
@@ -200,7 +209,7 @@ def write_manifest(V, exp_ids):
     algos = sorted({v[0] for v in vs.values()})
     tmp = V["manifest"].with_suffix(".tmp")
     tmp.write_text(json.dumps({"version": V["version"], "commit": commit, "data": DATA, "steps": STEPS, "checkpoints": CKPTS,
-                               "reward": "ar_pen", "gamma": 1.0, "full_episode": True, "exit_action": True,
+                               "reward": "ar_pen", "gamma": 1.0, "full_episode": True, "exit_action": "Maskable only",
                                "scenarios": SCENARIOS, "algos": algos[:1] if len(algos) == 1 else algos,
                                "keys": {k: f"{v[1]}{'' if v[2] else ' · 1600'}" for k, v in vs.items()},
                                "variants": {k: {"algo": v[0], "net": v[1], "train_pool": POOL if v[2] else None} for k, v in vs.items()},
@@ -242,8 +251,8 @@ def ckpt_eval(job):
         run = RESULTS / s / algo / eid
         lam = (json.loads((run / "ckpt_lambda.json").read_text())[str(step)] if pat.startswith("ckpt_")
                else json.loads((run / "results.json").read_text())["training"]["final_lambda"])
-    (te, ex, cap, conf), (tr, *_) = _gap(model, test, learner, mech, lam), _gap(model, train, learner, mech, lam)
-    return job, (te, tr, ex, cap, conf)
+    (te, ex, cap, conf), (tr, ex_tr, *_) = _gap(model, test, learner, mech, lam), _gap(model, train, learner, mech, lam)
+    return job, (te, tr, ex, cap, conf, ex_tr)
 
 
 def regret(V, key, algo, seed):
@@ -344,7 +353,7 @@ def time_bench(series):
     return out
 
 
-def write_report(V, exp_ids):
+def write_report(V, exp_ids, interim: bool = False):
     vs = V["cfg"]["variants"]
     series = [(lz, le, algo, pool, [(sd, s, exp_ids[str(sd)][s][k], pat, st) for sd in SEEDS for s in SCENARIOS
                                    for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)]
@@ -360,13 +369,16 @@ def write_report(V, exp_ids):
             curve[(job[0], job[4], job[3], job[7])] = r
     reg = {}
     # per-step regret is defined over legal ECUs, i.e. for Maskable policies only (v5.0.0)
-    todo = [(k, v[0], sd) for k, v in vs.items() for sd in SEEDS if v[0].startswith("mask_")]
+    # ... and only for runs that have finished in every scenario (an interim report comes before later stages)
+    done = lambda k, algo, sd: all((RESULTS / s / algo / exp_ids.get(str(sd), {}).get(s, {}).get(k, "-") / "results.json").exists()
+                                   for s in SCENARIOS)
+    todo = [(k, v[0], sd) for k, v in vs.items() for sd in SEEDS if v[0].startswith("mask_") and done(k, v[0], sd)]
     for i, (k, algo, sd) in enumerate(todo, 1):
         print(f"[report] regret {i}/{len(todo)} | seed {sd} {k}", flush=True)
         g = regret(V, k, algo, sd)
         for s in SCENARIOS:
             reg[(k, s, sd)] = (sum(g[s]["regret_t"][:EARLY]), float(np.mean(g[s]["opt_rate_t"][:EARLY])))
-    times = time_bench(series) if V["cfg"].get("time_bench") else {}
+    times = time_bench(series) if V["cfg"].get("time_bench") and not interim else {}
     steps = CKPTS + [STEPS]
     ms = lambda v, f: (lambda v: (f(np.mean(v)) + (f" ± {f(np.std(v, ddof=1))}" if len(v) > 1 else "")) if v else "—")(
         [x for x in v if x == x])                    # NaN (no violation-free instance) is left out
@@ -377,6 +389,9 @@ def write_report(V, exp_ids):
         T = lambda z, e: z if zh else e
         lab = lambda i: series[i][0] if zh else series[i][1]
         L = [f"# v{V['version']} {T(*V['cfg']['title'])}", "",
+             *([T("> **中间报告**：只包含已完成的阶段；其余组显示为 —，全部阶段完成后会被最终报告覆盖。",
+                  "> **Interim report**: only the stages finished so far; the other groups show —. The final report replaces it."), ""]
+               if interim else []),
              T(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/run_v5.py --version {V['version']}`。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/run_v5.py --version {V['version']}`."),
              T("- 每个变体 3 种子 × 3 场景、各训练 20M 步，同一次训练在 1 / 3 / 5 / 7.5 / 10 / 15M 存 checkpoint；ar_pen 奖励、γ = 1、不提前结束、EXIT、需求降序；"
@@ -415,16 +430,16 @@ def write_report(V, exp_ids):
                                                         for i in range(len(series))) + " |")
             L.append("")
         L += ["", T("## 20M：测试集与训练集 gap、违约、前几步决策", "## 20M: test and training-set gap, violations, early decisions"), "",
-              T(f"| 场景 | 模型 | 测试集相对 gap | 训练集相对 gap | 测试未通过率（EXIT / 违约） | 容量违约率 | 隐私违约率 | 第 1–{EARLY} 步 regret | 第 1–{EARLY} 步选中最优 |",
-                f"| Scenario | Model | Test relative gap | Train relative gap | Test failure rate (EXIT / violation) | Capacity violation rate | Privacy violation rate | Steps 1–{EARLY} regret | Steps 1–{EARLY} optimal-action rate |"),
-              "|---|---|---|---|---|---|---|---|---|"]
+              T(f"| 场景 | 模型 | 测试集相对 gap | 训练集相对 gap | 测试未通过率（EXIT / 违约） | 训练集未通过率 | 容量违约率 | 隐私违约率 | 第 1–{EARLY} 步 regret | 第 1–{EARLY} 步选中最优 |",
+                f"| Scenario | Model | Test relative gap | Train relative gap | Test failure rate (EXIT / violation) | Train failure rate | Capacity violation rate | Privacy violation rate | Steps 1–{EARLY} regret | Steps 1–{EARLY} optimal-action rate |"),
+              "|---|---|---|---|---|---|---|---|---|---|"]
         keys = list(vs)
         for s in SCENARIOS:
             for i in range(len(series)):
                 c = [curve[(i, s, sd, STEPS)] for sd in SEEDS if (i, s, sd, STEPS) in curve]
                 r = [reg[(keys[i], s, sd)] for sd in SEEDS if i < len(keys) and (keys[i], s, sd) in reg]
                 L.append(f"| {s.upper()} | {lab(i)} | {ms([x[0] for x in c], pc)} | {ms([x[1] for x in c], pc)} | {ms([x[2] for x in c], pc)} | "
-                         f"{ms([x[3] for x in c], pc)} | {ms([x[4] for x in c], pc)} | "
+                         f"{ms([x[5] for x in c], pc)} | {ms([x[3] for x in c], pc)} | {ms([x[4] for x in c], pc)} | "
                          f"{ms([x[0] for x in r], lambda v: f'{v:.4f}')} | {ms([x[1] for x in r], pc)} |")
         L += ["", T("regret 按合法 ECU 之间的最优差距定义，只适用于 Maskable；其余机制可能执行违约动作，记为 —。",
                     "Regret is defined over the legal ECUs, i.e. for Maskable only; the other mechanisms may execute violating actions (—)."), ""]
@@ -463,6 +478,34 @@ def write_report(V, exp_ids):
         print(f"report -> {p}", flush=True)
 
 
+def run_batch(V, runs, limit, exp_ids) -> list[str]:
+    """Train `runs` with at most `limit` at a time (inside MPS when V["mps"]); returns the failed labels."""
+    failed = []
+    if V["mps"]:
+        mps_start()
+    pending, active = list(runs), []
+    while pending or active:
+        while pending and len(active) < limit:
+            sd, s, k = pending.pop(0)
+            active.append((*launch(V, sd, s, k, exp_ids), f"seed{sd} {s} {k}"))
+        running = []
+        for p, f, label in active:
+            if p.poll() is None:
+                running.append((p, f, label))
+                continue
+            f.close()
+            V["active_res"].pop(p.pid, None)
+            print(f"[{time.strftime('%H:%M:%S')}] finished {label} ({'OK' if p.returncode == 0 else f'EXIT={p.returncode}'})", flush=True)
+            if p.returncode != 0:
+                failed.append(label)
+        if len(running) == len(active):             # nothing finished: wait before polling again
+            time.sleep(2 if SMOKE else 30)
+        active = running
+    if V["mps"]:
+        mps_stop()
+    return failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", required=True, choices=list(CONFIG))
@@ -496,37 +539,32 @@ def main():
         runs = [(sd, s, k) for sd in SEEDS for k in V["cfg"]["variants"] for s in SCENARIOS]
         # v5.0.0: longest first (PPO, then DQN / DDQN) so that the slowest runs do not start last
         runs.sort(key=lambda r: V["cfg"]["variants"][r[2]][0].split("_")[-1] != "ppo")
+    env_par = int(os.environ.get("V5_PARALLEL", 0))
+    stages = V["cfg"].get("stages") if not a.rerun else None
+    if stages:                                      # v5.0.2: one stage after the other
+        learner = lambda r: V["cfg"]["variants"][r[2]][0].split("_")[-1]
+        plan = [(st, [r for r in runs if learner(r) in st["learners"]]) for st in stages]
+        assert sum(len(x) for _, x in plan) == len(runs), "every run must belong to a stage"
+    else:
+        plan = [({"name": "all", "parallel": V["cfg"].get("parallel"), "mps": V["mps"]}, runs)]
     failed = []
-    limit = int(os.environ.get("V5_PARALLEL", 0)) or V["cfg"].get("parallel") or len(runs)   # v5.0.0: at most `parallel` runs at a time
-    if V["mps"]:
-        mps_start()
-    pending, active = list(runs), []
-    while pending or active:
-        while pending and len(active) < limit:
-            sd, s, k = pending.pop(0)
-            active.append((*launch(V, sd, s, k, exp_ids), f"seed{sd} {s} {k}"))
-        running = []
-        for p, f, label in active:
-            if p.poll() is None:
-                running.append((p, f, label))
-                continue
-            f.close()
-            V["active_res"].pop(p.pid, None)
-            print(f"[{time.strftime('%H:%M:%S')}] finished {label} ({'OK' if p.returncode == 0 else f'EXIT={p.returncode}'})", flush=True)
-            if p.returncode != 0:
-                failed.append(label)
-        if len(running) == len(active):             # nothing finished: wait before polling again
-            time.sleep(2 if SMOKE else 30)
-        active = running
-    if V["mps"]:
-        mps_stop()
+    for k_st, (st, st_runs) in enumerate(plan):
+        if os.environ.get("V5_MPS") is None:        # a stage's own MPS setting unless V5_MPS is given explicitly
+            V["mps"] = bool(st.get("mps"))
+        limit = env_par or st.get("parallel") or len(st_runs)
+        print(f"=== stage {k_st + 1}/{len(plan)}: {st['name']} | {len(st_runs)} runs | at most {limit} at a time | "
+              f"MPS {'on' if V['mps'] else 'off'} | {time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
+        failed += run_batch(V, st_runs, limit, exp_ids)
+        if k_st + 1 < len(plan) and not failed:       # interim report: the stages done so far
+            print(f"[report] interim report after stage {k_st + 1}", flush=True)
+            write_report(V, exp_ids, interim=True)
     print(f"=== done {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(failed)} failed ===", flush=True)
     from shared.report_mail import send_failure, send_report
     if SMOKE:                                       # no email for the end-to-end test
         send_failure = send_report = lambda *a_, **k_: None
     if failed:
         send_failure(f"v{a.version}", failed, log_dir=V["log_dir"].relative_to(ROOT), manifest=V["manifest"].relative_to(ROOT))
-        return
+        sys.exit(1)                                 # non-zero: the queue stops instead of starting the next item
     write_report(V, exp_ids)
     send_report(f"v{a.version}", V["report"], manifest=V["manifest"].relative_to(ROOT), driver_log=f"logs/run_v{a.version}_driver.log")
 

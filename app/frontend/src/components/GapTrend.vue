@@ -42,13 +42,14 @@ const baseline = computed(() => {
   return best ? Number(best[0]) : null;
 });
 
-const H = 300, M = { t: 16, r: 64, b: 34, l: 44 };
+const H = 300;
+const M = computed(() => ({ t: 16, r: en.value ? 132 : 100, b: 34, l: 44 }));   // room for the end labels (longer in English)
 const yMax = computed(() => Math.ceil(Math.max(12, ...pts.value.flatMap((p) => [p.LT, p.EQ, p.GT, p.avg])) / 2) * 2);
-const x = (i) => M.l + (pts.value.length <= 1 ? (W.value - M.l - M.r) / 2 : (i * (W.value - M.l - M.r)) / (pts.value.length - 1));
-const y = (v) => M.t + (1 - v / yMax.value) * (H - M.t - M.b);
+const x = (i) => M.value.l + (pts.value.length <= 1 ? (W.value - M.value.l - M.value.r) / 2 : (i * (W.value - M.value.l - M.value.r)) / (pts.value.length - 1));
+const y = (v) => M.value.t + (1 - v / yMax.value) * (H - M.value.t - M.value.b);
 const ticks = computed(() => { const t = []; for (let v = 0; v <= yMax.value; v += yMax.value > 14 ? 4 : 2) t.push(v); return t; });
 const path = (k) => pts.value.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).join("");
-const colW = computed(() => (pts.value.length > 1 ? (W.value - M.l - M.r) / (pts.value.length - 1) : W.value));
+const colW = computed(() => (pts.value.length > 1 ? (W.value - M.value.l - M.value.r) / (pts.value.length - 1) : W.value));
 const label = (k) => (k === "avg" ? L("三场景平均", "3-scenario mean") : k);
 // end labels: nudge apart so they do not overlap
 const endLabels = computed(() => {

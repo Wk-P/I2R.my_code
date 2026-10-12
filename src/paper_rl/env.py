@@ -213,6 +213,8 @@ class PlacementEnv(gym.Env):
         for i, ps in enumerate(self.partners):
             adj[i, list(ps)] = 1.0
         self.conflict_pairs = adj[self._pairs]           # raw conflict graph, upper triangle
+        self._adj_flat = adj.ravel()                     # v5.0.0: raw observation parts, built once per episode
+        self._assign = np.zeros(self.M, dtype=np.float32)   # ECU + 1 of every placed service, updated on placement
         self.remaining = self.cap.copy()
         self.hosted = [set() for _ in range(self.N)]       # every executed placement
         self.t = 0
@@ -344,15 +346,10 @@ class PlacementEnv(gym.Env):
         """v4.4.3: raw state for the structure-aware policy (src/paper_rl/graph_net.decode_raw):
         capacities (N), demands in placement order (M), conflict graph (M x M), ECU of every
         placed service + 1 (0 = not placed, M), current step t (1) [+ lambda / LAMBDA_MAX (1), Lagrange only, v4.5.4]."""
-        adj = np.zeros((self.M, self.M), dtype=np.float32)
-        for i, ps in enumerate(self.partners):
-            adj[i, list(ps)] = 1.0
-        assign = np.zeros(self.M, dtype=np.float32)
-        for j, hs in enumerate(self.hosted):
-            for i in hs:
-                assign[i] = j + 1
+        # v5.0.0: the conflict graph is fixed within an episode (built in reset) and the assignment is kept up to date
+        # in step(), instead of rebuilding both from partners / hosted on every call -- the same values
         lam = [min(self.lam / C.LAMBDA_MAX, 1.0)] if self.raw_lam else []
-        return np.concatenate([self.cap, self.req, adj.ravel(), assign, [self.t], lam]).astype(np.float32)
+        return np.concatenate([self.cap, self.req, self._adj_flat, self._assign, [self.t], lam]).astype(np.float32)
 
     def _conflict_obs(self) -> np.ndarray:
         """v4.3.4: raw conflict graph among the services not yet placed, fixed length
@@ -430,6 +427,7 @@ class PlacementEnv(gym.Env):
         self.conflict_violations += conf_v
         self.remaining[a] -= self.req[i]
         self.hosted[a].add(i)
+        self._assign[i] = a + 1
         self.exec_ru += float(self.req[i] / self.cap[a])
         self.exec_ecus.add(a)
         if not (cap_v or conf_v):

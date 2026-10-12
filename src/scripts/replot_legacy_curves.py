@@ -81,7 +81,7 @@ def main():
                 no_csv.append(d)
                 continue
             with open(c) as f:
-                if next(csv.reader(f), None) == PAPER_RL_HEADER:
+                if (next(csv.reader(f), None) or [])[:len(PAPER_RL_HEADER)] == PAPER_RL_HEADER:   # v5.0.0 appends episode_exited
                     continue
             if (d / "results.json").exists():
                 todo.append(d)

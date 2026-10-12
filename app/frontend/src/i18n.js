@@ -57,7 +57,7 @@ const D = {
   "的训练批次与评估批次，按版本分组；点击查看各任务的状态与汇总结果": " training and evaluation batches, grouped by version; click for job status and summaries",
   "种子": "seed", "算法": "algorithm", "类型": "type", "系统负载 1/5/15 分钟": "system load 1/5/15 min", "约束处理": "constraint handling",
   "结果目录": "result dir", "耗时 ms/实例": "time ms/instance", "范围：": "Scope: ", "菜单": "Menu", "训练中任务": "training jobs",
-  "训练中": "Training", "冻结": "frozen", "冻结中": "frozen", "最近约 30 万步的速度（由日志反推）；悬停单元格可看自启动以来的平均速度": "speed over the last ~300k steps (derived from the log); hover a cell for the average since start", "自启动以来平均": "average since start", "训练任务": "training jobs", "训练占用 CPU": "training CPU", "训练回合数": "training episodes", "训练曲线": "training curve",
+  "训练中": "Training", "图表": "Charts", "冻结": "frozen", "冻结中": "frozen", "最近约 30 万步的速度（由日志反推）；悬停单元格可看自启动以来的平均速度": "speed over the last ~300k steps (derived from the log); hover a cell for the average since start", "自启动以来平均": "average since start", "训练任务": "training jobs", "训练占用 CPU": "training CPU", "训练回合数": "training episodes", "训练曲线": "training curve",
   "训练末 50 回合 AR": "AR of last 50 training episodes", "训练 / 测试实例数": "train / test instances", "训练监控": "Monitor",
   "训练进度来自各任务日志中最近一次 [train] 记录（旧实现每 20 万步、paper_rl 每 10 万步写一次），刚启动或处于 ILP / 评估阶段时显示 0%。":
     "Progress comes from the latest [train] line in each job log (every 200k steps in the old code, every 100k in paper_rl); 0% right after start or during ILP / evaluation.",
