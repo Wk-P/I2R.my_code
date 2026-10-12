@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 
-from paper_rl.graph_net import GraphPolicyNet, decode_raw, raw_lambda
+from paper_rl.graph_net import GraphPolicyNet, decode_raw, raw_lambda, run_graphed
 
 
 class GraphMaskablePolicy(MaskableActorCriticPolicy):
@@ -42,6 +42,9 @@ class GraphMaskablePolicy(MaskableActorCriticPolicy):
         return data
 
     def _run(self, obs):
+        return run_graphed(self, "pi", self._run_eager, obs)    # v5.0.0: CUDA graph on GPU (graph_net.run_graphed)
+
+    def _run_eager(self, obs):
         obs = obs.float()
         x = decode_raw(obs, self.n_ecu, self.n_svc)
         lam = raw_lambda(obs, self.n_ecu, self.n_svc) if self.gkw["lam_in"] else None

@@ -5,11 +5,13 @@
                src) and once with this checkout's src; training_curve.csv must match byte for byte and every model
                parameter must be equal. Runs on CPU (deterministic) and, separately, on GPU, where the reference
                code is also run twice to show how deterministic the GPU itself is.
-    speed      K concurrent structure-aware Mask-DQN runs (the v5.0.1 workload), steps/s per configuration:
-               A old code | B new code | C new code + NUMA binding | D new code + NUMA + MPS.
+    speed      K concurrent structure-aware runs (--algo mask_dqn: the v5.0.1 workload), steps/s per configuration
+               (--configs): A old code | B new code, CUDA graphs off | C B + NUMA binding | D C + MPS | E new code
+               (CUDA graphs on, the v5.0.0 default). Results (2026-10-12): Mask-DQN x 18: A 1.00 / B 1.20 / C 1.19 /
+               D 1.16 / E 1.46; Mask-PPO x 9: A 1.00 / E 1.06 (logs/check_v5/speed_*.md).
 
     .venv/bin/python src/scripts/check_v5.py identical
-    .venv/bin/python src/scripts/check_v5.py speed [--k 18] [--steps 200000]
+    .venv/bin/python src/scripts/check_v5.py speed [--algo mask_dqn] [--k 18] [--steps 200000] [--configs A,B,E]
 Results: logs/check_v5/{identical,speed}.md (+ .en.md)
 """
 import argparse
@@ -128,42 +130,45 @@ def speed(a):
     v5 = importlib.import_module("run_v5")
     nodes = v5.gpu_nodes()
     gpus = sorted(nodes)
-    configs = [("A", a.old_src, False, False), ("B", str(ROOT / "src"), False, False),
-               ("C", str(ROOT / "src"), True, False), ("D", str(ROOT / "src"), True, True)]
+    new, off = str(ROOT / "src"), {"V5_CUDA_GRAPHS": "0"}
+    configs = {"A": (a.old_src, False, False, {}), "B": (new, False, False, off), "C": (new, True, False, off),
+               "D": (new, True, True, off), "E": (new, False, False, {})}
     rows = []
-    for name, src, numa, mps in configs:
+    for name in a.configs.split(","):
+        src, numa, mps, extra = configs[name]
         if mps:
             v5.mps_start()
         procs = []
         for k in range(a.k):
             g = gpus[k % len(gpus)]
-            env = {"CUDA_VISIBLE_DEVICES": str(g), **(v5.mps_env() if mps else {})}
+            env = {"CUDA_VISIBLE_DEVICES": str(g), **(v5.mps_env() if mps else {}), **extra}
             pre = ["numactl", f"--cpunodebind={nodes[g]}", f"--preferred={nodes[g]}"] if numa else []
-            log = OUT / "speed" / f"{name}_{k}.log"
-            procs.append((log, train(src, f"check_v5_speed_{name}", "mask_dqn", "graph", a.steps, "cuda", log, env, pre, wait=False)))
+            log = OUT / f"speed_{a.algo}" / f"{name}_{k}.log"
+            procs.append((log, train(src, f"check_v5_speed_{name}", a.algo, "graph", a.steps, "cuda", log, env, pre, wait=False)))
         for log, p in procs:
             assert p.wait() == 0, f"{name}: {log} failed"
         if mps:
             v5.mps_stop()
         r = [rate(log, a.steps // 2) for log, _ in procs]
         r = [x for x in r if x]
-        rows.append((name, numa, mps, sum(r) / len(r), sum(r)))
+        rows.append((name, numa, mps, extra, sum(r) / len(r), sum(r)))
         print(f"[speed] {name}: {sum(r) / len(r):.0f} steps/s per run, {sum(r):.0f} in total", flush=True)
-    base = rows[0][4]
+    base = rows[0][5]
     for lang in ("zh", "en"):
         zh = lang == "zh"
         L = ["# v5.0.0 速度检查" if zh else "# v5.0.0 speed check", "",
-             (f"{a.k} 个结构感知 Mask-DQN 同时训练（轮流分到 {len(gpus)} 张 GPU），每个 {a.steps:,} 步；速度取后一半步数（去掉启动与随机预热）。"
-              if zh else f"{a.k} concurrent structure-aware Mask-DQN runs (round-robin over {len(gpus)} GPUs), {a.steps:,} steps each; "
+             (f"{a.k} 个结构感知 {a.algo} 同时训练（轮流分到 {len(gpus)} 张 GPU），每个 {a.steps:,} 步；速度取后一半步数（去掉启动与随机预热）。"
+              if zh else f"{a.k} concurrent structure-aware {a.algo} runs (round-robin over {len(gpus)} GPUs), {a.steps:,} steps each; "
               "speed over the second half of the steps (no start-up, no random warm-up)."), "",
-             "| 配置 | 代码 | NUMA 绑核 | MPS | 每个 run 步/秒 | 合计步/秒 | 相对 A |" if zh else
-             "| Config | Code | NUMA binding | MPS | Steps/s per run | Total steps/s | vs A |", "|---|---|---|---|---|---|---|"]
-        for name, numa, mps, per, tot in rows:
+             "| 配置 | 代码 | CUDA Graphs | NUMA 绑核 | MPS | 每个 run 步/秒 | 合计步/秒 | 相对 A |" if zh else
+             "| Config | Code | CUDA graphs | NUMA binding | MPS | Steps/s per run | Total steps/s | vs A |", "|---|---|---|---|---|---|---|---|"]
+        for name, numa, mps, extra, per, tot in rows:
             yes, no = ("是", "否") if zh else ("yes", "no")
-            L.append(f"| {name} | {('参照' if zh else 'reference') if name == 'A' else 'v5.0.0'} | {yes if numa else no} | {yes if mps else no} | "
+            L.append(f"| {name} | {('参照' if zh else 'reference') if name == 'A' else 'v5.0.0'} | {no if name == 'A' or extra else yes} | "
+                     f"{yes if numa else no} | {yes if mps else no} | "
                      f"{per:,.0f} | {tot:,.0f} | {tot / base:.2f}× |")
-        (OUT / ("speed.md" if zh else "speed.en.md")).write_text("\n".join(L) + "\n")
-    print(f"-> {OUT / 'speed.md'}", flush=True)
+        (OUT / (f"speed_{a.algo}.md" if zh else f"speed_{a.algo}.en.md")).write_text("\n".join(L) + "\n")
+    print(f"-> {OUT / f'speed_{a.algo}.md'}", flush=True)
 
 
 def main():
@@ -172,6 +177,8 @@ def main():
     ap.add_argument("--old-src", default=OLD_SRC)
     ap.add_argument("--k", type=int, default=18)
     ap.add_argument("--steps", type=int, default=200_000)
+    ap.add_argument("--algo", default="mask_dqn")
+    ap.add_argument("--configs", default="A,B,E")
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     identical(a) if a.what == "identical" else speed(a)

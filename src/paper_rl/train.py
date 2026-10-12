@@ -370,6 +370,9 @@ def main():
 
     if a.net == "graph":
         a.obs = "raw"
+        if a.device.startswith("cuda") and os.environ.get("V5_CUDA_GRAPHS", "1") == "1":   # v5.0.0, see graph_net.run_graphed
+            import paper_rl.graph_net as _gn
+            _gn.CUDA_GRAPHS = True
     mech, learner = split_algo(a.algo)
     torch.set_num_threads(C.PPO_TORCH_THREADS if learner == "ppo" else C.DQN_TORCH_THREADS)
     data, train, test = split_instances(a.scen, a.seed)

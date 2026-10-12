@@ -108,8 +108,29 @@ def generate(scen: str, p: float | None, n_inst: int, seed: int = 42, workers: i
 
 
 def load(scen: str, version: str | None = None) -> dict:
+    """The instance file of a scenario. v5.0.0: parsing the YAML takes ~16 s (pure-Python PyYAML), so the parsed
+    object is cached as a pickle in <data dir>/.cache/, keyed by the SHA-256 of the YAML; a changed YAML is
+    re-parsed. The cached object is exactly what yaml.safe_load returned."""
+    import hashlib
+    import os
+    import pickle
+    path = data_dir(version) / f"{scen}.yaml"
+    raw = path.read_bytes()
+    cache = path.parent / ".cache" / f"{scen}.{hashlib.sha256(raw).hexdigest()[:16]}.pkl"
+    try:
+        return pickle.loads(cache.read_bytes())
+    except (OSError, pickle.UnpicklingError, EOFError):
+        pass
     import yaml
-    return yaml.safe_load(open(data_dir(version) / f"{scen}.yaml"))
+    d = yaml.safe_load(raw)
+    try:                                             # per-process temp file, then an atomic rename
+        cache.parent.mkdir(exist_ok=True)
+        tmp = cache.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_bytes(pickle.dumps(d, protocol=pickle.HIGHEST_PROTOCOL))
+        tmp.replace(cache)
+    except OSError:
+        pass
+    return d
 
 
 if __name__ == "__main__":

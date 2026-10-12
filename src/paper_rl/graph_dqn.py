@@ -12,7 +12,7 @@ from __future__ import annotations
 import torch.nn as nn
 from stable_baselines3.dqn.policies import DQNPolicy
 
-from paper_rl.graph_net import GraphPolicyNet, decode_raw, raw_lambda
+from paper_rl.graph_net import GraphPolicyNet, decode_raw, raw_lambda, run_graphed
 
 
 class GraphQNet(nn.Module):
@@ -26,7 +26,12 @@ class GraphQNet(nn.Module):
 
     def q_and_mask(self, obs):
         """v5.0.0: Q-values and the raw feasibility mask [B, N+1] (ECUs + EXIT) from ONE pass of build(), so
-        Maskable DQN does not rebuild the state features just for the mask (same values as before)."""
+        Maskable DQN does not rebuild the state features just for the mask (same values as before); on GPU
+        replayed from a CUDA graph. Only (Q, mask) are graph outputs: the value head stays out of the graph, so
+        it gets no gradient, exactly as in the eager pass."""
+        return run_graphed(self, "q", self._q_and_mask, obs)
+
+    def _q_and_mask(self, obs):
         obs = obs.float()
         lam = raw_lambda(obs, self.n_ecu, self.n_svc) if self.net.lam_in else None
         q, _, mask, _ = self.net.scores(*decode_raw(obs, self.n_ecu, self.n_svc), lam)

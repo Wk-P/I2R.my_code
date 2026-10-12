@@ -8,9 +8,12 @@ PPO / DQN hyper-parameters from paper_rl/config.py, the same for both networks.
     5.0.2  Transformer x {unconstrained, Lagrangian, Repair} x {PPO, DQN, DDQN}, 50k instances; Maskable references:
            PPO v4.4.15-17, DQN / DDQN v4.5.2
 
-Speed-ups that leave training unchanged (v5.0.0): at most `parallel` runs at a time; GPU runs round-robin over the
-GPUs, each bound (numactl) to the NUMA node of its GPU, CPU runs to the less loaded node (V5_NUMA=0 turns it off);
-GPU runs share each GPU through NVIDIA MPS with this campaign's own pipe directory (V5_MPS=0 turns it off).
+Speed-ups that leave training unchanged (v5.0.0, checked by src/scripts/check_v5.py: training is bit-identical to the
+v4.5 code on CPU and GPU): Mask DQN / DDQN build the state features once for Q-values and mask (1.20x total throughput
+with 18 concurrent structure-aware Mask-DQN runs); at most `parallel` runs at a time, each GPU run on the GPU with the
+fewest active runs. Optional, off by default because they did not help in that check: V5_NUMA=1 binds every run
+(numactl) to the NUMA node of its GPU / the less loaded node (0.99x), V5_MPS=1 shares each GPU through NVIDIA MPS
+with this campaign's own pipe directory (0.97x).
 Report: learning curve (test gap / failure rate on each seed's 400 test instances, training-set gap on 1600 training
 instances), the 20M models with violation rates and (Maskable only) the per-step regret; Chinese + English, email.
 
@@ -70,7 +73,7 @@ CONFIG = {
                            },
               "title": ("结构感知网络：无约束 / Lagrangian / Repair × PPO / DQN / DDQN（5 万实例、20M）",
                         "Structure-aware network: unconstrained / Lagrangian / Repair x PPO / DQN / DDQN (50k instances, 20M)"),
-              "parallel": 36, "gpu_round_robin": True},
+              "parallel": 36, "gpu_round_robin": True, "time_bench": True},
 }
 
 
@@ -256,6 +259,91 @@ def regret(V, key, algo, seed):
     return json.loads(js.read_text())
 
 
+# ── per-instance time: every 20M model vs the ILP (v5.0.2) ────────────────────────────────────────────────
+ILP_WORKERS, TIME_WORKERS, WARMUP = 12, 24, 5
+
+
+def test_index(scen, seed):
+    """Indices (into the scenario's instance file) of a seed's test split, as paper_rl.train.split_instances."""
+    from paper_rl.data import load
+    n = len(load(scen)["instances"])
+    idx = list(range(n))
+    random.Random(seed).shuffle(idx)
+    return idx[int(0.8 * n):]
+
+
+def policy_time(job):
+    """One 20M model on its seed's test split, one CPU thread: full deterministic episode (reset, mask,
+    forward, step) and the forward passes alone, per instance."""
+    import torch
+    torch.set_num_threads(1)
+    from paper_rl.env import PlacementEnv
+    from paper_rl.train import model_class, split_algo, split_instances
+    i, algo, sd, s, eid = job
+    files = list((RESULTS / s / algo / eid).glob("model_*"))
+    if not files:
+        return job, None
+    mech, learner = split_algo(algo)
+    test = split_instances(s, sd)[2]
+    model = model_class(learner, mech).load(str(files[0]), device="cpu")
+    lam = json.loads((RESULTS / s / algo / eid / "results.json").read_text())["training"].get("final_lambda", 0.0) if mech == "lagrange" else 0.0
+    obs_mode = "raw" if model.policy.__class__.__name__.startswith("Graph") else "base"
+    env = PlacementEnv(test, mech, "ar_pen", lam=lam, obs_mode=obs_mode, full_episode=True, exit_action=True)
+    masked_ppo = learner == "ppo" and mech == "mask"
+
+    def episode(k):
+        env.use_instance(k)
+        obs, _ = env.reset()
+        fwd, done = 0.0, False
+        while not done:
+            t = time.perf_counter()
+            a, _ = model.predict(obs, deterministic=True, **({"action_masks": env.action_masks()} if masked_ppo else {}))
+            fwd += time.perf_counter() - t
+            obs, _, done, _, _ = env.step(int(a))
+        return fwd
+    for k in range(WARMUP):
+        episode(k)
+    rows = []
+    for k in range(len(test)):
+        t0 = time.perf_counter()
+        fwd = episode(k)
+        rows.append(((time.perf_counter() - t0) * 1000, fwd * 1000))
+    return job, rows
+
+
+def ilp_time(args):
+    from paper_rl.data import load
+    from shared.ilp_utils import solve_ilp_max_ar
+    s, gi = args
+    x = load(s)["instances"][gi]
+    t0 = time.perf_counter()
+    solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
+    return s, gi, (time.perf_counter() - t0) * 1000
+
+
+def time_bench(series):
+    """{(series idx, scen): (model ms list, forward ms list, ILP ms list on the same instances)}; the ILP is solved
+    once per instance of a scenario (union of the seeds' test splits), single-threaded CBC, model building included."""
+    tidx = {(s, sd): test_index(s, sd) for s in SCENARIOS for sd in SEEDS}
+    jobs = [(i, algo, sd, s, eid) for i, (_, _, algo, _, pts) in enumerate(series) for sd, s, eid, pat, st in pts if pat == "model_*"]
+    print(f"[report] timing {len(jobs)} models (1 thread each)", flush=True)
+    with Pool(min(len(jobs), TIME_WORKERS)) as pool:
+        pol = pool.map(policy_time, jobs)
+    todo = sorted({(s, gi) for (s, sd), ix in tidx.items() for gi in ix})
+    print(f"[report] timing the ILP on {len(todo)} instances ({ILP_WORKERS} single-thread solvers)", flush=True)
+    with Pool(ILP_WORKERS) as pool:
+        ilp = {(s, gi): ms for s, gi, ms in pool.map(ilp_time, todo, chunksize=4)}
+    out = {}
+    for (i, algo, sd, s, eid), rows in pol:
+        if rows is None:
+            continue
+        m, f, l = out.setdefault((i, s), ([], [], []))
+        m += [r[0] for r in rows]
+        f += [r[1] for r in rows]
+        l += [ilp[(s, gi)] for gi in tidx[(s, sd)]]
+    return out
+
+
 def write_report(V, exp_ids):
     vs = V["cfg"]["variants"]
     series = [(lz, le, algo, pool, [(sd, s, exp_ids[str(sd)][s][k], pat, st) for sd in SEEDS for s in SCENARIOS
@@ -278,6 +366,7 @@ def write_report(V, exp_ids):
         g = regret(V, k, algo, sd)
         for s in SCENARIOS:
             reg[(k, s, sd)] = (sum(g[s]["regret_t"][:EARLY]), float(np.mean(g[s]["opt_rate_t"][:EARLY])))
+    times = time_bench(series) if V["cfg"].get("time_bench") else {}
     steps = CKPTS + [STEPS]
     ms = lambda v, f: (lambda v: (f(np.mean(v)) + (f" ± {f(np.std(v, ddof=1))}" if len(v) > 1 else "")) if v else "—")(
         [x for x in v if x == x])                    # NaN (no violation-free instance) is left out
@@ -346,6 +435,29 @@ def write_report(V, exp_ids):
                 L.append(f"| {s.upper()} | {lab(i)} | " + " | ".join(pc(curve[(i, s, sd, STEPS)][0]) if (i, s, sd, STEPS) in curve else "—"
                                                                     for sd in SEEDS) + " |")
         L.append("")
+        if times:
+            q = lambda v, p_: float(np.percentile(v, p_))
+            L += [T("## 求解时间：每个 20M 模型 vs ILP（逐实例）", "## Solve time: every 20M model vs the ILP (per instance)"), "",
+                  T("单线程 CPU。模型：完整确定性 episode（reset、掩码、前向、step），另列仅前向；ILP：Dinkelbach + CBC 单线程，含建模，"
+                    "每个场景对三个种子测试集的并集各求一次。加速比 = ILP 时间 / 模型时间，在同一批实例上计算（每个种子 400 个，三个种子合并）。",
+                    "One CPU thread. Model: full deterministic episode (reset, mask, forward, step), and the forward passes alone; ILP: "
+                    "Dinkelbach + single-thread CBC, model building included, solved once per instance of the union of the three seeds' test "
+                    "splits. Speed-up = ILP time / model time on the same instances (400 per seed, three seeds pooled)."), ""]
+            for s in SCENARIOS:
+                L += [f"### {s.upper()}", "",
+                      T("| 方法 | 平均 ms | 中位数 ms | P95 ms | 仅前向 平均 ms | 加速比（平均） | 加速比（中位数） |",
+                        "| Method | Mean ms | Median ms | P95 ms | Forward only, mean ms | Speed-up (mean) | Speed-up (median) |"),
+                      "|---|---|---|---|---|---|---|"]
+                ilp_all = next((v[2] for (i, s2), v in times.items() if s2 == s), None)
+                if ilp_all:
+                    L.append(f"| ILP | {np.mean(ilp_all):.1f} | {q(ilp_all, 50):.1f} | {q(ilp_all, 95):.1f} | — | — | — |")
+                for i in range(len(series)):
+                    if (i, s) not in times:
+                        continue
+                    m, f, l = times[(i, s)]
+                    L.append(f"| {lab(i)} | {np.mean(m):.1f} | {q(m, 50):.1f} | {q(m, 95):.1f} | {np.mean(f):.1f} | "
+                             f"{np.mean(l) / np.mean(m):.1f}× | {q(l, 50) / q(m, 50):.1f}× |")
+                L.append("")
         p = V["report"] if zh else V["report"].with_suffix(".en.md")
         p.write_text("\n".join(L))
         print(f"report -> {p}", flush=True)
@@ -363,8 +475,8 @@ def main():
          "out": ROOT / ("results" if SMOKE else "paper_contents") / (f"smoke_v{a.version}" if SMOKE else f"v{a.version}")}
     V["manifest"], V["report"] = V["log_dir"] / "manifest.json", V["out"] / "report.md"
     V["active_res"], V["gpu_node"] = {}, gpu_nodes()
-    V["numa"] = os.environ.get("V5_NUMA", "1") == "1"
-    V["mps"] = os.environ.get("V5_MPS", "1") == "1" and any(v[1] == "graph" for v in V["cfg"]["variants"].values())
+    V["numa"] = os.environ.get("V5_NUMA", "0") == "1"      # off by default: no gain in check_v5 speed (0.99x)
+    V["mps"] = os.environ.get("V5_MPS", "0") == "1" and any(v[1] == "graph" for v in V["cfg"]["variants"].values())
     V["log_dir"].mkdir(parents=True, exist_ok=True)
     V["out"].mkdir(parents=True, exist_ok=True)
     if a.report:
@@ -382,6 +494,8 @@ def main():
         write_manifest(V, exp_ids)
         print(f"=== v{a.version} start {time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
         runs = [(sd, s, k) for sd in SEEDS for k in V["cfg"]["variants"] for s in SCENARIOS]
+        # v5.0.0: longest first (PPO, then DQN / DDQN) so that the slowest runs do not start last
+        runs.sort(key=lambda r: V["cfg"]["variants"][r[2]][0].split("_")[-1] != "ppo")
     failed = []
     limit = int(os.environ.get("V5_PARALLEL", 0)) or V["cfg"].get("parallel") or len(runs)   # v5.0.0: at most `parallel` runs at a time
     if V["mps"]:

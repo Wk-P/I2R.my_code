@@ -31,6 +31,62 @@ import torch.nn as nn
 
 N_REL = 4
 
+# ── CUDA Graphs (v5.0.0) ────────────────────────────────────────────────────────────────────────────────
+# The network is many small ops (build() + 3 attention layers ~ 150 kernels per pass); on GPU the time goes into
+# launching them from Python, not into the GPU. run_graphed() records the whole pass (raw observation -> outputs)
+# once per (owner, batch shape, grad mode) as a CUDA graph and afterwards replays it with one launch. The replayed
+# kernels are the recorded ones, so the results are the same as the eager pass (checked bit for bit by
+# src/scripts/check_v5.py). With grad enabled, torch.cuda.make_graphed_callables also records the backward pass.
+# Off unless train.py turns it on for a CUDA run (V5_CUDA_GRAPHS=0 keeps it off).
+CUDA_GRAPHS = False
+_GRAPHS: dict[int, dict] = {}                   # id(owner) -> {(tag, shape, grad): runner}; owners stay alive
+
+
+class _Fn(nn.Module):
+    """make_graphed_callables needs a module: the owner's parameters, forward = fn."""
+
+    def __init__(self, owner: nn.Module, fn):
+        super().__init__()
+        self.owner, self.fn = owner, fn
+
+    def forward(self, obs):
+        return self.fn(obs)
+
+
+def _capture_nograd(fn, obs):
+    static_in = obs.clone()
+    side = torch.cuda.Stream()
+    side.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(side), torch.no_grad():
+        for _ in range(3):                      # warm-up outside the graph (allocator, cuBLAS handles)
+            fn(static_in)
+    torch.cuda.current_stream().wait_stream(side)
+    g = torch.cuda.CUDAGraph()
+    with torch.no_grad(), torch.cuda.graph(g):
+        static_out = fn(static_in)
+
+    def run(x):
+        static_in.copy_(x)
+        g.replay()
+        return tuple(o.clone() for o in static_out)   # the next replay overwrites the static outputs
+    return run
+
+
+def _capture_grad(owner, fn, obs):
+    return torch.cuda.make_graphed_callables(_Fn(owner, fn), (obs.clone(),), allow_unused_input=True)
+
+
+def run_graphed(owner: nn.Module, tag: str, fn, obs):
+    """fn(obs) -> tuple of tensors, replayed from a CUDA graph when CUDA_GRAPHS is on and obs is on a GPU.
+    Everything fn uses must be fixed-shape and sync-free (true for build() / the encoder / the heads)."""
+    if not (CUDA_GRAPHS and obs.is_cuda) or torch.cuda.is_current_stream_capturing():
+        return fn(obs)
+    key = (tag, tuple(obs.shape), obs.dtype, torch.is_grad_enabled())
+    cache = _GRAPHS.setdefault(id(owner), {"owner": owner})
+    if key not in cache:
+        cache[key] = _capture_grad(owner, fn, obs) if key[-1] else _capture_nograd(fn, obs)
+    return cache[key](obs)
+
 
 def build(caps, reqs, adj, assign, t, glob_std: bool = False, glob3: bool = False):
     """Raw state -> (node features: glob [B,4 or 5], ecu [B,N,6], svc [B,M,5]), relations [B,R,L,L], mask [B,N+1], ar [B]."""
