@@ -84,9 +84,11 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
                   gae_lambda=C.PPO_GAE_LAMBDA if gae_lambda is None else gae_lambda, clip_range=C.PPO_CLIP_RANGE, ent_coef=C.PPO_ENT_COEF if ent_coef is None else ent_coef,
                   policy_kwargs=dict(net_arch=C.PPO_NET_ARCH), device=device, verbose=0, seed=seed)
         if net == "graph":                              # v4.4.3: structure-aware policy, PPO settings unchanged
-            assert mech == "mask" and action_mode == "ecu", "--net graph: Mask PPO, ECU action only"
+            # v4.5.4: every mechanism; mask keeps the masked logits, the others use the unmasked scores
+            assert action_mode == "ecu", "--net graph: ECU action only"
             from paper_rl.graph_policy import GraphMaskablePolicy
-            kw.update(policy=GraphMaskablePolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, glob_std=glob_std, separate=separate, pair_head=pair_head, plan=plan, plan_decay=plan_decay, glob3=glob3))
+            kw.update(policy=GraphMaskablePolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, glob_std=glob_std, separate=separate, pair_head=pair_head, plan=plan, plan_decay=plan_decay, glob3=glob3,
+                                                                  lam_in=mech == "lagrange", mask_logits=mech == "mask"))
         if mech == "mask" and group_k:                 # v4.4.11: same-instance groups, instance-wise baseline
             from paper_rl.group_ppo import GroupMaskablePPO
             return GroupMaskablePPO(group_k=group_k, group_seed=seed, **kw)
@@ -105,11 +107,13 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
               exploration_final_eps=C.DQN_EXPLORATION_FINAL_EPS,
               policy_kwargs=dict(net_arch=C.DQN_NET_ARCH), device=device, verbose=0, seed=seed)
     if net == "graph":                                  # v4.5.2: structure-aware Q-network, same DQN settings
-        assert mech == "mask" and action_mode == "ecu", "--net graph with DQN / DDQN: Maskable, ECU action only"
+        assert action_mode == "ecu", "--net graph with DQN / DDQN: ECU action only"
         from paper_rl.graph_dqn import GraphDQNPolicy
-        kw.update(policy=GraphDQNPolicy, policy_kwargs=dict(n_ecu=n, n_svc=m))
-        cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
-        return cls(mask_start=None, raw_dims=(n, m), exit_action=exit_action, **kw)
+        kw.update(policy=GraphDQNPolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, lam_in=mech == "lagrange"))
+        if mech == "mask":
+            cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
+            return cls(mask_start=None, raw_dims=(n, m), exit_action=exit_action, **kw)
+        return (DoubleDQN if learner == "ddqn" else DQN)(**kw)     # v4.5.4: unconstrained / Lagrange / Repair
     if mech == "mask":
         cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
         return cls(mask_start=mask_slice(n, m, action_mode).start, exit_action=exit_action, **kw)
@@ -191,8 +195,10 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
     return Cb()
 
 
-def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str):
-    """v4.4.15: save the model the first time num_timesteps reaches each of `steps`."""
+def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=None):
+    """v4.4.15: save the model the first time num_timesteps reaches each of `steps`.
+    v4.5.4: with lam_fn (Lagrange), also record the dual variable at each checkpoint in ckpt_lambda.json,
+    since the policy reads lambda from its observation and must be evaluated with the value it was trained at."""
     from stable_baselines3.common.callbacks import BaseCallback
 
     class Ckpt(BaseCallback):
@@ -202,7 +208,13 @@ def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str):
 
         def _on_step(self) -> bool:
             while self.todo and self.num_timesteps >= self.todo[0]:
-                self.model.save(str(run_dir / f"ckpt_{self.todo.pop(0)}_{exp_id}"))
+                step = self.todo.pop(0)
+                self.model.save(str(run_dir / f"ckpt_{step}_{exp_id}"))
+                if lam_fn is not None:
+                    path = run_dir / "ckpt_lambda.json"
+                    lams = json.loads(path.read_text()) if path.exists() else {}
+                    lams[str(step)] = round(float(lam_fn()), 6)
+                    path.write_text(json.dumps(lams, indent=2))
             return True
 
     return Ckpt()
@@ -416,7 +428,8 @@ def main():
         from paper_rl.grad_diag import GradDiagCallback
         extra.append(GradDiagCallback(run_dir / "grad_cos.csv"))
     if a.checkpoints:                                   # v4.4.15: save the model at these step counts
-        extra.append(checkpoint_callback(sorted(int(x) for x in a.checkpoints.split(",")), run_dir, exp_id))
+        extra.append(checkpoint_callback(sorted(int(x) for x in a.checkpoints.split(",")), run_dir, exp_id,
+                                         (lambda: main_cb.lam) if mech == "lagrange" else None))
     if extra:
         from stable_baselines3.common.callbacks import CallbackList
         cb = CallbackList([main_cb, *extra])

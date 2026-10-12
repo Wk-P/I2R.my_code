@@ -86,9 +86,13 @@ class MaskableDQN(DQN):
         from paper_rl.graph_net import build, decode_raw
         n, m = self.raw_dims
         _, _, mask, _ = build(*decode_raw(obs.float(), n, m))          # [B, N+1]: ECUs + EXIT (valid iff none feasible)
+        return self._action_mask(mask)
+
+    def _action_mask(self, mask: th.Tensor) -> th.Tensor:
+        """Raw build() mask [B, N+1] -> the mask over this model's actions."""
         if getattr(self, "exit_action", False):
             return mask
-        ecu = mask[:, :n]
+        ecu = mask[:, :self.raw_dims[0]]
         return ecu | ~ecu.any(dim=1, keepdim=True)
 
     # ── mask helpers ─────────────────────────────────────────────────────────
@@ -110,6 +114,9 @@ class MaskableDQN(DQN):
         return th.cat([m, empty], dim=1) if getattr(self, "exit_action", False) else m | empty
 
     def _masked_q(self, net, obs: th.Tensor) -> th.Tensor:
+        if getattr(self, "raw_dims", None) and hasattr(net, "q_and_mask"):   # v5.0.0: one build() for Q and mask
+            q, mask = net.q_and_mask(obs)
+            return q.masked_fill(~self._action_mask(mask), -th.inf)
         return net(obs).masked_fill(~self._mask_th(obs), -th.inf)
 
     def _random_valid(self, mask: np.ndarray) -> np.ndarray:
@@ -120,9 +127,10 @@ class MaskableDQN(DQN):
         obs = np.asarray(observation, dtype=np.float32)
         vectorized = obs.ndim == 2
         batch = obs if vectorized else obs[None]
-        mask = self._mask_np(batch)
+        # v5.0.0: the CPU mask is only needed for a random action (the greedy one masks on the device);
+        # building it lazily draws the same random numbers in the same order as before
         if not deterministic and np.random.rand() < self.exploration_rate:
-            action = self._random_valid(mask)
+            action = self._random_valid(self._mask_np(batch))
         else:
             self.policy.set_training_mode(False)
             with th.no_grad():

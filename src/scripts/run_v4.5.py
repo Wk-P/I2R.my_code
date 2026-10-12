@@ -13,6 +13,7 @@ variant and reference, and the 20M models with the per-step regret; Chinese + En
 
     nohup .venv/bin/python src/scripts/run_v4.5.py --version 4.5.1 > logs/run_v4.5.1_driver.log 2>&1 &
     .venv/bin/python src/scripts/run_v4.5.py --version 4.5.1 --report
+    nohup .venv/bin/python src/scripts/run_v4.5.py --version 4.5.2 --rerun 1 gt dqn_graph >> logs/run_v4.5.2_driver.log 2>&1 &
 """
 import argparse
 import json
@@ -250,6 +251,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", required=True, choices=list(CONFIG))
     ap.add_argument("--report", action="store_true")
+    ap.add_argument("--rerun", nargs=3, metavar=("SEED", "SCEN", "KEY"), action="append",
+                    help="re-train one failed run under a new exp_id, replacing it in the manifest; report + email at the end")
     a = ap.parse_args()
     sfx = "_smoke" if SMOKE else ""
     V = {"version": a.version, "cfg": CONFIG[a.version], "log_dir": ROOT / "logs" / f"v{a.version}{sfx}",
@@ -260,10 +263,19 @@ def main():
     if a.report:
         write_report(V, json.loads(V["manifest"].read_text())["exp_ids"])
         return
-    exp_ids = {}
-    write_manifest(V, exp_ids)
-    print(f"=== v{a.version} start {time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
-    active = [(*launch(V, sd, s, k, exp_ids), f"seed{sd} {s} {k}") for sd in SEEDS for k in V["cfg"]["variants"] for s in SCENARIOS]
+    if a.rerun:                                     # replace failed runs; the old exp_id stays only in its log file name
+        exp_ids = json.loads(V["manifest"].read_text())["exp_ids"]
+        runs = [(int(sd), s, k) for sd, s, k in a.rerun]
+        for sd, s, k in runs:
+            assert sd in SEEDS and s in SCENARIOS and k in V["cfg"]["variants"], (sd, s, k)
+            print(f"=== v{a.version} rerun seed{sd} {s} {k} (was {exp_ids.get(str(sd), {}).get(s, {}).get(k)}) "
+                  f"{time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
+    else:
+        exp_ids = {}
+        write_manifest(V, exp_ids)
+        print(f"=== v{a.version} start {time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
+        runs = [(sd, s, k) for sd in SEEDS for k in V["cfg"]["variants"] for s in SCENARIOS]
+    active = [(*launch(V, sd, s, k, exp_ids), f"seed{sd} {s} {k}") for sd, s, k in runs]
     failed = []
     for p, f, label in active:
         ret = p.wait()

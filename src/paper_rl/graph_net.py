@@ -135,15 +135,16 @@ class PlanEncoder(nn.Module):
 
 class GraphPolicyNet(nn.Module):
     def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, pair_head: bool = False,
-                 plan: bool = False, plan_decay: bool = False, glob3: bool = False):
+                 plan: bool = False, plan_decay: bool = False, glob3: bool = False, lam_in: bool = False):
         super().__init__()
+        self.lam_in = lam_in                            # v4.5.4: Lagrange -- lambda / LAMBDA_MAX joins the global token
         assert not (glob3 and glob_std), "glob3 already contains sigma_util"
         self.glob3 = glob3
         self.glob_std, self.pair_head, self.plan, self.plan_decay = glob_std, pair_head, plan, plan_decay
         assert plan or not plan_decay, "plan_decay needs plan"
         if plan:                                        # v4.4.12: global plan matrix from s_0
             self.plan_enc = PlanEncoder(d, heads, layers, glob_std)
-        self.inp = nn.ModuleList([nn.Linear(3 if glob3 else 5 if glob_std else 4, d), nn.Linear(6, d), nn.Linear(5, d)])
+        self.inp = nn.ModuleList([nn.Linear((3 if glob3 else 5 if glob_std else 4) + lam_in, d), nn.Linear(6, d), nn.Linear(5, d)])
         self.type_emb = nn.Parameter(torch.zeros(3, d))
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
         self.ln = nn.LayerNorm(d)
@@ -154,14 +155,18 @@ class GraphPolicyNet(nn.Module):
         self.exit_head = nn.Linear(d, 1)
         self.value_head = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, 1))
 
-    def forward(self, caps, reqs, adj, assign, t):
+    def forward(self, caps, reqs, adj, assign, t, lam=None):
         """-> masked logits [B,N+1], value [B], mask [B,N+1], ar [B]"""
-        logits, value, mask, ar = self.scores(caps, reqs, adj, assign, t)
+        logits, value, mask, ar = self.scores(caps, reqs, adj, assign, t, lam)
         return logits.masked_fill(~mask, -1e9), value, mask, ar
 
-    def scores(self, caps, reqs, adj, assign, t):
-        """-> unmasked scores [B,N+1] (ECUs + EXIT; used as Q-values by graph DQN, v4.5.2), value [B], mask, ar"""
+    def scores(self, caps, reqs, adj, assign, t, lam=None):
+        """-> unmasked scores [B,N+1] (ECUs + EXIT; used as Q-values by graph DQN, v4.5.2), value [B], mask, ar.
+        lam [B] (lambda / LAMBDA_MAX) is required iff the network was built with lam_in (v4.5.4)."""
         feats, rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std, self.glob3)
+        if self.lam_in:
+            assert lam is not None, "lam_in network needs lambda (Lagrange raw observation)"
+            feats = (torch.cat([feats[0], lam.float().unsqueeze(1)], 1), *feats[1:])
         N = caps.shape[1]
         x = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
         h_ecu = x[:, 1:1 + N]
@@ -200,10 +205,17 @@ def state_from_env(env):
 
 
 def decode_raw(obs, n: int, m: int):
-    """PlacementEnv raw observation [B, N+M+M*M+M+1] -> (caps, reqs, adj, assign, t)."""
+    """PlacementEnv raw observation [B, N+M+M*M+M+1 (+1)] -> (caps, reqs, adj, assign, t).
+    t is read at its fixed position, so the optional trailing lambda (Lagrange, v4.5.4) does not move it."""
     caps = obs[:, :n]
     reqs = obs[:, n:n + m]
     adj = obs[:, n + m:n + m + m * m].reshape(-1, m, m) > 0.5
     assign = obs[:, n + m + m * m:n + 2 * m + m * m].round().long() - 1
-    t = obs[:, -1].round().long()
+    t = obs[:, n + 2 * m + m * m].round().long()
     return caps, reqs, adj, assign, t
+
+
+def raw_lambda(obs, n: int, m: int):
+    """v4.5.4: lambda / LAMBDA_MAX of a Lagrange raw observation [B] (the entry after t), None if absent."""
+    k = n + 2 * m + m * m + 1
+    return obs[:, k] if obs.shape[1] > k else None

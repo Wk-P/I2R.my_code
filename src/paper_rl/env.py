@@ -177,8 +177,11 @@ class PlacementEnv(gym.Env):
         self.N = len(instances[0]["ECUs"])
         self.M = len(instances[0]["SVCs"])
         self.action_space = gym.spaces.Discrete((self.M * self.N if self.joint else self.N) + self.exit_action)
+        # v4.5.4: the raw observation of Lagrange carries lambda / LAMBDA_MAX as one extra last entry (the
+        # structure-aware network reads it into its global token); every other raw observation is unchanged
+        self.raw_lam = obs_mode == "raw" and mechanism == "lagrange"
         self.observation_space = gym.spaces.Box(-1.0, 1.0 if obs_mode != "raw" else 1e4,
-                                                (obs_dim(self.N, self.M, obs_mode, action_mode),), np.float32)
+                                                (obs_dim(self.N, self.M, obs_mode, action_mode) + self.raw_lam,), np.float32)
         self._pairs = np.triu_indices(self.M, k=1)       # (i, j), i < j, in placement order
 
     # ── setup ────────────────────────────────────────────────────────────────
@@ -340,7 +343,7 @@ class PlacementEnv(gym.Env):
     def _raw_obs(self) -> np.ndarray:
         """v4.4.3: raw state for the structure-aware policy (src/paper_rl/graph_net.decode_raw):
         capacities (N), demands in placement order (M), conflict graph (M x M), ECU of every
-        placed service + 1 (0 = not placed, M), current step t (1)."""
+        placed service + 1 (0 = not placed, M), current step t (1) [+ lambda / LAMBDA_MAX (1), Lagrange only, v4.5.4]."""
         adj = np.zeros((self.M, self.M), dtype=np.float32)
         for i, ps in enumerate(self.partners):
             adj[i, list(ps)] = 1.0
@@ -348,7 +351,8 @@ class PlacementEnv(gym.Env):
         for j, hs in enumerate(self.hosted):
             for i in hs:
                 assign[i] = j + 1
-        return np.concatenate([self.cap, self.req, adj.ravel(), assign, [self.t]]).astype(np.float32)
+        lam = [min(self.lam / C.LAMBDA_MAX, 1.0)] if self.raw_lam else []
+        return np.concatenate([self.cap, self.req, adj.ravel(), assign, [self.t], lam]).astype(np.float32)
 
     def _conflict_obs(self) -> np.ndarray:
         """v4.3.4: raw conflict graph among the services not yet placed, fixed length

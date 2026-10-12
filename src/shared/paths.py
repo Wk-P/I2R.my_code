@@ -73,7 +73,10 @@ def write_progress(algo_dir: Path, **fields) -> None:
     unreliable; a small file write on every callback tick is not."""
     algo_dir.mkdir(parents=True, exist_ok=True)
     path = algo_dir / PROGRESS_FILENAME
-    tmp = path.with_suffix(".tmp")
+    # Per-process tmp name: several runs of the same <scenario>/<algo> (other
+    # seeds / variants) share algo_dir, and a shared ".progress.tmp" lets one
+    # run rename it away before another's replace() -> FileNotFoundError.
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
     with open(tmp, "w") as f:
         json.dump(fields, f)
     tmp.replace(path)
