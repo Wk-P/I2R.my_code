@@ -111,7 +111,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
       </thead>
       <tbody>
         <tr v-for="p in training" :key="p.pid" :title="`exp_id ${p.exp_id ?? '—'} · PID ${p.pid}`">
-          <td><a v-if="p.batch" :href="`#/batches/${p.batch}`">{{ p.batch }}</a><span v-else class="dim">手动启动</span></td>
+          <td><a v-if="p.batch" :href="`#/batches/${p.batch}`">{{ p.batch }}</a><span v-else-if="p.paper_version?.endsWith('-check')" class="dim" data-no-i18n>v{{ p.paper_version.replace(/-check$/, "") }} {{ curLang === "en" ? "check (test)" : "验证测试" }}</span><span v-else class="dim">手动启动</span></td>
           <td><span class="scen" :class="`scen--${p.scenario}`">{{ p.scenario.toUpperCase() }}</span></td>
           <td>{{ algoLabel(p.algo) }}<span v-if="p.variant" class="tag">{{ variantLabel(p.variant) }}</span></td>
           <td>{{ netLabel(p.net) }} · <span :class="{ dim: p.device === 'CPU' }">{{ p.device ?? "—" }}</span></td>

@@ -953,13 +953,14 @@ def _recent_rate(head: str, tail: str, window: int = 3) -> int | None:
 def _training_proc_info(pid: int) -> dict:
     """exp_id / seed / reward mode (from the launcher-provided environment),
     owning batch (log directory) and training progress (log tail)."""
-    info = {"exp_id": None, "seed": None, "variant": None, "batch": None, "progress_pct": None,
+    info = {"exp_id": None, "seed": None, "variant": None, "batch": None, "paper_version": None, "progress_pct": None,
             "net": None, "device": None, "steps_per_sec": None, "steps_per_sec_avg": None}
     try:
         env = dict(kv.split(b"=", 1) for kv in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0") if b"=" in kv)
         info["exp_id"] = env.get(b"EXP_ID", b"").decode() or None
         info["seed"] = env.get(b"TRAIN_SEED", b"").decode() or None
         info["variant"] = env.get(b"REWARD_MODE", b"").decode() or None
+        info["paper_version"] = env.get(b"PAPER_VERSION", b"").decode() or None   # v5.0.0: label runs started outside logs/<batch>/
         cmd = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
         arg = lambda flag: cmd[cmd.index(flag) + 1].decode() if flag in cmd and cmd.index(flag) + 1 < len(cmd) else None
         if b"paper_rl.train" in cmd:                       # v4.4.3: policy network and torch device
