@@ -80,8 +80,8 @@ CONFIG = {
               # v5.0.2 (second launch): one learner family at a time, so they do not crowd each other out on the GPUs.
               # DQN / DDQN first (CPU-bound, CUDA graphs: 1.46x), then PPO (GPU-bound: MPS 1.56x with 12 runs,
               # check_v5 speed_mask_ppo.md); an interim report after each stage but the last.
-              "stages": [{"name": "DQN / DDQN", "learners": ["dqn", "ddqn"], "parallel": 27, "mps": True},
-                         {"name": "PPO", "learners": ["ppo"], "parallel": 36, "mps": True}]},
+              "stages": [{"name": "DQN / DDQN", "learners": ["dqn", "ddqn"], "parallel": 27, "mps": False},   # DQN: MPS no gain (speed_mask_dqn_ABCD)
+                         {"name": "PPO", "learners": ["ppo"], "parallel": 18, "mps": True}]},  # Legacy MPS (Pascal 1080 Ti): 27 clients fail with "Failed to create/open SHM segment", 18 ran fine
 }
 
 
