@@ -46,3 +46,4 @@ notion/
 build/
 chat.md
 GPU_FAN*.sh
+**/.cache/

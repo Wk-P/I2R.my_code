@@ -31,6 +31,62 @@ import torch.nn as nn
 
 N_REL = 4
 
+# ── CUDA Graphs (v5.0.0) ────────────────────────────────────────────────────────────────────────────────
+# The network is many small ops (build() + 3 attention layers ~ 150 kernels per pass); on GPU the time goes into
+# launching them from Python, not into the GPU. run_graphed() records the whole pass (raw observation -> outputs)
+# once per (owner, batch shape, grad mode) as a CUDA graph and afterwards replays it with one launch. The replayed
+# kernels are the recorded ones, so the results are the same as the eager pass (checked bit for bit by
+# src/scripts/check_v5.py). With grad enabled, torch.cuda.make_graphed_callables also records the backward pass.
+# Off unless train.py turns it on for a CUDA run (V5_CUDA_GRAPHS=0 keeps it off).
+CUDA_GRAPHS = False
+_GRAPHS: dict[int, dict] = {}                   # id(owner) -> {(tag, shape, grad): runner}; owners stay alive
+
+
+class _Fn(nn.Module):
+    """make_graphed_callables needs a module: the owner's parameters, forward = fn."""
+
+    def __init__(self, owner: nn.Module, fn):
+        super().__init__()
+        self.owner, self.fn = owner, fn
+
+    def forward(self, obs):
+        return self.fn(obs)
+
+
+def _capture_nograd(fn, obs):
+    static_in = obs.clone()
+    side = torch.cuda.Stream()
+    side.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(side), torch.no_grad():
+        for _ in range(3):                      # warm-up outside the graph (allocator, cuBLAS handles)
+            fn(static_in)
+    torch.cuda.current_stream().wait_stream(side)
+    g = torch.cuda.CUDAGraph()
+    with torch.no_grad(), torch.cuda.graph(g):
+        static_out = fn(static_in)
+
+    def run(x):
+        static_in.copy_(x)
+        g.replay()
+        return tuple(o.clone() for o in static_out)   # the next replay overwrites the static outputs
+    return run
+
+
+def _capture_grad(owner, fn, obs):
+    return torch.cuda.make_graphed_callables(_Fn(owner, fn), (obs.clone(),), allow_unused_input=True)
+
+
+def run_graphed(owner: nn.Module, tag: str, fn, obs):
+    """fn(obs) -> tuple of tensors, replayed from a CUDA graph when CUDA_GRAPHS is on and obs is on a GPU.
+    Everything fn uses must be fixed-shape and sync-free (true for build() / the encoder / the heads)."""
+    if not (CUDA_GRAPHS and obs.is_cuda) or torch.cuda.is_current_stream_capturing():
+        return fn(obs)
+    key = (tag, tuple(obs.shape), obs.dtype, torch.is_grad_enabled())
+    cache = _GRAPHS.setdefault(id(owner), {"owner": owner})
+    if key not in cache:
+        cache[key] = _capture_grad(owner, fn, obs) if key[-1] else _capture_nograd(fn, obs)
+    return cache[key](obs)
+
 
 def build(caps, reqs, adj, assign, t, glob_std: bool = False, glob3: bool = False):
     """Raw state -> (node features: glob [B,4 or 5], ecu [B,N,6], svc [B,M,5]), relations [B,R,L,L], mask [B,N+1], ar [B]."""
@@ -135,15 +191,16 @@ class PlanEncoder(nn.Module):
 
 class GraphPolicyNet(nn.Module):
     def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, pair_head: bool = False,
-                 plan: bool = False, plan_decay: bool = False, glob3: bool = False):
+                 plan: bool = False, plan_decay: bool = False, glob3: bool = False, lam_in: bool = False):
         super().__init__()
+        self.lam_in = lam_in                            # v4.5.4: Lagrange -- lambda / LAMBDA_MAX joins the global token
         assert not (glob3 and glob_std), "glob3 already contains sigma_util"
         self.glob3 = glob3
         self.glob_std, self.pair_head, self.plan, self.plan_decay = glob_std, pair_head, plan, plan_decay
         assert plan or not plan_decay, "plan_decay needs plan"
         if plan:                                        # v4.4.12: global plan matrix from s_0
             self.plan_enc = PlanEncoder(d, heads, layers, glob_std)
-        self.inp = nn.ModuleList([nn.Linear(3 if glob3 else 5 if glob_std else 4, d), nn.Linear(6, d), nn.Linear(5, d)])
+        self.inp = nn.ModuleList([nn.Linear((3 if glob3 else 5 if glob_std else 4) + lam_in, d), nn.Linear(6, d), nn.Linear(5, d)])
         self.type_emb = nn.Parameter(torch.zeros(3, d))
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
         self.ln = nn.LayerNorm(d)
@@ -154,14 +211,18 @@ class GraphPolicyNet(nn.Module):
         self.exit_head = nn.Linear(d, 1)
         self.value_head = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, 1))
 
-    def forward(self, caps, reqs, adj, assign, t):
+    def forward(self, caps, reqs, adj, assign, t, lam=None):
         """-> masked logits [B,N+1], value [B], mask [B,N+1], ar [B]"""
-        logits, value, mask, ar = self.scores(caps, reqs, adj, assign, t)
+        logits, value, mask, ar = self.scores(caps, reqs, adj, assign, t, lam)
         return logits.masked_fill(~mask, -1e9), value, mask, ar
 
-    def scores(self, caps, reqs, adj, assign, t):
-        """-> unmasked scores [B,N+1] (ECUs + EXIT; used as Q-values by graph DQN, v4.5.2), value [B], mask, ar"""
+    def scores(self, caps, reqs, adj, assign, t, lam=None):
+        """-> unmasked scores [B,N+1] (ECUs + EXIT; used as Q-values by graph DQN, v4.5.2), value [B], mask, ar.
+        lam [B] (lambda / LAMBDA_MAX) is required iff the network was built with lam_in (v4.5.4)."""
         feats, rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std, self.glob3)
+        if self.lam_in:
+            assert lam is not None, "lam_in network needs lambda (Lagrange raw observation)"
+            feats = (torch.cat([feats[0], lam.float().unsqueeze(1)], 1), *feats[1:])
         N = caps.shape[1]
         x = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
         h_ecu = x[:, 1:1 + N]
@@ -200,10 +261,17 @@ def state_from_env(env):
 
 
 def decode_raw(obs, n: int, m: int):
-    """PlacementEnv raw observation [B, N+M+M*M+M+1] -> (caps, reqs, adj, assign, t)."""
+    """PlacementEnv raw observation [B, N+M+M*M+M+1 (+1)] -> (caps, reqs, adj, assign, t).
+    t is read at its fixed position, so the optional trailing lambda (Lagrange, v4.5.4) does not move it."""
     caps = obs[:, :n]
     reqs = obs[:, n:n + m]
     adj = obs[:, n + m:n + m + m * m].reshape(-1, m, m) > 0.5
     assign = obs[:, n + m + m * m:n + 2 * m + m * m].round().long() - 1
-    t = obs[:, -1].round().long()
+    t = obs[:, n + 2 * m + m * m].round().long()
     return caps, reqs, adj, assign, t
+
+
+def raw_lambda(obs, n: int, m: int):
+    """v4.5.4: lambda / LAMBDA_MAX of a Lagrange raw observation [B] (the entry after t), None if absent."""
+    k = n + 2 * m + m * m + 1
+    return obs[:, k] if obs.shape[1] > k else None
