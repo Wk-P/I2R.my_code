@@ -5,6 +5,7 @@ import { getBatches, getBatch, getQueue } from "../api.js";
 import { algoLabel, algoIndex, scenarioIndex, variantLabel, netLabel, reporting, reportText, reportPct } from "../labels.js";
 import { langRef as curLang } from "../i18n.js";
 import { secToClock } from "../format.js";
+import HardwarePanel from "../components/HardwarePanel.vue";
 
 const procs = computed(() => store.system?.processes || []);
 const training = computed(() =>
@@ -76,6 +77,7 @@ const queuedByBatch = computed(() => {
 });
 
 const gpus = computed(() => store.system?.gpus || []);
+const frozenN = computed(() => training.value.filter((p) => p.frozen).length);
 const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_percent || 0), 0));
 </script>
 
@@ -88,7 +90,8 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
   </div>
 
   <div class="kpis" data-no-i18n>
-    <div class="kpi"><div class="kpi-label">{{ curLang === "en" ? "Training jobs" : "训练任务" }}</div><div class="kpi-value">{{ training.length }}</div></div>
+    <div class="kpi"><div class="kpi-label">{{ curLang === "en" ? "Training jobs" : "训练任务" }}</div><div class="kpi-value">{{ training.length - frozenN }}</div>
+      <div v-if="frozenN" class="kpi-foot">{{ curLang === "en" ? `running · ${frozenN} frozen (SIGSTOP, resumable)` : `运行中 · 另有 ${frozenN} 个冻结（SIGSTOP，可恢复）` }}</div></div>
     <div class="kpi"><div class="kpi-label">CPU</div><div class="kpi-value">{{ loadPct === null ? "—" : loadPct + "%" }}</div>
       <div class="kpi-foot">{{ curLang === "en" ? "training" : "训练" }} {{ (totalCpu / 100).toFixed(1) }}<template v-if="diagCpu > 0"> · {{ curLang === "en" ? "diagnostics" : "诊断" }} {{ (diagCpu / 100).toFixed(1) }}</template> / {{ store.system?.cpu_count ?? "—" }} {{ curLang === "en" ? "cores" : "核" }}</div></div>
     <div v-if="gpus.length" class="kpi"><div class="kpi-label">GPU</div>
@@ -96,13 +99,15 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
       <div class="kpi-foot">{{ gpus.map((g) => (g.mem_used != null ? (g.mem_used / 1024).toFixed(1) : "—") + " GB").join(" · ") }}</div></div>
   </div>
 
+  <HardwarePanel />
+
   <section class="panel">
     <div class="panel-head"><h2>训练任务</h2></div>
     <div v-if="!training.length" class="empty">当前没有训练任务在运行</div>
     <div class="table-scroll" v-else><table class="grid">
       <thead>
         <tr><th>批次</th><th>场景</th><th>算法</th><th>网络 · 设备</th><th>种子</th>
-          <th class="w-progress">训练进度</th><th class="num" title="日志里最近一次 [train] 记录的平均速度（自启动以来）">步/秒</th><th class="num">已运行</th></tr>
+          <th class="w-progress">训练进度</th><th class="num" title="最近约 30 万步的速度（由日志反推）；悬停单元格可看自启动以来的平均速度">步/秒</th><th class="num">已运行</th></tr>
       </thead>
       <tbody>
         <tr v-for="p in training" :key="p.pid" :title="`exp_id ${p.exp_id ?? '—'} · PID ${p.pid}`">
@@ -110,12 +115,12 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
           <td><span class="scen" :class="`scen--${p.scenario}`">{{ p.scenario.toUpperCase() }}</span></td>
           <td>{{ algoLabel(p.algo) }}<span v-if="p.variant" class="tag">{{ variantLabel(p.variant) }}</span></td>
           <td>{{ netLabel(p.net) }} · <span :class="{ dim: p.device === 'CPU' }">{{ p.device ?? "—" }}</span></td>
-          <td>{{ p.seed ?? "—" }}</td>
+          <td>{{ p.seed ?? "—" }}<span v-if="p.frozen" class="badge badge--warn" style="margin-left:6px">冻结中</span></td>
           <td>
             <div class="bar"><div class="bar-fill" :style="{ width: (p.progress_pct ?? 0) + '%' }"></div></div>
             <span class="bar-text">{{ p.progress_pct ?? 0 }}%</span>
           </td>
-          <td class="num">{{ p.steps_per_sec?.toLocaleString() ?? "—" }}</td>
+          <td class="num" :title="p.steps_per_sec_avg != null ? `自启动以来平均 ${p.steps_per_sec_avg.toLocaleString()} 步/秒` : ''">{{ p.frozen ? "—" : p.steps_per_sec?.toLocaleString() ?? "—" }}</td>
           <td class="num">{{ secToClock(p.elapsed_seconds) }}</td>
         </tr>
       </tbody>

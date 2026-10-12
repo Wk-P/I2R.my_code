@@ -45,3 +45,4 @@ notion/
 *.egg-info/
 build/
 chat.md
+GPU_FAN*.sh

@@ -67,7 +67,8 @@ const NAV = [
   { key: "paper", href: "#/paper", icon: "✎", label: "论文草稿" },
 ];
 
-const running = computed(() => trainingProcs().length);
+const running = computed(() => trainingProcs().filter((p) => !p.frozen).length);
+const frozen = computed(() => trainingProcs().filter((p) => p.frozen).length);   // SIGSTOP-ed training processes
 const loadPct = computed(() => {
   const s = store.system;
   if (!s?.load_avg?.["1m"]) return null;
@@ -126,7 +127,7 @@ const updated = computed(() =>
             :title="`新训练写入 results/${store.branch}/`">新训练写入 <b>{{ store.branch }}</b></span>
         </div>
         <div class="topbar-right">
-          <a href="#/monitor" class="chip" :class="running ? 'chip--run' : ''">训练中 <b>{{ running }}</b></a>
+          <a href="#/monitor" class="chip" :class="running ? 'chip--run' : ''">训练中 <b>{{ running }}</b><template v-if="frozen"> · 冻结 <b>{{ frozen }}</b></template></a>
           <span class="chip" :class="loadClass" :title="store.system ? `load ${store.system.load_avg['1m']?.toFixed(1)} / ${store.system.cpu_count} 核` : ''">
             CPU 负载 <b>{{ loadPct === null ? "—" : loadPct + "%" }}</b>
           </span>

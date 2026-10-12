@@ -814,9 +814,18 @@ def _project_related_procs() -> list[dict]:
             "cmd": p["cmd"], "cwd": cwd if cwd is not None else _proc_cwd(p["pid"]),
             "scenario": scenario, "algo": algo, "script": script_label,
             "label": _friendly_label(scenario, algo, script_name, script_args),
+            "frozen": _proc_state(p["pid"]) == "T",
         })
     out.sort(key=lambda r: -r["elapsed_seconds"])
     return out
+
+
+def _proc_state(pid: int) -> str | None:
+    """State letter from /proc/<pid>/stat (R, S, D, T = stopped by SIGSTOP, ...)."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return None
 
 
 def _match_scenario_algo(cmd: str, pid: int | None = None):
@@ -920,11 +929,32 @@ def get_progress():
     return result
 
 
+_TRAIN_RATE_RE = re.compile(r"\[train\] step=([\d,]+)/[\d,]+ .*?steps/s=([\d,]+)")
+
+
+def _recent_rate(head: str, tail: str, window: int = 3) -> int | None:
+    """Recent training speed from the log alone. The [train] lines carry the cumulative average
+    a_k = (s_k - s0) / T_k since the process started (s0 = resume step, from the [resume] line), so
+    T_k = (s_k - s0) / a_k and the speed over the last `window` lines is
+    (s_k - s_{k-w}) / (T_k - T_{k-w}). Falls back to the cumulative average with fewer lines."""
+    m = re.search(r"\[resume\] .* at step ([\d,]+)", head)
+    s0 = int(m[1].replace(",", "")) if m else 0
+    rows = [(int(a.replace(",", "")), int(b.replace(",", ""))) for a, b in _TRAIN_RATE_RE.findall(tail)]
+    rows = [(st, av) for st, av in rows if av > 0 and st > s0]
+    if not rows:
+        return None
+    if len(rows) < 2:
+        return rows[-1][1]
+    (s1, a1), (s2, a2) = rows[-1 - min(window, len(rows) - 1)], rows[-1]
+    dt = (s2 - s0) / a2 - (s1 - s0) / a1
+    return round((s2 - s1) / dt) if dt > 0 else rows[-1][1]
+
+
 def _training_proc_info(pid: int) -> dict:
     """exp_id / seed / reward mode (from the launcher-provided environment),
     owning batch (log directory) and training progress (log tail)."""
     info = {"exp_id": None, "seed": None, "variant": None, "batch": None, "progress_pct": None,
-            "net": None, "device": None, "steps_per_sec": None}
+            "net": None, "device": None, "steps_per_sec": None, "steps_per_sec_avg": None}
     try:
         env = dict(kv.split(b"=", 1) for kv in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0") if b"=" in kv)
         info["exp_id"] = env.get(b"EXP_ID", b"").decode() or None
@@ -952,7 +982,10 @@ def _training_proc_info(pid: int) -> dict:
             hits = _TRAIN_PCT_RE.findall(tail)
             info["progress_pct"] = float(hits[-1]) if hits else 0.0
             sps = re.findall(r"steps/s=([\d,]+)", tail)
-            info["steps_per_sec"] = int(sps[-1].replace(",", "")) if sps else None
+            info["steps_per_sec_avg"] = int(sps[-1].replace(",", "")) if sps else None
+            with open(lp, "rb") as fh:
+                head = fh.read(4096).decode(errors="ignore")
+            info["steps_per_sec"] = _recent_rate(head, tail)
         except OSError:
             pass
     return info
@@ -975,29 +1008,215 @@ def get_system():
         load1, load5, load15 = os.getloadavg()
     except OSError:
         load1 = load5 = load15 = None
+    gpus = _gpu_status()
+    gpu_of = {pid: g["index"] for g in gpus for pid in g.pop("_pids", [])}
+    for p in procs:
+        if p["pid"] in gpu_of:
+            p["gpu"] = gpu_of[p["pid"]]
     return {
         "cpu_count": os.cpu_count(),
         "load_avg": {"1m": load1, "5m": load5, "15m": load15},
-        "gpus": _gpu_status(),
+        "gpus": gpus,
+        "host": _host_status(),
         "processes": procs,
     }
 
 
-def _gpu_status() -> list[dict]:
-    """v4.4.3: one entry per GPU from nvidia-smi (read-only); [] if there is none."""
+# nvidia-smi clocks_event_reasons bits (nvml.h) -> (zh, en); 0x1 (idle) is not a slowdown
+_GPU_THROTTLE = {0x2: ("应用时钟设置", "applications clocks setting"), 0x4: ("软件功耗墙", "SW power cap"),
+                 0x8: ("硬件降频", "HW slowdown"), 0x10: ("同步加速", "sync boost"),
+                 0x20: ("软件热降频（温度目标）", "SW thermal slowdown (temperature target)"),
+                 0x40: ("硬件热降频", "HW thermal slowdown"), 0x80: ("硬件电源制动", "HW power brake slowdown"),
+                 0x100: ("显示时钟设置", "display clock setting")}
+_GPU_FIELDS = ["index", "name", "uuid", "utilization.gpu", "utilization.memory", "memory.used", "memory.total",
+               "temperature.gpu", "fan.speed", "power.draw", "power.limit", "clocks.sm", "clocks.max.sm", "clocks.mem",
+               "pstate", "clocks_event_reasons.active", "pcie.link.gen.current", "pcie.link.width.current"]
+
+
+def _smi(args: list[str]) -> str:
     try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
-                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5).stdout
+        return subprocess.run(["nvidia-smi", *args], capture_output=True, text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
-        return []
-    gpus = []
+        return ""
+
+
+def _gpu_status() -> list[dict]:
+    """v4.4.3: one entry per GPU from nvidia-smi (read-only); [] if there is none.
+    Since v4.5.2 also power, clocks, fan, P-state, throttle reasons, PCIe link, the slowdown /
+    target temperatures and the compute processes on each GPU (_pids, consumed by get_system)."""
+    out = _smi([f"--query-gpu={','.join(_GPU_FIELDS)}", "--format=csv,noheader,nounits"])
+
+    def num(x):
+        try:
+            return float(x)
+        except ValueError:
+            return None
+    gpus, by_uuid = [], {}
     for line in out.strip().splitlines():
         f = [x.strip() for x in line.split(",")]
-        if len(f) == 6:
-            num = lambda x: float(x) if x.replace(".", "", 1).isdigit() else None
-            gpus.append({"index": int(f[0]), "name": f[1], "util": num(f[2]), "mem_used": num(f[3]),
-                         "mem_total": num(f[4]), "temp": num(f[5])})
+        if len(f) != len(_GPU_FIELDS):
+            continue
+        r = dict(zip(_GPU_FIELDS, f))
+        try:
+            bits = int(r["clocks_event_reasons.active"], 16)
+        except ValueError:
+            bits = 0
+        g = {"index": int(r["index"]), "name": r["name"], "util": num(r["utilization.gpu"]),
+             "mem_util": num(r["utilization.memory"]), "mem_used": num(r["memory.used"]), "mem_total": num(r["memory.total"]),
+             "temp": num(r["temperature.gpu"]), "fan": num(r["fan.speed"]), "power": num(r["power.draw"]),
+             "power_limit": num(r["power.limit"]), "clock_sm": num(r["clocks.sm"]), "clock_sm_max": num(r["clocks.max.sm"]),
+             "clock_mem": num(r["clocks.mem"]), "pstate": r["pstate"],
+             "throttle": [{"zh": z, "en": e} for b, (z, e) in _GPU_THROTTLE.items() if bits & b],
+             "pcie": f"Gen{r['pcie.link.gen.current']} x{r['pcie.link.width.current']}",
+             "procs": 0, "procs_mem": 0.0, "_pids": []}
+        gpus.append(g)
+        by_uuid[r["uuid"]] = g
+    for line in _smi(["--query-compute-apps=gpu_uuid,pid,used_memory", "--format=csv,noheader,nounits"]).strip().splitlines():
+        f = [x.strip() for x in line.split(",")]
+        if len(f) == 3 and f[0] in by_uuid:
+            g = by_uuid[f[0]]
+            g["procs"] += 1
+            g["procs_mem"] += num(f[2]) or 0.0
+            if f[1].isdigit():
+                g["_pids"].append(int(f[1]))
+    q = _smi(["-q", "-d", "TEMPERATURE"])                    # same thresholds on every GPU of this machine
+    for key, pat in (("temp_target", r"GPU Target Temperature\s*:\s*(\d+)"), ("temp_slowdown", r"GPU Slowdown Temp\s*:\s*(\d+)"),
+                     ("temp_shutdown", r"GPU Shutdown Temp\s*:\s*(\d+)")):
+        vals = re.findall(pat, q)
+        for g, v in zip(gpus, vals):
+            g[key] = float(v)
     return gpus
+
+
+# ── GPU clock history (v4.5.2) ──────────────────────────────────────────────
+# A daemon thread samples nvidia-smi every GPU_SAMPLE_SECONDS and keeps the last GPU_HISTORY_SECONDS in
+# memory, so the panel can draw live clock curves that survive a page reload (lost on a panel restart).
+GPU_SAMPLE_SECONDS, GPU_HISTORY_SECONDS = 2, 1800
+_gpu_hist: "collections.deque" = None
+_gpu_hist_lock = None
+
+
+def _gpu_sampler() -> None:
+    fields = "index,clocks.sm,clocks.max.sm,utilization.gpu,temperature.gpu,power.draw,clocks_event_reasons.active"
+    while True:
+        t = time.time()
+        out = _smi([f"--query-gpu={fields}", "--format=csv,noheader,nounits"])
+        row = []
+        for line in out.strip().splitlines():
+            f = [x.strip() for x in line.split(",")]
+            if len(f) != 7:
+                continue
+            num = lambda x: float(x) if x.replace(".", "", 1).isdigit() else None
+            try:
+                bits = int(f[6], 16)
+            except ValueError:
+                bits = 0
+            row.append({"i": int(f[0]), "clock": num(f[1]), "max": num(f[2]), "util": num(f[3]), "temp": num(f[4]),
+                        "power": num(f[5]), "thr": [e for b, (_, e) in _GPU_THROTTLE.items() if bits & b]})
+        if row:
+            with _gpu_hist_lock:
+                _gpu_hist.append({"t": round(t, 1), "gpus": row})
+        time.sleep(max(0.2, GPU_SAMPLE_SECONDS - (time.time() - t)))
+
+
+@app.on_event("startup")
+def _start_gpu_sampler() -> None:
+    global _gpu_hist, _gpu_hist_lock
+    import collections
+    import threading
+    _gpu_hist = collections.deque(maxlen=GPU_HISTORY_SECONDS // GPU_SAMPLE_SECONDS)
+    _gpu_hist_lock = threading.Lock()
+    threading.Thread(target=_gpu_sampler, name="gpu-sampler", daemon=True).start()
+
+
+@app.get("/api/gpu_history")
+def get_gpu_history(since: float = 0.0):
+    """GPU samples newer than `since` (unix seconds; 0 = the whole buffer)."""
+    if _gpu_hist is None:
+        return {"interval": GPU_SAMPLE_SECONDS, "window": GPU_HISTORY_SECONDS, "samples": []}
+    with _gpu_hist_lock:
+        samples = [s for s in _gpu_hist if s["t"] > since]
+    return {"interval": GPU_SAMPLE_SECONDS, "window": GPU_HISTORY_SECONDS, "samples": samples}
+
+
+_CPU_PREV: dict = {}                                        # last /proc/stat sample (per-core usage between polls)
+
+
+def _read(path: str) -> str:
+    try:
+        return Path(path).read_text()
+    except OSError:
+        return ""
+
+
+def _host_status() -> dict:
+    """Machine-level hardware view (read-only, from /proc and /sys): CPU model / topology / clock /
+    usage (overall and per logical core, since the previous poll) / package temperatures, memory
+    and swap, the disk holding the project, uptime, kernel, NVIDIA driver."""
+    now = {}
+    for line in _read("/proc/stat").splitlines():
+        if line.startswith("cpu"):
+            f = line.split()
+            v = [int(x) for x in f[1:]]
+            idle = v[3] + (v[4] if len(v) > 4 else 0)
+            now[f[0]] = (sum(v[:8]), idle)
+    usage, per_core = None, []
+    if _CPU_PREV:
+        def pct(k):
+            if k not in _CPU_PREV or k not in now:
+                return None
+            dt, di = now[k][0] - _CPU_PREV[k][0], now[k][1] - _CPU_PREV[k][1]
+            return round(100.0 * (1 - di / dt), 1) if dt > 0 else None
+        usage = pct("cpu")
+        per_core = [pct(f"cpu{i}") for i in range(os.cpu_count() or 0)]
+    _CPU_PREV.clear()
+    _CPU_PREV.update(now)
+
+    cpuinfo = _read("/proc/cpuinfo")
+    model = re.search(r"model name\s*:\s*(.+)", cpuinfo)
+    mhz = [float(x) for x in re.findall(r"cpu MHz\s*:\s*([\d.]+)", cpuinfo)]
+    sockets = len(set(re.findall(r"physical id\s*:\s*(\d+)", cpuinfo))) or None
+    cores = len(set(re.findall(r"physical id\s*:\s*(\d+)\s*\n(?:.*\n)*?core id\s*:\s*(\d+)", cpuinfo))) or None
+    max_mhz = _read("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").strip()
+    temps = []
+    for h in sorted(Path("/sys/class/hwmon").glob("hwmon*")):
+        if _read(str(h / "name")).strip() != "coretemp":
+            continue
+        for lab in sorted(h.glob("temp*_label")):
+            name = _read(str(lab)).strip()
+            if name.startswith("Package"):
+                t = _read(str(lab).replace("_label", "_input")).strip()
+                crit = _read(str(lab).replace("_label", "_crit")).strip()
+                if t:
+                    temps.append({"name": name, "temp": int(t) / 1000, "crit": int(crit) / 1000 if crit else None})
+
+    mem = {}
+    for line in _read("/proc/meminfo").splitlines():
+        k, _, v = line.partition(":")
+        if v.strip().endswith("kB"):
+            mem[k] = int(v.split()[0]) * 1024
+    try:
+        import shutil
+        du = shutil.disk_usage(PROJECT_ROOT)
+        disk = {"path": str(PROJECT_ROOT), "total": du.total, "used": du.used, "free": du.free}
+    except OSError:
+        disk = None
+    up = _read("/proc/uptime").split()
+    drv = _smi(["--query-gpu=driver_version", "--format=csv,noheader"]).strip().splitlines()
+    cuda = re.search(r"CUDA Version:\s*([\d.]+)", _smi([]))
+    return {
+        "hostname": os.uname().nodename, "kernel": os.uname().release,
+        "uptime_seconds": float(up[0]) if up else None,
+        "cpu": {"model": model[1].strip() if model else None, "sockets": sockets, "cores": cores, "threads": os.cpu_count(),
+                "mhz_avg": round(sum(mhz) / len(mhz)) if mhz else None,
+                "mhz_max": round(int(max_mhz) / 1000) if max_mhz.isdigit() else None,
+                "usage": usage, "per_core": per_core, "temps": temps},
+        "memory": {"total": mem.get("MemTotal"), "available": mem.get("MemAvailable"),
+                   "cached": (mem.get("Cached", 0) + mem.get("Buffers", 0) + mem.get("SReclaimable", 0)) or None,
+                   "swap_total": mem.get("SwapTotal"), "swap_free": mem.get("SwapFree")},
+        "disk": disk,
+        "nvidia_driver": drv[0] if drv else None, "cuda": cuda[1] if cuda else None,
+    }
 
 
 def _live_exp_ids(procs: list[dict]) -> set[str]:
