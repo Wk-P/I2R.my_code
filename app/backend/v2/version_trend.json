@@ -1,0 +1,69 @@
+{
+  "_doc": "Versions shown in the new panel's 'test relative gap by version' chart (app/backend/v2/versions.py). The numbers come from each version's report (paper_contents/v*/report.md: the new variant's test relative gap per scenario); this file only says which versions are comparable and how to annotate them. Add a version here once its results are complete and comparable.",
+  "versions": [
+    "v4.4.1",
+    "v4.4.2",
+    "v4.4.3",
+    "v4.4.4",
+    "v4.4.5",
+    "v4.4.6",
+    "v4.4.7",
+    "v4.4.8",
+    "v4.4.9",
+    "v4.4.10",
+    "v4.4.11",
+    "v4.4.12",
+    "v4.4.13",
+    "v4.4.14",
+    "v4.4.15",
+    "v4.4.16",
+    "v4.4.17",
+    "v4.5.1"
+  ],
+  "mlp_era_before": "v4.4.3",
+  "anchors": {
+    "v4.4.16": {
+      "zh": "锚点 · 5 万实例 10M",
+      "en": "anchor · 50k instances, 10M",
+      "short": {
+        "zh": "锚点 10M",
+        "en": "anchor 10M"
+      }
+    },
+    "v4.4.17": {
+      "zh": "锚点 · 5 万实例 20M",
+      "en": "anchor · 50k instances, 20M",
+      "short": {
+        "zh": "锚点 20M",
+        "en": "anchor 20M"
+      }
+    }
+  },
+  "phases": [
+    {
+      "from": "v4.4.3",
+      "zh": "Transformer",
+      "en": "Transformer"
+    },
+    {
+      "from": "v4.4.14",
+      "zh": "5 万实例",
+      "en": "50k instances"
+    },
+    {
+      "from": "v4.4.15",
+      "zh": "5M",
+      "en": "5M"
+    },
+    {
+      "from": "v4.4.16",
+      "zh": "10M",
+      "en": "10M"
+    },
+    {
+      "from": "v4.4.17",
+      "zh": "20M",
+      "en": "20M"
+    }
+  ]
+}

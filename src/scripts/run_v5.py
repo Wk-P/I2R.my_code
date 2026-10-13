@@ -101,24 +101,34 @@ CONFIG = {
               "seeds": [1], "parallel": 18, "mps": True,
               "lam_sweep": {"algos": {"ppo": "lagrange_ppo", "dqn": "lagrange_dqn", "ddqn": "lagrange_ddqn"},
                             "values": [1.0, 2.0, 5.0], "steps": 3_000_000, "ckpts": [1_000_000]}},
-    "5.0.4": {"variants": {                         # every learner x mechanism trained in this batch (no cross-batch references)
-                           "ppo_none": ("ppo", "graph", True, "无约束 PPO", "Unconstrained PPO"),
-                           "ppo_lagrange": ("lagrange_ppo", "graph", True, "Lagrangian PPO", "Lagrangian PPO"),
-                           "ppo_mask": ("mask_ppo", "graph", True, "Maskable PPO", "Maskable PPO"),
-                           "ppo_repair": ("repair_ppo", "graph", True, "Repair PPO", "Repair PPO"),
-                           "dqn_none": ("dqn", "graph", True, "无约束 DQN", "Unconstrained DQN"),
-                           "dqn_lagrange": ("lagrange_dqn", "graph", True, "Lagrangian DQN", "Lagrangian DQN"),
-                           "dqn_mask": ("mask_dqn", "graph", True, "Maskable DQN", "Maskable DQN"),
-                           "dqn_repair": ("repair_dqn", "graph", True, "Repair DQN", "Repair DQN"),
-                           "ddqn_none": ("ddqn", "graph", True, "无约束 DDQN", "Unconstrained DDQN"),
-                           "ddqn_lagrange": ("lagrange_ddqn", "graph", True, "Lagrangian DDQN", "Lagrangian DDQN"),
-                           "ddqn_mask": ("mask_ddqn", "graph", True, "Maskable DDQN", "Maskable DDQN"),
-                           "ddqn_repair": ("repair_ddqn", "graph", True, "Repair DDQN", "Repair DDQN"),
+    # 5.0.3.1 (sub-experiment, 1M): the Lagrangian dual step without the warm-up -- linear (v5.0.3) vs normalized error;
+    # lambda_max 5 for all so that the cap does not hide where lambda settles. A 6th element = the run's own params.
+    "5.0.3.1": {"variants": {f"{l}_lagrangian_{u}": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian · {zu}",
+                                                     f"{l.upper()} · lagrangian · {u}",
+                                                     {"lambda_max": 5.0, "lambda_update": u, "lambda_lr": lr})
+                             for l in ("ppo", "dqn", "ddqn")
+                             for u, zu, lr in (("linear", "现行（η = 0.5）", 0.5), ("normalized", "归一化（η = 0.05）", 0.05))},
+                "title": ("λ 更新方式子实验：现行 λ + 0.5(J_C − d) vs 归一化 λ + 0.05(J_C − d)/max(J_C, d)，无预热、λ_max = 5（种子 1、1M、5 万实例）",
+                          "λ update sub-experiment: linear λ + 0.5(J_C − d) vs normalized λ + 0.05(J_C − d)/max(J_C, d), no warm-up, λ_max = 5 (seed 1, 1M, 50k instances)"),
+                "seeds": [1], "steps": 1_000_000, "ckpts": [500_000], "parallel": 18, "mps": True},
+    "5.0.4": {"variants": {                         # every RL_algorithm x strategy (docs/data_spec.md), trained in this batch
+                           "ppo_unconstraint": ("ppo", "graph", True, "PPO · unconstraint", "PPO · unconstraint"),
+                           "ppo_lagrangian": ("lagrange_ppo", "graph", True, "PPO · lagrangian", "PPO · lagrangian"),
+                           "ppo_maskable": ("mask_ppo", "graph", True, "PPO · maskable", "PPO · maskable"),
+                           "ppo_repair": ("repair_ppo", "graph", True, "PPO · repair", "PPO · repair"),
+                           "dqn_unconstraint": ("dqn", "graph", True, "DQN · unconstraint", "DQN · unconstraint"),
+                           "dqn_lagrangian": ("lagrange_dqn", "graph", True, "DQN · lagrangian", "DQN · lagrangian"),
+                           "dqn_maskable": ("mask_dqn", "graph", True, "DQN · maskable", "DQN · maskable"),
+                           "dqn_repair": ("repair_dqn", "graph", True, "DQN · repair", "DQN · repair"),
+                           "ddqn_unconstraint": ("ddqn", "graph", True, "DDQN · unconstraint", "DDQN · unconstraint"),
+                           "ddqn_lagrangian": ("lagrange_ddqn", "graph", True, "DDQN · lagrangian", "DDQN · lagrangian"),
+                           "ddqn_maskable": ("mask_ddqn", "graph", True, "DDQN · maskable", "DDQN · maskable"),
+                           "ddqn_repair": ("repair_ddqn", "graph", True, "DDQN · repair", "DDQN · repair"),
                            },
-              "title": ("种子 1：无约束 / Lagrangian（每步代价、d = 0.001）/ Maskable / Repair × PPO / DQN / DDQN（5 万实例、20M）",
-                        "Seed 1: unconstrained / Lagrangian (per-step cost, d = 0.001) / Maskable / Repair x PPO / DQN / DDQN (50k instances, 20M)"),
+              "title": ("RL_algorithm PPO / DQN / DDQN × strategies unconstraint / lagrangian / maskable / repair（种子 1、20M、5 万实例；λ_max 来自 v5.0.3）",
+                        "RL_algorithm PPO / DQN / DDQN x strategies unconstraint / lagrangian / maskable / repair (seed 1, 20M, 50k instances; λ_max from v5.0.3)"),
               "seeds": [1], "parallel": 18, "mps": True, "time_bench": True,   # 18: Legacy MPS limit on the Pascal GPUs
-              # lambda_max per learner: chosen by the v5.0.3 sweep (logs/v5.0.3/manifest.json "lambda_max"); no sweep here
+              # lambda_max per RL_algorithm: chosen by the v5.0.3 sweep (its manifest's lambda_max); no sweep here
               "lam_max_from": "5.0.3"},
 }
 
@@ -246,9 +256,13 @@ def spec(V, key):
         learner, v = sweep_key(key)
         return (sw["algos"][learner], "graph", True, STEPS if SMOKE else sw["steps"], CKPTS if SMOKE else sw["ckpts"],
                 ["--lambda-max", f"{v:g}"])
-    algo, net, pool, *_ = V["cfg"]["variants"][key]
+    algo, net, pool, *rest = V["cfg"]["variants"][key]
+    own = rest[2] if len(rest) > 2 else {}           # 5.0.3.1: the variant's own params
     learner = lagrange_learner(V, key)
     extra = ["--lambda-max", f"{V['lam_max'][learner]:g}"] if learner else []
+    flag = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr"}
+    for k, v in own.items():
+        extra += [flag[k], f"{v:g}" if isinstance(v, float) else str(v)]
     return algo, net, pool, STEPS, CKPTS, extra
 
 
@@ -284,26 +298,45 @@ def launch(V, seed, scen, key, exp_ids):
     return proc, log
 
 
+STRATEGY = {"none": "unconstraint", "lagrange": "lagrangian", "mask": "maskable", "repair": "repair"}   # docs/data_spec.md §1
+
+
+def manifest_lam_max(man: dict) -> dict:
+    """{learner (lower case): lambda_max} of a manifest: schema 3 params.lambda_max {RL_algorithm: v}, schema 2 lambda_max."""
+    lm = (man.get("params") or {}).get("lambda_max") if man.get("schema") == 3 else man.get("lambda_max")
+    if lm is None:
+        return {}
+    return {k.lower(): v for k, v in lm.items()} if isinstance(lm, dict) else {l: lm for l in ("ppo", "dqn", "ddqn")}
+
+
 def plan_entry(V, seed, scen, key):
-    """One planned run of the batch (docs/data_spec.md §3): role / group / depends_on / params of a run key.
-    v5.0.3: the lambda_max sweep runs are role "sweep", group "lam_sweep_<learner>"; a learner's Lagrangian runs wait
-    for its group and get params.lambda_max = its choice (null until then)."""
+    """One planned run of the batch (docs/data_spec.md §2, schema 3): RL_algorithm, strategy, seed, scenario, the
+    params that differ from the batch's (lambda_max, steps of a sweep run), role / group / depends_on, dir.
+    The lambda_max sweep runs are role "sweep", group "lambda_max_sweep_<RL_algorithm>"; with a sweep in the same
+    batch, a Lagrangian run waits for its algorithm's group and gets params.lambda_max = its choice (null until then)."""
     from paper_rl.train import split_algo
     sw = V["cfg"].get("lam_sweep")
     if sweep_key(key):
-        algo, net, pool, steps = sw["algos"][sweep_key(key)[0]], "graph", True, STEPS if SMOKE else sw["steps"]
+        algo, steps = sw["algos"][sweep_key(key)[0]], STEPS if SMOKE else sw["steps"]
     else:
-        (algo, net, pool), steps = V["cfg"]["variants"][key][:3], STEPS
+        algo, steps = V["cfg"]["variants"][key][0], STEPS
     mech, learner = split_algo(algo)
-    e = {"key": key, "role": "main", "group": None, "depends_on": [], "scenario": scen, "seed": seed, "algo": algo,
-         "learner": learner, "mechanism": mech, "net": net, "steps": steps, "params": {}, "train_pool": POOL if pool else None}
+    rl = learner.upper()
+    e = {"key": key, "role": "main", "group": None, "depends_on": [], "RL_algorithm": rl, "strategy": STRATEGY[mech],
+         "seed": seed, "scenario": scen, "params": {}, "dir": algo}
+    if steps != V["batch_steps"]:
+        e["params"]["steps"] = steps
     if sweep_key(key):
-        e.update(role="sweep", group=f"lam_sweep_{learner}", params={"lambda_max": sweep_key(key)[1]})
+        e.update(role="sweep", group=f"lambda_max_sweep_{rl}")
+        e["params"]["lambda_max"] = sweep_key(key)[1]
     elif sw and mech == "lagrange":
         lm = V["lam_max"].get(learner)
-        e.update(group="lagrange", depends_on=[f"lam_sweep_{learner}"], params={"lambda_max": lm if lm is not None and lm == lm else None})
+        e["depends_on"] = [f"lambda_max_sweep_{rl}"]
+        e["params"]["lambda_max"] = lm if lm is not None and lm == lm else None
     elif V["cfg"].get("lam_max_from") and mech == "lagrange":       # 5.0.4: fixed by an earlier sweep batch
-        e.update(group="lagrange", params={"lambda_max": V["lam_max"][learner]})
+        e["params"]["lambda_max"] = V["lam_max"][learner]
+    if not sweep_key(key) and len(V["cfg"]["variants"][key]) > 5:   # 5.0.3.1: the variant's own params
+        e["params"].update(V["cfg"]["variants"][key][5])
     return e
 
 
@@ -331,8 +364,9 @@ def manifest_references(V):
 
 
 def write_manifest(V, exp_ids):
-    """manifest v2 (docs/data_spec.md §3): the whole plan up front, exp_id filled in at launch; "exp_ids" (the old
-    nested form) is kept for diag_regret.py and --report / --rerun."""
+    """manifest, schema 3 (docs/data_spec.md §2): RL_algorithm / strategies / seeds / scenarios and the shared params
+    at the top, the whole plan up front (exp_id filled in at launch). "exp_ids" (nested {seed: {scen: {key: id}}}) is
+    the driver's own index for --report / --rerun."""
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     runs = []
     for sd, s, k in V["plan_keys"]:
@@ -341,16 +375,23 @@ def write_manifest(V, exp_ids):
         runs.append(e)
     if "refs" not in V:
         V["refs"] = manifest_references(V)
+    sw = V["cfg"].get("lam_sweep")
+    params = {"steps": V["batch_steps"], "checkpoints": V["batch_ckpts"], "net": "graph", "reward": "ar_pen", "gamma": 1.0,
+              "full_episode": True, "exit_action": "maskable only", "train_pool": POOL, "data": DATA}
+    if sw:
+        params["lambda_max_sweep"] = {"values": sw["values"], "select": "lowest mean effective gap over the scenarios"}
+    if sw or V.get("lam_max_from"):
+        params["lambda_max"] = {l.upper(): v for l, v in V["lam_max"].items()}
+    if V.get("lam_max_from"):
+        params["lambda_max_from"] = V["lam_max_from"]
     tmp = V["manifest"].with_suffix(".tmp")
-    tmp.write_text(json.dumps({"schema": 2, "batch": V["log_dir"].name, "version": V["version"],
-                               "purpose": "smoke" if SMOKE else "main", "commit": commit, "results_space": RESULTS.name, "driver_pid": os.getpid(),
+    tmp.write_text(json.dumps({"schema": 3, "batch": V["log_dir"].name, "version": V["version"],
+                               "purpose": "smoke" if SMOKE else "main", "commit": commit, "results_space": RESULTS.name,
+                               "driver_pid": os.getpid(), "created_at": V.setdefault("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
                                "title": {"zh": V["cfg"]["title"][0], "en": V["cfg"]["title"][1]},
-                               "created_at": V.setdefault("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
-                               "data": DATA, "steps": STEPS, "checkpoints": CKPTS,
-                               **({"lam_sweep": V["cfg"]["lam_sweep"], "lambda_max": V.get("lam_max")} if V["cfg"].get("lam_sweep") else {}),
-                               **({"lambda_max": V["lam_max"], "lambda_max_from": V["lam_max_from"]} if V.get("lam_max_from") else {}),
-                               "reward": "ar_pen", "gamma": 1.0, "full_episode": True, "exit_action": "Maskable only",
-                               "scenarios": SCENARIOS, "seeds": SEEDS,
+                               "RL_algorithm": [x for x in ("PPO", "DQN", "DDQN") if any(r["RL_algorithm"] == x for r in runs)],
+                               "strategies": [x for x in ("unconstraint", "lagrangian", "maskable", "repair") if any(r["strategy"] == x for r in runs)],
+                               "seeds": SEEDS, "scenarios": SCENARIOS, "params": params,
                                "runs": runs, "references": V["refs"], "exp_ids": exp_ids}, indent=2))
     tmp.replace(V["manifest"])
 
@@ -405,7 +446,7 @@ def regret(V, key, algo, seed):
     md = V["out"] / f"regret_s{seed}_{key}.md"
     js = md.with_suffix(".json")
     if not js.exists():
-        lz, le = V["cfg"]["variants"][key][3:]
+        lz, le = V["cfg"]["variants"][key][3:5]
         subprocess.run([PY, str(ROOT / "src" / "scripts" / "diag_regret.py"), "--out", str(md), "--seed", str(seed), "--algo", algo,
                         *(["--n", "25", "--workers", "24"] if SMOKE else []),
                         "--manifest", str(V["manifest"].relative_to(ROOT)), "--key", key,
@@ -499,6 +540,25 @@ def time_bench(series):
     return out
 
 
+def lam_dynamics(run, cap):
+    """How lambda moved during one Lagrangian run (training_curve.csv, one row per episode): final / max lambda, the
+    first episode at the cap, share of episodes at the cap, number of decreases and the total fall from the peak, and
+    J_C (violations per episode) over the first and the last 1000 episodes."""
+    import pandas as pd
+    p = run / "training_curve.csv"
+    if not p.exists():
+        return None
+    df = pd.read_csv(p, usecols=["lambda", "episode_cap_violated", "episode_conflict_violated"])
+    lam = df["lambda"].to_numpy(dtype=float)
+    v = (df["episode_cap_violated"] + df["episode_conflict_violated"]).to_numpy(dtype=float)
+    at = lam >= cap * 0.999
+    d = np.diff(lam)
+    return {"episodes": len(lam), "final": float(lam[-1]), "max": float(lam.max()),
+            "first_cap": int(np.argmax(at)) if at.any() else None, "at_cap": float(at.mean()),
+            "decreases": int((d < -1e-9).sum()), "fall": float(lam.max() - lam[-1]),
+            "jc_first": float(v[:1000].mean()), "jc_last": float(v[-1000:].mean())}
+
+
 def write_report_data(V, series, curve, reg, times, interim):
     """report_data.json next to report.md (docs/data_spec.md §3 rule 7): the report's numbers per run, for the panel.
     curves: one point per (run, checkpoint); timing: per (series, scenario) over the seeds; ILP once per scenario."""
@@ -563,7 +623,7 @@ def write_report(V, exp_ids, interim: bool = False):
     series = [(lz, le, algo, pool, [(sd, s, exp_ids[str(sd)][s][k], pat, st) for sd in SEEDS for s in SCENARIOS
                                    for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)]
                                    if exp_ids.get(str(sd), {}).get(s, {}).get(k)])
-              for k, (algo, net, pool, lz, le) in vs.items()] + references(V["version"])
+              for k, (algo, net, pool, lz, le, *_) in vs.items()] + references(V["version"])
     jobs = [(i, algo, pool, *p) for i, (_, _, algo, pool, pts) in enumerate(series) for p in pts]
     print(f"[report] learning-curve evaluation ({len(jobs)} models)", flush=True)
     with Pool(min(len(jobs), 36)) as pool:
@@ -586,6 +646,18 @@ def write_report(V, exp_ids, interim: bool = False):
     times = time_bench(series) if V["cfg"].get("time_bench") and not interim else {}
     steps = CKPTS + [STEPS]
     write_report_data(V, series, curve, reg, times, interim)
+    # lambda dynamics of every Lagrangian run of this batch (v5.0.3.1)
+    lamdyn = []
+    for k, v in vs.items():
+        if not v[0].startswith("lagrange_"):
+            continue
+        cap = (v[5] if len(v) > 5 else {}).get("lambda_max") or V["lam_max"].get(v[0].split("_")[-1]) or 50.0
+        for sd in SEEDS:
+            for s in SCENARIOS:
+                eid = exp_ids.get(str(sd), {}).get(s, {}).get(k)
+                dyn = lam_dynamics(RESULTS / s / v[0] / eid, cap) if eid else None
+                if dyn:
+                    lamdyn.append((k, sd, s, cap, dyn))
     ms = lambda v, f: (lambda v: (f(np.mean(v)) + (f" ± {f(np.std(v, ddof=1))}" if len(v) > 1 else "")) if v else "—")(
         [x for x in v if x == x])                    # NaN (no violation-free instance) is left out
     pc = lambda v: "—" if v != v else f"{100 * v:.1f}%"
@@ -600,15 +672,34 @@ def write_report(V, exp_ids, interim: bool = False):
                if interim else []),
              T(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/run_v5.py --version {V['version']}`。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/run_v5.py --version {V['version']}`."),
-             T("- 每个变体 3 种子 × 3 场景、各训练 20M 步，同一次训练在 1 / 3 / 5 / 7.5 / 10 / 15M 存 checkpoint；ar_pen 奖励、γ = 1、不提前结束、EXIT、需求降序；"
-               "PPO / DQN 超参取自 `paper_rl/config.py`，MLP 与 Transformer 相同；Transformer 在 GPU、MLP 在 CPU 上训练。5 万实例 = 经 ILP 验证的实例池（`results/sup_diag/<场景>.json`）。",
-               "- Every variant: 3 seeds × 3 scenarios, 20M steps each, checkpoints of the same run at 1 / 3 / 5 / 7.5 / 10 / 15M; ar_pen reward, "
-               "γ = 1, full episode, EXIT, descending demand; PPO / DQN hyper-parameters from `paper_rl/config.py`, identical for MLP and "
-               "Transformer; Transformer trained on GPU, MLP on CPU. 50k instances = the ILP-verified pool (`results/sup_diag/<scenario>.json`)."),
+             T(f"- 每个变体 {len(SEEDS)} 个种子（{', '.join(map(str, SEEDS))}）× 3 场景、各训练 {STEPS / 1e6:g}M 步，同一次训练在 "
+               f"{' / '.join(f'{c / 1e6:g}M' for c in CKPTS) or '—'} 存 checkpoint；ar_pen 奖励、γ = 1、不提前结束、EXIT 只用于 Maskable、需求降序；"
+               "PPO / DQN 超参取自 `paper_rl/config.py`；结构感知网络（Transformer）在 GPU 上训练。5 万实例 = 经 ILP 验证的实例池（`results/sup_diag/<场景>.json`）。",
+               f"- Every variant: {len(SEEDS)} seed(s) ({', '.join(map(str, SEEDS))}) × 3 scenarios, {STEPS / 1e6:g}M steps each, checkpoints of the same run at "
+               f"{' / '.join(f'{c / 1e6:g}M' for c in CKPTS) or '—'}; ar_pen reward, γ = 1, full episode, EXIT for Maskable only, descending demand; "
+               "PPO / DQN hyper-parameters from `paper_rl/config.py`; structure-aware network (Transformer) trained on GPU. "
+               "50k instances = the ILP-verified pool (`results/sup_diag/<scenario>.json`)."),
              T("- 测试集 gap：各种子自己的 400 个测试实例；训练集 gap：1600 个训练实例（5 万实例池中按固定种子抽取，或 1600 实例划分本身）；均为确定性回放；均值 ± 样本标准差。",
                "- Test gap: each seed's own 400 test instances; training-set gap: 1600 training instances (a fixed subset of the 50k pool, or the "
                "1600-instance split itself); deterministic rollouts; mean ± sample std."),
              T(f"- manifest：`{V['manifest'].relative_to(ROOT)}`。", f"- Manifest: `{V['manifest'].relative_to(ROOT)}`."), ""]
+        if lamdyn:
+            L += [T("## λ 动态（训练过程，来自 training_curve.csv）", "## λ dynamics (during training, from training_curve.csv)"), "",
+                  T("J_C = 每局违约次数（容量 + 隐私）；目标 d = 0.001。「到上限」= 第一次 λ ≥ λ_max 的局；「降幅」= 最高点到训练结束的下降。",
+                    "J_C = violations per episode (capacity + privacy); target d = 0.001. 'First at cap' = first episode with λ ≥ λ_max; "
+                    "'fall' = from the peak to the end of training."), "",
+                  T("| 场景 | 模型 | λ_max | 末 λ | 最高 λ | 到上限（局） | 上限占比 | 下降次数 | 降幅 | 前 1000 局 J_C | 末 1000 局 J_C |",
+                    "| Scenario | Model | λ_max | Final λ | Max λ | First at cap (episode) | Share at cap | Decreases | Fall | J_C first 1000 | J_C last 1000 |"),
+                  "|---|---|---|---|---|---|---|---|---|---|---|"]
+            for s in SCENARIOS:
+                for k, sd, s2, cap, dy in lamdyn:
+                    if s2 != s:
+                        continue
+                    lz, le = vs[k][3:5]
+                    L.append(f"| {s.upper()} | {lz if zh else le} | {cap:g} | {dy['final']:.3f} | {dy['max']:.3f} | "
+                             f"{dy['first_cap'] if dy['first_cap'] is not None else '—'} | {pc(dy['at_cap'])} | {dy['decreases']} | "
+                             f"{dy['fall']:.3f} | {dy['jc_first']:.3f} | {dy['jc_last']:.4f} |")
+            L.append("")
         L += [T("## 学习曲线：测试集相对 gap", "## Learning curve: test relative gap"), ""]
         for s in SCENARIOS:
             L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(i) for i in range(len(series))) + " |",
@@ -705,50 +796,82 @@ def sweep_eval(job):
     return job, (float(eff), float(np.mean(ok)), float(gap), lam)
 
 
-def choose_lam_max(V, exp_ids, learner) -> float:
-    """Evaluate one learner's sweep and pick the lambda_max with the lowest mean effective gap; report (zh + en)
-    lam_sweep_<learner>.md."""
+LAM_TIE = 0.005     # mean violation-free shares within 0.5 pp of the highest are a tie (one seed, 400 test instances per scenario)
+
+
+def select_lam_max(values, eff, free) -> float:
+    """The selection rule (2026-10-13, user: a 3M sweep says little about the gap, violations weigh more): highest
+    mean violation-free share over the scenarios; values within LAM_TIE of it are a tie, broken by the lower mean
+    effective gap. eff / free: {value: mean over the scenarios}."""
+    hi = max(free[v] for v in values)
+    tied = [v for v in values if hi - free[v] <= LAM_TIE + 1e-12]
+    return min(tied, key=lambda v: eff[v])
+
+
+def write_lam_sweep(V, learner, rows, override=None) -> float:
+    """Apply select_lam_max to one learner's evaluated sweep and write lam_sweep_<learner>.md / .en.md / .json.
+    rows: [{lambda_max, scenario, seed, exp_id, eff_gap, viol_free, gap, final_lambda}] (one seed). Returns the choice."""
     sw = dict(V["cfg"]["lam_sweep"], algo=V["cfg"]["lam_sweep"]["algos"][learner])
-    keys = [f"lam_sweep_{learner}_{v:g}" for v in sw["values"]]
-    jobs = [(sw["algo"], sd, s, exp_ids[str(sd)][s][k]) for k in keys for sd in SEEDS for s in SCENARIOS]
-    with Pool(min(len(jobs), 18)) as pool:
-        res = dict(pool.map(sweep_eval, jobs))
-    row = {k: {s: res[(sw["algo"], sd, s, exp_ids[str(sd)][s][k])] for sd in SEEDS for s in SCENARIOS} for k in keys}
-    score = {v: np.mean([row[k][s][0] for s in SCENARIOS]) for v, k in zip(sw["values"], keys)}
-    best = min(score, key=score.get)
-    override = os.environ.get(f"V5_LAM_MAX_{learner.upper()}") or os.environ.get("V5_LAM_MAX")
-    if override:                                    # manual override (per learner, or all learners)
-        best = float(override)
-    pc = lambda x: "—" if x != x else f"{100 * x:.1f}%"
+    values = sw["values"]
+    cell = {(r["lambda_max"], r["scenario"]): r for r in rows}
+    nn = lambda x: float("nan") if x is None else x
+    eff = {v: float(np.mean([nn(cell[(v, s)]["eff_gap"]) for s in SCENARIOS])) for v in values}
+    free = {v: float(np.mean([nn(cell[(v, s)]["viol_free"]) for s in SCENARIOS])) for v in values}
+    rule = select_lam_max(values, eff, free)
+    best = float(override) if override else rule
+    pc = lambda x: "—" if x is None or x != x else f"{100 * x:.1f}%"
     for zh in (True, False):
         T = lambda z, e: z if zh else e
         L = [f"# v{V['version']} " + T(f"λ_max 扫描（{learner.upper()}）", f"λ_max sweep ({learner.upper()})"), "",
-             T(f"- {sw['algo']}、种子 {SEEDS[0]}、{sw['steps'] / 1e6:g}M 步，λ_max ∈ {{{', '.join(f'{v:g}' for v in sw['values'])}}}；"
+             T(f"- {sw['algo']}、种子 {SEEDS[0]}、{sw['steps'] / 1e6:g}M 步，λ_max ∈ {{{', '.join(f'{v:g}' for v in values)}}}；"
                "测试集 400 实例确定性评估。",
-               f"- {sw['algo']}, seed {SEEDS[0]}, {sw['steps'] / 1e6:g}M steps, λ_max ∈ {{{', '.join(f'{v:g}' for v in sw['values'])}}}; "
+               f"- {sw['algo']}, seed {SEEDS[0]}, {sw['steps'] / 1e6:g}M steps, λ_max ∈ {{{', '.join(f'{v:g}' for v in values)}}}; "
                "deterministic evaluation on the 400 test instances."),
-             T("- 有效 gap：有违约的实例按 AR = 0 计，1 − 平均 AR / 平均 ILP AR；按三场景平均有效 gap 最小选 λ_max。",
-               "- Effective gap: a violating instance counts as AR = 0, 1 − mean AR / mean ILP AR; λ_max = lowest mean effective gap over the scenarios."),
+             T("- 有效 gap：有违约的实例按 AR = 0 计，1 − 平均 AR / 平均 ILP AR。",
+               "- Effective gap: a violating instance counts as AR = 0, 1 − mean AR / mean ILP AR."),
+             T(f"- 选定规则（违约优先）：三场景平均无违约比例最高；与最高值相差 {100 * LAM_TIE:g} 个百分点以内视为持平，持平时选三场景平均有效 gap 更低的。"
+               "3M 步的扫描对 gap 说明有限，违约的权重更高。",
+               f"- Rule (violations first): highest mean violation-free share over the scenarios; within {100 * LAM_TIE:g} pp of it is a tie, "
+               "broken by the lower mean effective gap. A 3M-step sweep says little about the gap; violations weigh more."),
              T(f"- **选定 λ_max = {best:g}**", f"- **Chosen λ_max = {best:g}**")
-             + (T("（手动指定）", " (set by hand)") if override else ""), "",
+             + (T(f"（手动指定；规则给出 {rule:g}）", f" (set by hand; the rule gives {rule:g})") if override else ""), "",
              "| λ_max | " + " | ".join(f"{s.upper()} " + T("有效 gap / 无违约 / gap / 末 λ", "eff. gap / violation-free / gap / final λ") for s in SCENARIOS)
-             + " | " + T("平均有效 gap", "mean eff. gap") + " |",
-             "|---" * (len(SCENARIOS) + 2) + "|"]
-        for v, k in zip(sw["values"], keys):
-            L.append(f"| {v:g} | " + " | ".join(f"{pc(row[k][s][0])} / {pc(row[k][s][1])} / {pc(row[k][s][2])} / {row[k][s][3]:.3f}"
-                                               for s in SCENARIOS) + f" | {pc(score[v])} |")
+             + " | " + T("平均有效 gap", "mean eff. gap") + " | " + T("平均无违约", "mean violation-free") + " |",
+             "|---" * (len(SCENARIOS) + 3) + "|"]
+        for v in values:
+            L.append(f"| {v:g} | " + " | ".join(f"{pc(cell[(v, s)]['eff_gap'])} / {pc(cell[(v, s)]['viol_free'])} / {pc(cell[(v, s)]['gap'])} / "
+                                               f"{nn(cell[(v, s)]['final_lambda']):.3f}" for s in SCENARIOS)
+                     + f" | {pc(eff[v])} | {pc(free[v])} |")
         (V["out"] / (f"lam_sweep_{learner}.md" if zh else f"lam_sweep_{learner}.en.md")).write_text("\n".join(L) + "\n")
-    nan = lambda x: None if x != x else float(x)
-    (V["out"] / f"lam_sweep_{learner}.json").write_text(json.dumps(   # for the panel (docs/data_spec.md §3 rule 7)
-        {"schema": 1, "learner": learner, "algo": sw["algo"], "steps": sw["steps"], "values": sw["values"], "chosen": best,
-         "override": bool(override), "score": {f"{v:g}": nan(x) for v, x in score.items()},
-         "rows": [{"lambda_max": v, "scenario": s, "seed": sd, "exp_id": exp_ids[str(sd)][s][k],
-                   "eff_gap": nan(row[k][s][0]), "viol_free": nan(row[k][s][1]), "gap": nan(row[k][s][2]),
-                   "final_lambda": nan(row[k][s][3])}
-                  for v, k in zip(sw["values"], keys) for sd in SEEDS for s in SCENARIOS]}, indent=1))
-    print(f"[{time.strftime('%H:%M:%S')}] lambda_max sweep {learner}: " + ", ".join(f"{v:g} -> {100 * x:.1f}%" for v, x in score.items())
+    nan = lambda x: None if x is None or x != x else float(x)
+    (V["out"] / f"lam_sweep_{learner}.json").write_text(json.dumps(   # for the panel (docs/data_spec.md §2 rule 6)
+        {"schema": 2, "learner": learner, "RL_algorithm": learner.upper(), "algo": sw["algo"], "steps": sw["steps"], "values": values,
+         "chosen": best, "rule_choice": rule, "override": bool(override), "tie_pp": 100 * LAM_TIE,
+         "score": {f"{v:g}": nan(x) for v, x in eff.items()}, "viol_free_mean": {f"{v:g}": nan(x) for v, x in free.items()},
+         "rows": rows}, indent=1))
+    print(f"[{time.strftime('%H:%M:%S')}] lambda_max sweep {learner}: " + ", ".join(f"{v:g} -> {100 * eff[v]:.2f}% / free {100 * free[v]:.1f}%" for v in values)
           + f" | chosen {best:g}", flush=True)
     return best
+
+
+def choose_lam_max(V, exp_ids, learner) -> float:
+    """Evaluate one learner's sweep models (sweep_eval) and choose its lambda_max (write_lam_sweep)."""
+    sw = dict(V["cfg"]["lam_sweep"], algo=V["cfg"]["lam_sweep"]["algos"][learner])
+    keys = {v: f"lam_sweep_{learner}_{v:g}" for v in sw["values"]}
+    jobs = [(sw["algo"], sd, s, exp_ids[str(sd)][s][k]) for k in keys.values() for sd in SEEDS for s in SCENARIOS]
+    with Pool(min(len(jobs), 18)) as pool:
+        res = dict(pool.map(sweep_eval, jobs))
+    nan = lambda x: None if x != x else float(x)
+    rows = []
+    for v, k in keys.items():
+        for sd in SEEDS:
+            for s in SCENARIOS:
+                eid = exp_ids[str(sd)][s][k]
+                e, f, g, lam = res[(sw["algo"], sd, s, eid)]
+                rows.append({"lambda_max": v, "scenario": s, "seed": sd, "exp_id": eid, "eff_gap": nan(e), "viol_free": nan(f),
+                             "gap": nan(g), "final_lambda": nan(lam)})
+    override = os.environ.get(f"V5_LAM_MAX_{learner.upper()}") or os.environ.get("V5_LAM_MAX")   # per learner, or all
+    return write_lam_sweep(V, learner, rows, override)
 
 
 def run_batch(V, runs, limit, exp_ids) -> list[str]:
@@ -816,6 +939,9 @@ def main():
     a = ap.parse_args()
     global SEEDS
     SEEDS = [1] if SMOKE else CONFIG[a.version].get("seeds", SEEDS)   # v5.0.3: seed 1 only
+    global STEPS, CKPTS
+    if not SMOKE and CONFIG[a.version].get("steps"):  # 5.0.3.1: a version's own training length (default 20M)
+        STEPS, CKPTS = CONFIG[a.version]["steps"], CONFIG[a.version].get("ckpts", [])
     sfx = "_smoke" if SMOKE else ""
     V = {"version": a.version, "cfg": CONFIG[a.version], "log_dir": ROOT / "logs" / f"v{a.version}{sfx}",
          # a smoke test's report stays with its batch (logs/<batch>/report/), not as a fake space under results/
@@ -823,15 +949,18 @@ def main():
     V["manifest"], V["report"] = V["log_dir"] / "manifest.json", V["out"] / "report.md"
     V["active_res"], V["gpu_node"] = {}, gpu_nodes()
     # {learner: lambda_max} (v5.0.3); an older manifest's single value applies to every learner
-    lm = json.loads(V["manifest"].read_text()).get("lambda_max") if (a.rerun or a.report) and V["manifest"].exists() else None
-    V["lam_max"] = lm if isinstance(lm, dict) else {l: lm for l in ("ppo", "dqn", "ddqn")} if lm is not None else {}
+    V["lam_max"] = (manifest_lam_max(json.loads(V["manifest"].read_text())) if (a.rerun or a.report) and V["manifest"].exists() else {})
+    sw = CONFIG[a.version].get("lam_sweep")
+    sweep_only = sw and not CONFIG[a.version]["variants"]       # a sweep batch: its runs' steps are the batch's
+    V["batch_steps"] = sw["steps"] if sweep_only and not SMOKE else STEPS
+    V["batch_ckpts"] = sw["ckpts"] if sweep_only and not SMOKE else CKPTS
     src = V["cfg"].get("lam_max_from")
     if src:                                          # 5.0.4: lambda_max per learner from the sweep batch (v5.0.3)
         V["lam_max_from"] = f"v{src}{sfx}"
         p = ROOT / "logs" / V["lam_max_from"] / "manifest.json"
-        lm = json.loads(p.read_text()).get("lambda_max") if p.exists() else None
+        lm = manifest_lam_max(json.loads(p.read_text())) if p.exists() else {}
         need = sorted({lagrange_learner(V, k) for k in V["cfg"]["variants"]} - {None})
-        bad = [l for l in need if not isinstance(lm, dict) or not isinstance(lm.get(l), (int, float)) or lm[l] != lm[l]]
+        bad = [l for l in need if not isinstance(lm.get(l), (int, float)) or lm[l] != lm[l]]
         if bad:
             sys.exit(f"v{a.version}: lambda_max of {', '.join(bad)} not chosen in {p.relative_to(ROOT)} -- run v{src} first")
         V["lam_max"] = {l: float(lm[l]) for l in need}

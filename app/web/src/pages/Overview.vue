@@ -3,10 +3,14 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { t, tl } from "../i18n.js";
 import { getOverview } from "../api.js";
-import { dur, when, ago, bytes, pct } from "../format.js";
+import { dur, when, ago, bytes, steps } from "../format.js";
 import { purposeName } from "../labels.js";
 import Status from "../components/Status.vue";
 import Progress from "../components/Progress.vue";
+import LiveRuns from "../components/LiveRuns.vue";
+import GapTrend from "../components/GapTrend.vue";
+import Th from "../components/Th.vue";
+import { useSort } from "../sort.js";
 
 const router = useRouter();
 const o = ref(null);
@@ -21,8 +25,10 @@ const qStatus = (s) => ({ queued: t("排队中", "Queued"), running: t("运行�
   done: t("已完成", "Done"), failed: t("失败", "Failed"), interrupted: t("已中断", "Interrupted") }[s] ?? s);
 const qTone = { queued: "off", running: "run", waiting: "off", done: "ok", failed: "bad", interrupted: "warn" };
 const m = computed(() => o.value?.machine || {});
-const mem = computed(() => m.value.host?.memory);
-const reportStage = (r) => ({ starting: t("准备", "starting"), replay: t("回放评估", "replay"), regret: "regret", done: t("完成", "done") }[r?.stage] ?? r?.stage);
+const recentSort = useSort(computed(() => o.value?.recent || []), {
+  name: (b) => b.name, title: (b) => tl(b.title), status: (b) => b.status, runs: (b) => b.counts.done, ended: (b) => b.updated_at });
+const mem = computed(() => m.value.memory);
+
 </script>
 
 <template>
@@ -34,6 +40,7 @@ const reportStage = (r) => ({ starting: t("准备", "starting"), replay: t("回�
       </div>
     </div>
 
+    <GapTrend />
     <div v-if="!o" class="empty">{{ t("加载中…", "Loading…") }}</div>
     <template v-else>
       <div class="section-title"><h2>{{ t("正在进行", "In progress") }}</h2><span class="faint small">{{ t("每 10 秒刷新", "refreshes every 10 s") }}</span></div>
@@ -52,15 +59,22 @@ const reportStage = (r) => ({ starting: t("准备", "starting"), replay: t("回�
             <div style="flex: 1; min-width: 240px"><Progress :b="b" legend /></div>
             <div class="kpi-v">{{ b.pct.toFixed(1) }}%</div>
           </div>
+          <div class="row small dim" style="gap: 18px; margin-top: 10px">
+            <span>{{ t("每个 run", "per run") }} <b>{{ steps(b.params?.steps) }}</b> {{ t("步", "steps") }}</span>
+            <span>{{ t("合计", "throughput") }} <b>{{ b.steps_per_sec?.toLocaleString() ?? "—" }}</b> {{ t("步/秒", "steps/s") }}</span>
+            <span v-if="b.eta">{{ t("预计训练结束", "training done") }} <b>{{ dur(b.eta.seconds) }}</b> {{ t("后", "from now") }}（{{ t("约", "at") }} {{ when(Date.now() / 1000 + b.eta.seconds) }}，{{ t("不含报告", "report not included") }}）</span>
+          </div>
+          <div style="margin-top: 12px" @click.stop>
+            <LiveRuns :runs="o.running_runs.filter((r) => r.batch === b.name)" :params="b.params" :collapse="4" />
+          </div>
         </div>
       </div>
       <div v-for="b in o.reporting" :key="b.name" class="card">
         <div class="card-h">
           <h2><router-link :to="`/batches/${b.name}`">{{ b.name }}</router-link></h2>
-          <span class="badge run">{{ t("生成报告", "Writing report") }} · {{ reportStage(b.report) }}</span>
+          <span class="badge run">{{ t("生成报告", "Writing report") }}</span>
           <span class="spacer" />
-          <span class="dim small" v-if="b.report.overall_pct != null">{{ b.report.overall_pct }}%</span>
-          <span class="dim small" v-if="b.report.eta_minutes != null">· {{ t("预计还需", "ETA") }} {{ dur(b.report.eta_minutes * 60) }}</span>
+          <span class="dim small mono" v-if="b.report.step">{{ b.report.step }}</span>
         </div>
         <div class="card-b dim">{{ t("训练已全部结束，正在评估 checkpoint、计时并写报告。", "Training is over; evaluating checkpoints, timing and writing the report.") }}</div>
       </div>
@@ -78,22 +92,22 @@ const reportStage = (r) => ({ starting: t("准备", "starting"), replay: t("回�
               <code>queue_runner.py unpause</code>
             </div>
             <div v-if="!pending.length" class="faint">{{ t("队列里没有待运行的实验。", "Nothing queued.") }}</div>
-            <table v-else class="tbl">
-              <thead><tr><th>{{ t("项目", "Item") }}</th><th>{{ t("状态", "Status") }}</th><th>{{ t("等待", "Waits for") }}</th><th>{{ t("加入", "Added") }}</th></tr></thead>
+            <div v-else class="table-wrap"><table class="tbl">
+              <thead><tr><th>{{ t("项目", "Item") }}</th><th>{{ t("状态", "Status") }}</th><th class="hide-sm">{{ t("等待", "Waits for") }}</th><th class="hide-sm">{{ t("加入", "Added") }}</th></tr></thead>
               <tbody>
                 <tr v-for="i in pending" :key="i.id">
-                  <td><b>{{ i.id }}</b><div class="faint mono small" style="max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" :title="i.cmd?.join?.(' ') ?? i.cmd">{{ i.cmd?.join?.(" ") ?? i.cmd }}</div></td>
+                  <td><b>{{ i.id }}</b><div class="faint mono small hide-sm" style="max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" :title="i.cmd?.join?.(' ') ?? i.cmd">{{ i.cmd?.join?.(" ") ?? i.cmd }}</div></td>
                   <td><span class="badge" :class="qTone[i.status] || 'off'">{{ qStatus(i.status) }}</span></td>
-                  <td class="mono small">{{ i.wait_for || "—" }}</td>
-                  <td class="small dim">{{ i.added || "—" }}</td>
+                  <td class="mono small hide-sm">{{ i.wait_for || "—" }}</td>
+                  <td class="small dim hide-sm">{{ i.added || "—" }}</td>
                 </tr>
               </tbody>
-            </table>
+            </table></div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-h"><h2>{{ t("机器", "Machine") }}</h2><span class="spacer" /><router-link class="small" to="/machine">{{ t("详细 →", "Details →") }}</router-link></div>
+          <div class="card-h"><h2>{{ t("机器", "Machine") }}</h2><span class="spacer" /><router-link class="small" to="/monitor">{{ t("详细 →", "Details →") }}</router-link></div>
           <div class="card-b stack" style="gap: 12px">
             <div class="row" style="gap: 18px">
               <div><div class="kpi-l">{{ t("训练进程", "Training processes") }}</div><div class="kpi-v">{{ m.training_procs ?? "—" }}</div></div>
@@ -111,14 +125,15 @@ const reportStage = (r) => ({ starting: t("准备", "starting"), replay: t("回�
       </div>
 
       <div class="card">
-        <div class="card-h"><h2>{{ t("最近完成（当前阶段的正式批次）", "Recently finished (main batches of the current stage)") }}</h2><span class="spacer" /><router-link class="small" to="/batches">{{ t("全部批次 →", "All batches →") }}</router-link></div>
+        <div class="card-h"><h2>{{ t("最近完成的正式批次", "Recently finished main batches") }}</h2><span class="spacer" /><router-link class="small" to="/batches">{{ t("全部批次 →", "All batches →") }}</router-link></div>
         <div class="card-b table-wrap">
           <table class="tbl">
-            <thead><tr><th>{{ t("批次", "Batch") }}</th><th>{{ t("内容", "What") }}</th><th>{{ t("状态", "Status") }}</th><th class="num">run</th><th>{{ t("结束", "Ended") }}</th></tr></thead>
+            <thead><tr><Th :s="recentSort" k="name">{{ t("批次", "Batch") }}</Th><Th :s="recentSort" k="title" class="hide-sm">{{ t("内容", "What") }}</Th><Th :s="recentSort" k="status">{{ t("状态", "Status") }}</Th><Th :s="recentSort" k="runs" num>run</Th><Th :s="recentSort" k="ended">{{ t("结束", "Ended") }}</Th></tr></thead>
             <tbody>
-              <tr v-for="b in o.recent" :key="b.name" class="link" @click="router.push(`/batches/${b.name}`)">
+              <tr v-if="!o.recent.length"><td colspan="5" class="faint">{{ t("当前还没有完成的正式批次。", "No main batch has finished yet.") }}</td></tr>
+              <tr v-for="b in recentSort.sorted.value" :key="b.name" class="link" @click="router.push(`/batches/${b.name}`)">
                 <td><router-link :to="`/batches/${b.name}`">{{ b.name }}</router-link></td>
-                <td class="dim small" style="max-width: 560px">{{ tl(b.title) || "—" }}</td>
+                <td class="dim small hide-sm" style="max-width: 560px">{{ tl(b.title) || "—" }}</td>
                 <td><Status :s="b.status" /></td>
                 <td class="num">{{ b.counts.done }}/{{ b.total }}</td>
                 <td class="small dim">{{ ago(b.updated_at) }}</td>

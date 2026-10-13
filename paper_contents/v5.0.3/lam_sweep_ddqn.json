@@ -1,0 +1,118 @@
+{
+ "schema": 2,
+ "learner": "ddqn",
+ "RL_algorithm": "DDQN",
+ "algo": "lagrange_ddqn",
+ "steps": 3000000,
+ "values": [
+  1.0,
+  2.0,
+  5.0
+ ],
+ "chosen": 1.0,
+ "rule_choice": 1.0,
+ "override": false,
+ "tie_pp": 0.5,
+ "score": {
+  "1": 0.17139619525763292,
+  "2": 0.22119798456942708,
+  "5": 0.23830887662533481
+ },
+ "viol_free_mean": {
+  "1": 0.9775,
+  "2": 0.9666666666666667,
+  "5": 0.9674999999999999
+ },
+ "rows": [
+  {
+   "lambda_max": 1.0,
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "45ef1b46",
+   "eff_gap": 0.2646020420379981,
+   "viol_free": 0.9375,
+   "gap": 0.21526589520179668,
+   "final_lambda": 1.0
+  },
+  {
+   "lambda_max": 1.0,
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "4d6ed245",
+   "eff_gap": 0.16019175984891243,
+   "viol_free": 0.995,
+   "gap": 0.15592314697841092,
+   "final_lambda": 0.9995
+  },
+  {
+   "lambda_max": 1.0,
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "d146008a",
+   "eff_gap": 0.0893947838859882,
+   "viol_free": 1.0,
+   "gap": 0.08939478388598823,
+   "final_lambda": 0.93
+  },
+  {
+   "lambda_max": 2.0,
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "8acf846f",
+   "eff_gap": 0.3254855991846124,
+   "viol_free": 0.9025,
+   "gap": 0.25468790858942175,
+   "final_lambda": 2.0
+  },
+  {
+   "lambda_max": 2.0,
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "038370cd",
+   "eff_gap": 0.17076199506528433,
+   "viol_free": 0.9975,
+   "gap": 0.16848427276788194,
+   "final_lambda": 1.9985
+  },
+  {
+   "lambda_max": 2.0,
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "db7be824",
+   "eff_gap": 0.1673463594583845,
+   "viol_free": 1.0,
+   "gap": 0.1673463594583845,
+   "final_lambda": 1.985
+  },
+  {
+   "lambda_max": 5.0,
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "2912f8f7",
+   "eff_gap": 0.3762456049831495,
+   "viol_free": 0.905,
+   "gap": 0.31229686484895225,
+   "final_lambda": 5.0
+  },
+  {
+   "lambda_max": 5.0,
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "ff53524f",
+   "eff_gap": 0.17662099481134275,
+   "viol_free": 0.9975,
+   "gap": 0.17435936581198327,
+   "final_lambda": 4.992
+  },
+  {
+   "lambda_max": 5.0,
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "2b4dfbc7",
+   "eff_gap": 0.16206003008151215,
+   "viol_free": 1.0,
+   "gap": 0.16206003008151218,
+   "final_lambda": 4.956
+  }
+ ]
+}

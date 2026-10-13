@@ -141,7 +141,8 @@ def scale_reward(env, scale: float):
 
 
 # ── training callback (logging + Lagrangian dual ascent) ────────────────────
-def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start: int = 0, lam_max: float = C.LAMBDA_MAX):
+def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start: int = 0, lam_max: float = C.LAMBDA_MAX,
+                  lam_update: str = "linear", lam_lr: float = C.LAMBDA_LR):
     from stable_baselines3.common.callbacks import BaseCallback
     from shared.paths import write_progress
 
@@ -181,15 +182,17 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             return True
 
         def _dual(self, cost: float) -> None:
-            """v5.0.3: J_C = mean violations per episode (was violations / M)."""
+            """J_C = mean violations per episode (v5.0.3; was violations / M); lambda is updated every
+            LAMBDA_UPDATE_WINDOW episodes from the first episode on (no warm-up since 2026-10-13)."""
             self._n_ep += 1
             self._viol.append(cost)
-            if self._n_ep < C.LAMBDA_WARMUP_EPISODES:
-                return
             self._since += 1
             if len(self._viol) == C.LAMBDA_UPDATE_WINDOW and self._since >= C.LAMBDA_UPDATE_WINDOW:
-                self.lam = float(np.clip(self.lam + C.LAMBDA_LR * (np.mean(self._viol) - C.LAMBDA_TARGET),
-                                         0.0, lam_max))
+                j, d = float(np.mean(self._viol)), C.LAMBDA_TARGET
+                # linear: e = J_C - d (v5.0.3); normalized (v5.0.3.1): e = (J_C - d) / max(J_C, d) in (-1, 1), so a step
+                # up and a step down have the same size lam_lr (with d ~ 0 the linear error can rise ~1000x faster than it falls)
+                e = j - d if lam_update == "linear" else (j - d) / max(j, d)
+                self.lam = float(np.clip(self.lam + lam_lr * e, 0.0, lam_max))
                 self.training_env.env_method("set_lambda", self.lam)
                 self._since = 0
 
@@ -367,6 +370,9 @@ def main():
     ap.add_argument("--steps", type=int, default=5_000_000)
     ap.add_argument("--lambda-max", type=float, default=C.LAMBDA_MAX,   # v5.0.3: upper bound of the Lagrange multiplier
                     help="Lagrange: clip of lambda, also its scale in the observation (lambda / lambda_max)")
+    ap.add_argument("--lambda-update", choices=["linear", "normalized"], default="linear",   # v5.0.3.1
+                    help="Lagrange dual step: linear lr*(J_C - d), or normalized lr*(J_C - d)/max(J_C, d)")
+    ap.add_argument("--lambda-lr", type=float, default=C.LAMBDA_LR, help="Lagrange dual step size eta (per update)")
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
 
@@ -440,7 +446,7 @@ def main():
                         "bc_only_ilp_ar": round(float(np.mean([e["ar_star"] for e in ok_bc])), 6) if ok_bc else None})
         print(f"  [bc] {bc_info}", flush=True)
     start = resumed["at_step"] if resumed else 0
-    cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start, a.lambda_max)
+    cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start, a.lambda_max, a.lambda_update, a.lambda_lr)
     extra = []
     if a.grad_diag:                                     # v4.4.8: actor / critic gradient conflict on the encoder
         assert a.net == "graph" and not a.separate_critic, "--grad-diag: shared graph encoder only"
@@ -498,8 +504,8 @@ def main():
         },
         "training": {"total_steps": start + a.steps, "steps_this_run": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,
-                     **({"final_lambda": round(lam, 6), "lambda_max": a.lambda_max, "lambda_lr": C.LAMBDA_LR,
-                         "lambda_target": C.LAMBDA_TARGET, "lambda_window": C.LAMBDA_UPDATE_WINDOW} if mech == "lagrange" else {})},
+                     **({"final_lambda": round(lam, 6), "lambda_max": a.lambda_max, "lambda_lr": a.lambda_lr, "lambda_update": a.lambda_update,
+                         "lambda_target": C.LAMBDA_TARGET, "lambda_window": C.LAMBDA_UPDATE_WINDOW, "lambda_warmup": 0} if mech == "lagrange" else {})},
     }
     (run_dir / "results.json").write_text(json.dumps(res, indent=2))
     with open(run_dir / "summary.csv", "w", newline="") as f:

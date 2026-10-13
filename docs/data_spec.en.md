@@ -1,105 +1,127 @@
-# Experiment data spec (manifest v2 / run.json)
+# Experiment data spec (schema 3)
 
-> From v5.0.3 on, every training batch writes its data by this spec; the panel only displays it and no longer infers anything. Older batches are mapped to the same shape by a converter in the backend.
+> From 2026-10-13 (v5.0.4 and later batches). Field names set by the user: **RL_algorithm, strategies, seeds**; everything else goes into **params**.
+> v5.0.3 (schema 2, fields learner / mechanism) is converted to this spec by the new panel's backend; older batches are only in the classic panel (/classic/).
 
-## 1. Terms
+## 1. Fields
 
-| Term | Meaning |
+| Field | Values | Meaning |
+|---|---|---|
+| `RL_algorithm` | `PPO`, `DQN`, `DDQN` | RL algorithm. A list in a batch, one value in a run |
+| `strategies` / `strategy` | `unconstraint`, `lagrangian`, `maskable`, `repair` | Constraint-handling strategy. A list `strategies` in a batch, one value `strategy` in a run |
+| `seeds` / `seed` | integers | A list `seeds` in a batch, one value `seed` in a run |
+| `scenarios` / `scenario` | `lt`, `eq`, `gt` | Scenario |
+| `params` | object | Every other parameter. A batch's `params` apply to all its runs; a run's `params` hold only what differs from the batch |
+
+The results directory name (e.g. `lagrange_dqn`) is storage only: `results/<results_space>/<scenario>/<dir>/<exp_id>/`, with `dir` given by RL_algorithm and strategy:
+
+| strategy | dir |
 |---|---|
-| batch | one driver-script run, directory `logs/<batch>/`, e.g. `v5.0.3`, `v5.0.3_smoke` |
-| run | one training (one model), identified by `exp_id`, results in `results/<data space>/<scenario>/<algo>/<exp_id>/` |
-| purpose | per batch: `main` formal experiment / `smoke` smoke test / `test` other tests |
-| role | per run: `main` formal result / `sweep` parameter sweep / `reference` cross-batch reference (not trained in this batch) |
-| group | related runs of one role, e.g. `lam_sweep`; other runs can wait for a group with `depends_on` |
-| params | the hyper-parameters that tell runs of the same learner × mechanism apart, e.g. `{"lambda_max": 2, "steps": 3000000}` |
+| unconstraint | `ppo` / `dqn` / `ddqn` |
+| lagrangian | `lagrange_<algorithm, lower case>` |
+| maskable | `mask_<algorithm, lower case>` |
+| repair | `repair_<algorithm, lower case>` |
 
-## 2. `run.json` (one per run, written by `paper_rl/train.py` when training starts)
-
-Location: `results/<data space>/<scenario>/<algo>/<exp_id>/run.json`.
-
-```json
-{
-  "schema": 1,
-  "exp_id": "3cf63e77",
-  "batch": "v5.0.3",
-  "key": "lam_sweep_1",
-  "role": "sweep",
-  "group": "lam_sweep",
-  "version": "5.0.3",
-  "commit": "410a38c",
-  "scenario": "lt",
-  "seed": 1,
-  "algo": "lagrange_dqn",
-  "learner": "dqn",
-  "mechanism": "lagrange",
-  "net": "graph",
-  "steps": 3000000,
-  "params": {"lambda_max": 1.0},
-  "started_at": "2026-10-13T14:26:29",
-  "argv": ["--scen", "lt", "..."]
-}
-```
-
-- `batch` / `key` / `role` / `group` come from the driver through the environment variables `RUN_BATCH`, `RUN_KEY`, `RUN_ROLE`, `RUN_GROUP`; a manually started run without them gets `null` / `null` / `"main"` / `null`.
-- `params` holds only the **parameters that differ from the defaults and tell runs apart** (e.g. `lambda_max`). All other hyper-parameters stay in `results.json` as before.
-- Metrics after training are still written to `results.json`, unchanged.
-
-## 3. manifest v2 (one per batch, `logs/<batch>/manifest.json`)
+## 2. Batch manifest (`logs/<batch>/manifest.json`)
 
 The driver writes the complete plan **before anything starts**; launching a run only fills in its `exp_id`.
 
 ```json
 {
-  "schema": 2,
-  "batch": "v5.0.3",
-  "version": "5.0.3",
+  "schema": 3,
+  "batch": "v5.0.4",
+  "version": "5.0.4",
   "purpose": "main",
-  "commit": "410a38c",
+  "commit": "a3b2109",
   "results_space": "unified",
+  "driver_pid": 12345,
+  "created_at": "2026-10-14T09:00:00",
   "title": {"zh": "...", "en": "..."},
-  "created_at": "2026-10-13T14:26:29",
+
+  "RL_algorithm": ["PPO", "DQN", "DDQN"],
+  "strategies": ["unconstraint", "lagrangian", "maskable", "repair"],
+  "seeds": [1],
+  "scenarios": ["lt", "eq", "gt"],
+  "params": {
+    "steps": 20000000,
+    "checkpoints": [1000000, 3000000, 5000000, 7500000, 10000000, 15000000],
+    "net": "graph",
+    "reward": "ar_pen",
+    "gamma": 1.0,
+    "full_episode": true,
+    "train_pool": "results/sup_diag/{scen}.json",
+    "data": "v4.3.1.4",
+    "lambda_max": {"PPO": 2, "DQN": 1, "DDQN": 5},
+    "lambda_max_from": "v5.0.3"
+  },
+
   "runs": [
-    {"key": "lam_sweep_1", "role": "sweep", "group": "lam_sweep", "depends_on": [],
-     "scenario": "lt", "seed": 1, "algo": "lagrange_dqn", "learner": "dqn", "mechanism": "lagrange", "net": "graph",
-     "steps": 3000000, "params": {"lambda_max": 1.0}, "exp_id": "3cf63e77"},
-    {"key": "ddqn_lagrange", "role": "main", "group": "lagrange", "depends_on": ["lam_sweep"],
-     "scenario": "lt", "seed": 1, "algo": "lagrange_ddqn", "learner": "ddqn", "mechanism": "lagrange", "net": "graph",
-     "steps": 20000000, "params": {"lambda_max": null}, "exp_id": null}
+    {"key": "dqn_lagrangian", "role": "main", "group": null, "depends_on": [],
+     "RL_algorithm": "DQN", "strategy": "lagrangian", "seed": 1, "scenario": "lt",
+     "params": {"lambda_max": 1}, "dir": "lagrange_dqn", "exp_id": "3cf63e77"}
   ],
-  "references": [
-    {"label": {"zh": "无约束 DQN（v5.0.2）", "en": "Unconstrained DQN (v5.0.2)"},
-     "results_space": "unified",
-     "scenario": "lt", "seed": 1, "algo": "dqn", "learner": "dqn", "mechanism": "none", "net": "graph",
-     "steps": 20000000, "params": {}, "exp_id": "2d3a6181"}
-  ],
-  "exp_ids": {"1": {"lt": {"lam_sweep_1": "3cf63e77"}}}
+  "references": []
 }
 ```
 
+A λ_max sweep batch (like v5.0.3): `strategies` is `["lagrangian"]` only, and the sweep settings go into `params.lambda_max_sweep`:
+
+```json
+"params": {"steps": 3000000, "checkpoints": [1000000],
+           "lambda_max_sweep": {"values": [1, 2, 5], "select": "lowest mean effective gap over the scenarios"},
+           "lambda_max": {"PPO": 2, "DQN": 1, "DDQN": 5}}
+```
+
+Sweep runs have `role` `sweep`, `group` `lambda_max_sweep_<RL_algorithm>` and their own value in `params.lambda_max`; once a sweep is done the driver writes the chosen value into the batch's `params.lambda_max` (keyed by RL_algorithm).
+
 Rules:
 
-1. **Planned total = `len(runs)`**; `references` do not count.
-2. A `null` value in `params` means "decided by a group this run depends on, not known yet" (e.g. `lambda_max` before the sweep ends); the driver fills it in once known.
-3. `depends_on` lists the groups to wait for; until every run of such a group has finished, a dependent run shows as "waiting for <group>".
-4. `exp_ids` (the old nested form `{seed: {scenario: {key: exp_id}}}`) is derived from `runs` and kept only for older scripts such as `diag_regret.py`.
-5. `driver_pid`: the driver's pid. While the driver is alive and not every run has finished, the batch shows as running (also between launches), and runs not started yet show as queued or waiting.
-6. Smoke batches: `purpose: "smoke"`, the batch name ends in `_smoke`; data all go to `results/smoke/` (smoke tests are told apart by exp_id and batch, no new space per test), the report to `logs/<batch>/report/`. The old `smoke_v50x` and `check_*` directories stay where they are; the panel files them as test spaces of the current stage.
+1. Planned total = `len(runs)`.
+2. A `null` in a run's `params` means "not known yet" (e.g. a `lambda_max` waiting for a sweep in the same batch); the driver fills it in.
+3. `depends_on` lists the groups to wait for; until all their runs have finished, a dependent run shows as waiting.
+4. `driver_pid`: while the driver is alive and not every run has finished, the batch shows as running.
+5. Smoke batches: `purpose: "smoke"`, the name ends in `_smoke`; data in `results/smoke/`, the report in `logs/<batch>/report/`.
+6. The report directory (`paper_contents/v<version>/` for a main batch) holds, besides `report.md` / `report.en.md`, `report_data.json` (learning curves, timing) and `lam_sweep_<algorithm>.json` (λ_max sweep) for the panel's charts.
 
-## 4. Panel display
+## 3. run.json (one per run, written into its results directory when training starts)
 
-- The batch detail table has fixed columns: **scenario / model (learner) / constraint handling (mechanism) / params / seeds / metrics**. The params column shows `params` as badges: `λ_max=2`, `steps=3M` (`steps` only when it differs from the batch's default).
-- A reference (`references`) only fills a matrix cell when this batch has no run for it, marked "reference · not trained in this batch"; its metrics come from the source run's `results.json`.
-- The batch list hides batches whose `purpose` is `smoke` / `test` by default; tick "show test batches" to see them.
-- There is no global data-space switch: the batch list and the overview read every space at once and filter by **stage** (`stage` in `app/backend/result_spaces.json`, default: the current stage). The data space only shows as a path on a run's page; "Compare results" has its own scope selector.
-- A batch page centres on the **result matrix** (one per scenario: rows = learner, columns = constraint handling, a cell = relative gap and capacity / privacy violation rates, or the run's status); parameter sweeps and all runs are folded below.
-- Navigation groups: Now (overview, processes) / Experiments (batches, version reports) / Analysis (compare results, charts) / Paper.
-- Run status: `done` / `running` / `waiting` (for a dependency) / `queued` / `stopped` (interrupted) / `skipped` (never ran).
+```json
+{
+  "schema": 3,
+  "exp_id": "3cf63e77",
+  "batch": "v5.0.4",
+  "key": "dqn_lagrangian",
+  "role": "main",
+  "group": null,
+  "version": "5.0.4",
+  "commit": "a3b2109",
+  "RL_algorithm": "DQN",
+  "strategy": "lagrangian",
+  "seed": 1,
+  "scenario": "lt",
+  "params": {"steps": 20000000, "net": "graph", "lambda_max": 1},
+  "dir": "lagrange_dqn",
+  "started_at": "2026-10-14T09:00:00",
+  "argv": ["--scen", "lt", "..."]
+}
+```
 
-## 5. Converting old batches (no schema)
+`batch` / `key` / `role` / `group` / `params` come from the driver through `RUN_BATCH`, `RUN_KEY`, `RUN_ROLE`, `RUN_GROUP`, `RUN_PARAMS`. Metrics after training are still written to `results.json`.
 
-The backend's `_legacy_runs` turns an old manifest into the `runs` of §3:
+## 4. Panel
 
-- scenario / seed / algo are recognised in the nested `exp_ids` by the old rules; `learner` and `mechanism` come from the algo name;
-- the old `keys` label (reward mode, network, `· 1600`, ...) goes into `params.variant`; it is dropped when it equals the network name (the network has its own column);
-- `role` is always `main`; a batch name containing `smoke` gives `purpose` `smoke`;
-- planned total: scenarios × seeds × keys (× modes) when there are `keys`, otherwise scenarios × algos × seeds (× modes).
+- The new panel (`/`, `app/web` + `app/backend/v2/`) shows only batches from v5.0.3 on (schema 2 / 3); older batches are only in the classic panel `/classic/`. Neither side calls the other's code.
+- Pages use only this spec's names: RL_algorithm (PPO / DQN / DDQN), strategy (unconstraint / lagrangian / maskable / repair), seed, params.
+- A batch's result matrix: one per scenario, rows = RL_algorithm, columns = strategy; a cell shows the relative gap and the capacity / privacy violation rates, or the run's status.
+- Run status: `done` / `running` / `waiting` / `queued` / `stopped` (interrupted) / `skipped` (never ran).
+
+## 5. Converting schema 2 (v5.0.3 and its smoke only)
+
+| schema 2 | schema 3 |
+|---|---|
+| `learner`: ppo / dqn / ddqn | `RL_algorithm`: PPO / DQN / DDQN |
+| `mechanism`: none / lagrange / mask / repair | `strategy`: unconstraint / lagrangian / maskable / repair |
+| `algo` | `dir` |
+| `steps` (per run) | `params.steps` |
+| top-level `lam_sweep`, `lambda_max` (keyed by lower-case algorithm) | `params.lambda_max_sweep`, `params.lambda_max` (keyed by RL_algorithm) |
+| group `lam_sweep_<learner>` | `lambda_max_sweep_<RL_algorithm>` |

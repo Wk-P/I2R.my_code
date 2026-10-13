@@ -1,9 +1,9 @@
 """File layer of the v2 panel backend (docs/data_spec.md): batches (logs/<batch>/manifest.json), runs
 (results/<space>/<scenario>/<algo>/<exp_id>/{run.json, results.json, training_curve.csv}), report data
-(report_data.json, lam_sweep_<learner>.json) and result spaces / stages (app/backend/result_spaces.json).
+(report_data.json, lam_sweep_<learner>.json).
 
-Read-only; never imports training code. Old manifests (no schema) are converted by the legacy backend's
-_manifest_runs (docs/data_spec.md §5) -- the only thing borrowed from it here."""
+Only batches written to the v2 data spec (manifest "schema": 2, v5.0.3 on) exist for this panel; older batches stay
+in the classic panel (/classic/, app/backend/main.py). Read-only; never imports training code or the old backend."""
 from __future__ import annotations
 
 import json
@@ -17,11 +17,11 @@ ROOT = Path(__file__).resolve().parents[3]
 LOGS = ROOT / "logs"
 RESULTS = ROOT / "results"
 PAPER = ROOT / "paper_contents"
-SPACES_META = Path(__file__).resolve().parents[1] / "result_spaces.json"
 SCENARIOS = ["lt", "eq", "gt"]
-LEARNERS = ["ppo", "dqn", "ddqn"]
-MECHANISMS = ["none", "lagrange", "mask", "repair"]
-OLD_PPO = {"ppo_lagrangian": "lagrange", "ppo_mask": "mask", "ppo_opt": "repair"}     # pre-v4.3.1.3 dir names
+RL_ALGORITHMS = ["PPO", "DQN", "DDQN"]                                   # docs/data_spec.md §1
+STRATEGIES = ["unconstraint", "lagrangian", "maskable", "repair"]
+_PREFIX = {"unconstraint": "", "lagrangian": "lagrange_", "maskable": "mask_", "repair": "repair_"}
+_FROM_MECH = {"none": "unconstraint", "lagrange": "lagrangian", "mask": "maskable", "repair": "repair"}
 
 
 def read_json(path: Path):
@@ -38,48 +38,72 @@ def clean(v):
     return v
 
 
-def split_algo(algo: str) -> tuple[str, str]:
-    """(learner, mechanism) of an algo directory name, e.g. lagrange_ddqn -> (ddqn, lagrange)."""
-    if algo in OLD_PPO:
-        return "ppo", OLD_PPO[algo]
-    parts = algo.split("_")
-    if len(parts) > 1 and parts[0] in MECHANISMS and parts[-1] in LEARNERS:
-        return parts[-1], parts[0]
-    if algo in LEARNERS:
-        return algo, "none"
-    return algo, "none"
+def result_dir(rl: str, strategy: str) -> str:
+    """Results directory name of an (RL_algorithm, strategy), e.g. (DQN, lagrangian) -> lagrange_dqn."""
+    return _PREFIX[strategy] + rl.lower()
 
 
-# ── spaces and stages ─────────────────────────────────────────────────────────
-def spaces() -> list[dict]:
-    """Every results/<space>/ with its label and stage; smoke* / check_* spaces belong to the newest stage."""
-    meta = {k: v for k, v in (read_json(SPACES_META) or {}).items() if not k.startswith("_")}
-    newest = max((m.get("stage") or 0 for m in meta.values()), default=0)
-    out = []
-    names = sorted(p.name for p in RESULTS.iterdir() if p.is_dir()) if RESULTS.is_dir() else []
-    for n in names:
-        m = meta.get(n)
-        test = n.startswith("smoke") or n.startswith("check_")
-        if m is None and not test:
-            m = {"label": n, "kind": "other", "stage": None, "order": 99}
-        if m is None:
-            m = {"label": n, "kind": "test", "stage": newest, "order": 50}
-        out.append({"name": n, "label": m.get("label", n), "kind": m.get("kind", "branch"), "stage": m.get("stage"),
-                    "versions": m.get("versions"), "order": m.get("order", 99)})
-    return sorted(out, key=lambda s: (s["order"], s["name"]))
+def from_dir(d: str) -> tuple[str | None, str | None]:
+    """(RL_algorithm, strategy) of a results directory name."""
+    pre, _, rl = d.rpartition("_")
+    strategy = next((k for k, v in _PREFIX.items() if v == (pre + "_" if pre else "")), None)
+    return (rl.upper() if rl.upper() in RL_ALGORITHMS else None), strategy
 
 
-def stages() -> list[dict]:
-    seen = {}
-    for s in spaces():
-        if s["stage"] is not None and s["kind"] == "branch" and s["stage"] not in seen:
-            seen[s["stage"]] = {"stage": s["stage"], "label": s["label"], "versions": s["versions"]}
-    newest = max(seen, default=None)
-    return [dict(v, current=k == newest) for k, v in sorted(seen.items(), reverse=True)]
+def normalize(man: dict) -> dict:
+    """A schema-2 or schema-3 manifest in the schema-3 shape (docs/data_spec.md §2, §5): RL_algorithm, strategies,
+    seeds, scenarios, params at the batch level; runs with RL_algorithm, strategy, seed, scenario, params, dir."""
+    if man.get("schema") == 3:
+        runs = [dict(r, depends_on=r.get("depends_on") or [], params=r.get("params") or {}) for r in man.get("runs", [])]
+        return dict(man, runs=runs)
+    up = lambda d: {k.upper(): v for k, v in d.items()} if isinstance(d, dict) else d
+    params = {k: man[k] for k in ("steps", "checkpoints", "data", "reward", "gamma", "full_episode", "exit_action")
+              if man.get(k) is not None}
+    if man.get("lam_sweep"):
+        sw = man["lam_sweep"]
+        params["lambda_max_sweep"] = {"values": sw.get("values")}
+        if all(r.get("role") == "sweep" for r in man.get("runs", [])):    # a sweep-only batch: its own steps
+            params.update(steps=sw.get("steps") if man.get("purpose") != "smoke" else man.get("steps"),
+                          checkpoints=sw.get("ckpts") if man.get("purpose") != "smoke" else man.get("checkpoints"))
+        else:
+            params["lambda_max_sweep"].update(steps=sw.get("steps"), checkpoints=sw.get("ckpts"))
+    if man.get("lambda_max") is not None:
+        params["lambda_max"] = up(man["lambda_max"])
+    if man.get("lambda_max_from"):
+        params["lambda_max_from"] = man["lambda_max_from"]
+    grp = lambda g: f"lambda_max_sweep_{g.split('_')[-1].upper()}" if g and g.startswith("lam_sweep_") else g
+    runs = []
+    for r in man.get("runs", []):
+        rp = dict(r.get("params") or {})
+        if r.get("steps") is not None:
+            rp["steps"] = r["steps"]
+        runs.append({"key": r.get("key"), "role": r.get("role") or "main", "group": grp(r.get("group")),
+                     "depends_on": [grp(g) for g in r.get("depends_on") or []],
+                     "RL_algorithm": (r.get("learner") or "").upper(), "strategy": _FROM_MECH.get(r.get("mechanism"), r.get("mechanism")),
+                     "seed": r.get("seed"), "scenario": r["scenario"], "params": rp, "dir": r["algo"], "exp_id": r.get("exp_id")})
+    out = {k: v for k, v in man.items() if k not in ("runs", "exp_ids", "lam_sweep", "lambda_max", "lambda_max_from", "steps",
+                                                      "checkpoints", "data", "reward", "gamma", "full_episode", "exit_action",
+                                                      "algos", "seeds", "scenarios")}
+    out.update(RL_algorithm=[a for a in RL_ALGORITHMS if any(r["RL_algorithm"] == a for r in runs)],
+               strategies=[x for x in STRATEGIES if any(r["strategy"] == x for r in runs)],
+               seeds=sorted({r["seed"] for r in runs if r["seed"] is not None}),
+               scenarios=[x for x in SCENARIOS if any(r["scenario"] == x for r in runs)],
+               params=params, runs=runs)
+    return out
 
 
-def stage_of(space: str | None) -> int | None:
-    return next((s["stage"] for s in spaces() if s["name"] == space), None)
+def run_info(rj: dict, d: str) -> dict:
+    """run.json (schema 1 = v5.0.3: learner / mechanism; schema 3) -> RL_algorithm, strategy, params."""
+    rl, st = from_dir(d)
+    if rj.get("schema") == 3:
+        return {"RL_algorithm": rj.get("RL_algorithm") or rl, "strategy": rj.get("strategy") or st, "params": rj.get("params") or {}}
+    p = dict(rj.get("params") or {})
+    if rj.get("steps") is not None:
+        p.setdefault("steps", rj["steps"])
+    if rj.get("net"):
+        p.setdefault("net", rj["net"])
+    return {"RL_algorithm": (rj.get("learner") or "").upper() or rl,
+            "strategy": _FROM_MECH.get(rj.get("mechanism"), st), "params": p}
 
 
 # ── runs ──────────────────────────────────────────────────────────────────────
@@ -124,12 +148,6 @@ def run_dir(space: str, scenario: str, algo: str, exp_id: str) -> Path:
         if not re.fullmatch(r"[\w.\-]+", part or ""):
             raise ValueError(part)
     return RESULTS / space / scenario / algo / exp_id
-
-
-def find_space(scenario: str, algo: str, exp_id: str, prefer: str | None = None) -> str | None:
-    """The space holding a run (old manifests do not say which)."""
-    cands = ([prefer] if prefer else []) + [s["name"] for s in spaces()]
-    return next((s for s in cands if s and (RESULTS / s / scenario / algo / exp_id).is_dir()), None)
 
 
 # ── training trace (training_curve.csv) ───────────────────────────────────────
@@ -194,23 +212,10 @@ def manifest(batch: str) -> dict | None:
 
 
 def batch_names() -> list[str]:
-    return [d.name for d in LOGS.iterdir() if d.is_dir()] if LOGS.is_dir() else []
-
-
-def plan(batch: str, man: dict | None) -> list[dict]:
-    """The planned runs of a batch in the v2 shape (docs/data_spec.md §3); old manifests (and batches known only
-    from their log file names) via the legacy converter (§5)."""
-    if man and man.get("schema") == 2:
-        return [dict(r, role=r.get("role") or "main", depends_on=r.get("depends_on") or [], params=r.get("params") or {})
-                for r in man.get("runs", [])]
-    from .. import main as legacy
-    out = []
-    for r in legacy._batch_runs(LOGS / batch)[0]:
-        learner, mech = split_algo(r["algo"])
-        out.append({"key": None, "role": "main", "group": None, "depends_on": [], "scenario": r["scenario"],
-                    "seed": r["seed"], "algo": r["algo"], "learner": learner, "mechanism": mech, "net": None,
-                    "steps": (man or {}).get("steps"), "params": r.get("params") or {}, "exp_id": r["exp_id"]})
-    return out
+    """Batches of this panel: logs/<batch>/manifest.json with "schema" 2 (v5.0.3) or 3."""
+    if not LOGS.is_dir():
+        return []
+    return [d.name for d in LOGS.iterdir() if d.is_dir() and ((read_json(d / "manifest.json") or {}).get("schema") in (2, 3))]
 
 
 def report_dir(batch: str, man: dict) -> Path | None:
@@ -219,7 +224,7 @@ def report_dir(batch: str, man: dict) -> Path | None:
     if d.is_dir():
         return d
     v = man.get("version")
-    if v and man.get("purpose", "main") == "main" and (PAPER / f"v{v}").is_dir():
+    if v and man.get("purpose") == "main" and (PAPER / f"v{v}").is_dir():
         return PAPER / f"v{v}"
     return None
 

@@ -19,15 +19,6 @@
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .04);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0f121a; --panel: #171b26; --panel-2: #1c2130; --border: #262c3b; --border-strong: #343b4e;
-    --text: #e6e9f2; --dim: #a1a9bd; --faint: #6c7489; --accent: #8b85ff; --accent-soft: #252650;
-    --ok: #34d399; --ok-soft: #10302a; --run: #8b85ff; --run-soft: #252650; --warn: #f5b454; --warn-soft: #3a2b12;
-    --bad: #f87171; --bad-soft: #3b1a1a; --off: #9aa1b2; --off-soft: #23283a;
-    --shadow: none; color-scheme: dark;
-  }
-}
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
@@ -89,8 +80,9 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .card-b { padding: 14px 16px 16px; }
 .card-note { padding: 0 16px 14px; color: var(--faint); font-size: 12px; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.grid-2 > *, .grid-3 > *, .grid-auto > * { min-width: 0; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
 .section-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: -6px; }
 .section-title h2 { font-size: 16px; }
 
@@ -122,11 +114,16 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .tbl tbody tr:last-child td { border-bottom: 0; }
 .tbl tr.link { cursor: pointer; }
+.tbl th.sortable { cursor: pointer; user-select: none; }
+.tbl th.sortable:hover { color: var(--text); }
+.tbl th.sorted { color: var(--accent); }
+.sort-mark { font-size: 10px; margin-left: 4px; opacity: .35; }
+.tbl th.sorted .sort-mark { opacity: 1; }
 .tbl tr.link:hover td { background: var(--panel-2); }
 .tbl th.num, .tbl td.num { text-align: right; }
 
 /* tabs */
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); }
 .tabs a { padding: 9px 14px; color: var(--dim); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 560; white-space: nowrap; }
 .tabs a:hover { color: var(--text); text-decoration: none; }
 .tabs a.on { color: var(--accent); border-bottom-color: var(--accent); }
@@ -169,4 +166,37 @@ label.check { display: inline-flex; align-items: center; gap: 6px; color: var(--
   .mobile-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
   .page { padding: 18px 16px 50px; }
   .grid-2 { grid-template-columns: 1fr; }
+}
+
+/* ── narrow screens (phones; also small tablets in portrait) ─────────────────────────────────────────────
+   No page ever scrolls sideways: grids never ask for a column wider than the screen, wide data tables scroll
+   inside their own card (first column pinned), secondary columns are hidden, run lists become cards. */
+.show-sm, .show-sm-i { display: none; }
+.side-mask { display: none; }
+@media (max-width: 700px) {
+  body { font-size: 13.5px; }
+  .page { padding: 14px 12px 48px; gap: 14px; }
+  h1 { font-size: 19px; }
+  .head-sub { font-size: 13px; }
+  .card-h { padding: 12px 12px 0; gap: 8px; }
+  .card-b { padding: 10px 12px 12px; }
+  .card-note { padding: 0 12px 12px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .kpi { padding: 9px 10px; }
+  .kpi-v { font-size: 18px; }
+  .grid-auto { grid-template-columns: 1fr; }
+  .hide-sm { display: none !important; }
+  .show-sm { display: block; }
+  .show-sm-i { display: inline; }
+  .tbl { font-size: 12.5px; }
+  .tbl th, .tbl td { padding: 7px 8px; }
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+  .table-wrap .tbl.pin tr > :first-child { position: sticky; left: 0; background: var(--panel); z-index: 1; }
+  .table-wrap .tbl.pin thead tr > :first-child { background: var(--panel-2); }
+  .seg { flex-wrap: wrap; }
+  .tabs { overflow-x: auto; scrollbar-width: none; }      /* phones: swipe sideways, no scrollbar */
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs a { padding: 8px 11px; margin-bottom: 0; }
+  .mobile-bar .btn { padding: 5px 10px; }
+  .side-mask.open { display: block; position: fixed; inset: 0; background: rgba(15, 18, 26, .35); z-index: 25; }
 }
