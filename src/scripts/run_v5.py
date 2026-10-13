@@ -121,6 +121,18 @@ CONFIG = {
                 "title": ("取消 λ_max：现行 λ + 0.5(J_C − d) vs 归一化 λ + 0.05(J_C − d)/max(J_C, d)，λ 不设上限、观测为 λ/(1+λ)，无预热（种子 1、20M、5 万实例）",
                           "No λ_max: linear λ + 0.5(J_C − d) vs normalized λ + 0.05(J_C − d)/max(J_C, d), λ uncapped, observed as λ/(1+λ), no warm-up (seed 1, 20M, 50k instances)"),
                 "seeds": [1], "parallel": 18, "mps": True},
+    # 5.0.3.3: DQN / DDQN only, exploration decoupled from the dual update: epsilon falls 1 -> 0 over a fixed 2M steps
+    # (not half of the run), J_C from 100 greedy (epsilon = 0) episodes per update, normalized step, no cap; 3 scenarios, 5M
+    "5.0.3.3": {"variants": {f"{l}_lagrangian_greedy": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian · greedy J_C",
+                                                       f"{l.upper()} · lagrangian · greedy J_C",
+                                                       {"lambda_max": "none", "lambda_update": "normalized", "lambda_lr": 0.05,
+                                                        "lambda_cost": "greedy", "lambda_eval_episodes": 100, "eps_steps": 2_000_000})
+                             for l in ("dqn", "ddqn")},
+                "title": ("探索与 λ 更新解耦：ε 固定 2M 步降到 0、J_C 取 ε = 0 贪心策略（每次更新 100 局）、归一化更新 η = 0.05、λ 不设上限（种子 1、5M、5 万实例）",
+                          "Exploration decoupled from the λ update: ε reaches 0 at a fixed 2M steps, J_C of the greedy (ε = 0) policy (100 episodes per update), "
+                          "normalized update η = 0.05, λ uncapped (seed 1, 5M, 50k instances)"),
+                "seeds": [1], "steps": 5_000_000, "ckpts": [1_000_000, 2_000_000, 3_000_000, 4_000_000],
+                "parallel": 18, "mps": True},
     "5.0.4": {"variants": {                         # every RL_algorithm x strategy (docs/data_spec.md), trained in this batch
                            "ppo_unconstraint": ("ppo", "graph", True, "PPO · unconstraint", "PPO · unconstraint"),
                            "ppo_lagrangian": ("lagrange_ppo", "graph", True, "PPO · lagrangian", "PPO · lagrangian"),
@@ -270,7 +282,8 @@ def spec(V, key):
     own = rest[2] if len(rest) > 2 else {}           # 5.0.3.1: the variant's own params
     learner = lagrange_learner(V, key)
     extra = ["--lambda-max", f"{V['lam_max'][learner]:g}"] if learner else []
-    flag = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr"}
+    flag = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr",
+            "lambda_cost": "--lambda-cost", "lambda_eval_episodes": "--lambda-eval-episodes", "eps_steps": "--eps-steps"}   # 5.0.3.3
     for k, v in own.items():
         extra += [flag[k], f"{v:g}" if isinstance(v, float) else str(v)]
     return algo, net, pool, STEPS, CKPTS, extra
@@ -570,6 +583,15 @@ def lam_dynamics(run, cap):
             "jc_first": float(v[:1000].mean()), "jc_last": float(v[-1000:].mean())}
 
 
+def pd_upd(run):
+    """lambda_updates.csv of a Lagrangian run (v5.0.3.3) as an array (episode, timestep, J_C behaviour, J_C used, lambda), else None."""
+    p = run / "lambda_updates.csv"
+    if not p.exists():
+        return None
+    a = np.loadtxt(p, delimiter=",", skiprows=1, ndmin=2)
+    return a if a.size else None
+
+
 def write_report_data(V, series, curve, reg, times, interim):
     """report_data.json next to report.md (docs/data_spec.md §3 rule 7): the report's numbers per run, for the panel.
     curves: one point per (run, checkpoint); timing: per (series, scenario) over the seeds; ILP once per scenario."""
@@ -684,10 +706,10 @@ def write_report(V, exp_ids, interim: bool = False):
                if interim else []),
              T(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/run_v5.py --version {V['version']}`。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/run_v5.py --version {V['version']}`."),
-             T(f"- 每个变体 {len(SEEDS)} 个种子（{', '.join(map(str, SEEDS))}）× 3 场景、各训练 {STEPS / 1e6:g}M 步，同一次训练在 "
+             T(f"- 每个变体 {len(SEEDS)} 个种子（{', '.join(map(str, SEEDS))}）× {len(SCENARIOS)} 场景（{' / '.join(x.upper() for x in SCENARIOS)}）、各训练 {STEPS / 1e6:g}M 步，同一次训练在 "
                f"{' / '.join(f'{c / 1e6:g}M' for c in CKPTS) or '—'} 存 checkpoint；ar_pen 奖励、γ = 1、不提前结束、EXIT 只用于 Maskable、需求降序；"
                "PPO / DQN 超参取自 `paper_rl/config.py`；结构感知网络（Transformer）在 GPU 上训练。5 万实例 = 经 ILP 验证的实例池（`results/sup_diag/<场景>.json`）。",
-               f"- Every variant: {len(SEEDS)} seed(s) ({', '.join(map(str, SEEDS))}) × 3 scenarios, {STEPS / 1e6:g}M steps each, checkpoints of the same run at "
+               f"- Every variant: {len(SEEDS)} seed(s) ({', '.join(map(str, SEEDS))}) × {len(SCENARIOS)} scenario(s) ({' / '.join(x.upper() for x in SCENARIOS)}), {STEPS / 1e6:g}M steps each, checkpoints of the same run at "
                f"{' / '.join(f'{c / 1e6:g}M' for c in CKPTS) or '—'}; ar_pen reward, γ = 1, full episode, EXIT for Maskable only, descending demand; "
                "PPO / DQN hyper-parameters from `paper_rl/config.py`; structure-aware network (Transformer) trained on GPU. "
                "50k instances = the ILP-verified pool (`results/sup_diag/<scenario>.json`)."),
@@ -712,6 +734,20 @@ def write_report(V, exp_ids, interim: bool = False):
                              f"{dy['first_cap'] if dy['first_cap'] is not None else '—'} | {pc(dy['at_cap'])} | {dy['decreases']} | "
                              f"{dy['fall']:.3f} | {dy['jc_first']:.3f} | {dy['jc_last']:.4f} |")
             L.append("")
+            upd = [(k, s, pd_upd(RESULTS / s / vs[k][0] / exp_ids[str(sd)][s][k])) for k, sd, s, cap, dy in lamdyn]
+            upd = [(k, s, u) for k, s, u in upd if u is not None]
+            if upd:                                  # 5.0.3.3: λ and both J_C at each checkpoint (lambda_updates.csv)
+                L += [T("### λ 与 J_C（来自 lambda_updates.csv，各步数前最后一次更新）", "### λ and J_C (from lambda_updates.csv, last update before each step)"), "",
+                      T("每格：λ / 行为策略 J_C / 用于更新的 J_C（贪心时为 ε = 0 的局）。", "Each cell: λ / behaviour-policy J_C / J_C used for the update (greedy: ε = 0 episodes)."), "",
+                      "| " + T("场景", "Scenario") + " | " + T("模型", "Model") + " | " + " | ".join(sl(st) for st in steps) + " |",
+                      "|---|---|" + "---|" * len(steps)]
+                for k, s, u in upd:
+                    cells = []
+                    for st in steps:
+                        r = u[u[:, 1] <= st]
+                        cells.append("—" if not len(r) else f"{r[-1, 4]:.2f} / {r[-1, 2]:.3f} / {r[-1, 3]:.3f}")
+                    L.append(f"| {s.upper()} | {vs[k][3] if zh else vs[k][4]} | " + " | ".join(cells) + " |")
+                L.append("")
         L += [T("## 学习曲线：测试集相对 gap", "## Learning curve: test relative gap"), ""]
         for s in SCENARIOS:
             L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(i) for i in range(len(series))) + " |",
@@ -950,7 +986,8 @@ def main():
     ap.add_argument("--rerun", nargs=3, metavar=("SEED", "SCEN", "KEY"), action="append",
                     help="re-train one failed run under a new exp_id, replacing it in the manifest; report + email at the end")
     a = ap.parse_args()
-    global SEEDS
+    global SEEDS, SCENARIOS
+    SCENARIOS = CONFIG[a.version].get("scenarios", SCENARIOS)   # a version's own scenarios (default all three)
     SEEDS = [1] if SMOKE else CONFIG[a.version].get("seeds", SEEDS)   # v5.0.3: seed 1 only
     global STEPS, CKPTS
     if not SMOKE and CONFIG[a.version].get("steps"):  # 5.0.3.1: a version's own training length (default 20M)

@@ -77,7 +77,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
                 exit_action: bool = False, m: int = 0, action_mode: str = "ecu", net: str = "mlp", device: str = "cpu",
                 gae_lambda: float | None = None, lr: float | None = None, ent_coef: float | None = None,
                 glob_std: bool = False, separate: bool = False, pair_head: bool = False, group_k: int = 0,
-                plan: bool = False, plan_decay: bool = False, glob3: bool = False):
+                plan: bool = False, plan_decay: bool = False, glob3: bool = False, eps_frac: float | None = None):
     if learner == "ppo":
         kw = dict(policy="MlpPolicy", env=env, learning_rate=C.PPO_LR if lr is None else lr, n_steps=C.PPO_N_STEPS,
                   batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS, gamma=C.PPO_GAMMA if gamma is None else gamma,
@@ -103,7 +103,8 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
     kw = dict(policy="MlpPolicy", env=env, learning_rate=C.DQN_LR, buffer_size=C.DQN_BUFFER_SIZE,
               learning_starts=C.DQN_LEARNING_STARTS, batch_size=C.DQN_BATCH_SIZE, tau=C.DQN_TAU,
               gamma=C.DQN_GAMMA if gamma is None else gamma, train_freq=C.DQN_TRAIN_FREQ, gradient_steps=C.DQN_GRADIENT_STEPS,
-              target_update_interval=C.DQN_TARGET_UPDATE, exploration_fraction=C.DQN_EXPLORATION_FRACTION,
+              target_update_interval=C.DQN_TARGET_UPDATE,
+              exploration_fraction=C.DQN_EXPLORATION_FRACTION if eps_frac is None else eps_frac,   # v5.0.3.3: --eps-steps
               exploration_final_eps=C.DQN_EXPLORATION_FINAL_EPS,
               policy_kwargs=dict(net_arch=C.DQN_NET_ARCH), device=device, verbose=0, seed=seed)
     if net == "graph":                                  # v4.5.2: structure-aware Q-network, same DQN settings
@@ -142,7 +143,8 @@ def scale_reward(env, scale: float):
 
 # ── training callback (logging + Lagrangian dual ascent) ────────────────────
 def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start: int = 0, lam_max: float = C.LAMBDA_MAX,
-                  lam_update: str = "linear", lam_lr: float = C.LAMBDA_LR):
+                  lam_update: str = "linear", lam_lr: float = C.LAMBDA_LR, lam_cost: str = "behavior",
+                  greedy_env=None, n_greedy: int = 100):
     from stable_baselines3.common.callbacks import BaseCallback
     from shared.paths import write_progress
 
@@ -156,6 +158,7 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             self._since = 0
             self._next = start + C.PROGRESS_LOG_EVERY_STEPS   # v4.4.16: a resumed run starts at `start`
             self._t0 = time.time()
+            self.dual_rows = []     # one per lambda update: (episode, timestep, J_C behaviour, J_C used, lambda after) (v5.0.3.3)
 
         def _on_step(self) -> bool:
             for info in self.locals.get("infos", []):
@@ -188,13 +191,30 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             self._viol.append(cost)
             self._since += 1
             if len(self._viol) == C.LAMBDA_UPDATE_WINDOW and self._since >= C.LAMBDA_UPDATE_WINDOW:
-                j, d = float(np.mean(self._viol)), C.LAMBDA_TARGET
+                j_beh, d = float(np.mean(self._viol)), C.LAMBDA_TARGET
+                j = self._greedy_jc() if lam_cost == "greedy" else j_beh
                 # linear: e = J_C - d (v5.0.3); normalized (v5.0.3.1): e = (J_C - d) / max(J_C, d) in (-1, 1), so a step
                 # up and a step down have the same size lam_lr (with d ~ 0 the linear error can rise ~1000x faster than it falls)
                 e = j - d if lam_update == "linear" else (j - d) / max(j, d)
                 self.lam = float(np.clip(self.lam + lam_lr * e, 0.0, lam_max))
                 self.training_env.env_method("set_lambda", self.lam)
                 self._since = 0
+                self.dual_rows.append((self._n_ep, self.num_timesteps, j_beh, j, self.lam))
+
+        def _greedy_jc(self) -> float:
+            """v5.0.3.3: J_C of the greedy (epsilon = 0) policy that is deployed and tested, not of the epsilon-greedy
+            behaviour policy: n_greedy extra episodes on training instances at the current lambda; they do not enter the
+            replay buffer and are not counted as training steps."""
+            greedy_env.set_lambda(self.lam)
+            cost = []
+            for _ in range(n_greedy):
+                obs, _ = greedy_env.reset()
+                done = False
+                while not done:
+                    a, _ = self.model.predict(obs, deterministic=True)
+                    obs, _, done, _, info = greedy_env.step(int(a))
+                cost.append(info["cost_ep"])
+            return float(np.mean(cost))
 
     return Cb()
 
@@ -383,6 +403,12 @@ def main():
                          "'none' = no cap (v5.0.3.2), the observation is then lambda / (1 + lambda)")
     ap.add_argument("--lambda-update", choices=["linear", "normalized"], default="linear",   # v5.0.3.1
                     help="Lagrange dual step: linear lr*(J_C - d), or normalized lr*(J_C - d)/max(J_C, d)")
+    ap.add_argument("--lambda-cost", choices=["behavior", "greedy"], default="behavior",   # v5.0.3.3
+                    help="Lagrange: J_C from the training episodes (behaviour policy, with epsilon for DQN) or from extra "
+                         "greedy (deterministic) episodes on training instances")
+    ap.add_argument("--lambda-eval-episodes", type=int, default=100, help="v5.0.3.3: greedy episodes per lambda update")
+    ap.add_argument("--eps-steps", type=int, default=None,   # v5.0.3.3
+                    help="DQN / DDQN: epsilon falls from 1 to 0 over this many steps (default: DQN_EXPLORATION_FRACTION of --steps)")
     ap.add_argument("--lambda-lr", type=float, default=C.LAMBDA_LR, help="Lagrange dual step size eta (per update)")
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
@@ -436,7 +462,8 @@ def main():
         resumed = {"from": str(src.relative_to(ROOT)) if src.is_relative_to(ROOT) else str(src), "at_step": int(model.num_timesteps)}
         print(f"  [resume] {resumed['from']} at step {resumed['at_step']:,}; +{a.steps:,} steps", flush=True)
     else:
-        model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay, a.glob3)
+        model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay, a.glob3,
+                            None if a.eps_steps is None else min(1.0, a.eps_steps / a.steps))
     bc_info = None
     if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
         assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
@@ -457,7 +484,13 @@ def main():
                         "bc_only_ilp_ar": round(float(np.mean([e["ar_star"] for e in ok_bc])), 6) if ok_bc else None})
         print(f"  [bc] {bc_info}", flush=True)
     start = resumed["at_step"] if resumed else 0
-    cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start, a.lambda_max, a.lambda_update, a.lambda_lr)
+    greedy_env = None
+    if mech == "lagrange" and a.lambda_cost == "greedy":   # v5.0.3.3: same settings as the training envs, own instance stream
+        greedy_env = PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=a.seed * 1000 + 999, obs_mode=a.obs,
+                                  lam_max=a.lambda_max, full_episode=a.full_episode, exit_action=a.exit_action,
+                                  action_mode=a.action, order=a.order, order_seed=a.order_seed)
+    cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start, a.lambda_max, a.lambda_update, a.lambda_lr,
+                                 a.lambda_cost, greedy_env, a.lambda_eval_episodes)
     extra = []
     if a.grad_diag:                                     # v4.4.8: actor / critic gradient conflict on the encoder
         assert a.net == "graph" and not a.separate_critic, "--grad-diag: shared graph encoder only"
@@ -516,7 +549,10 @@ def main():
         "training": {"total_steps": start + a.steps, "steps_this_run": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,
                      **({"final_lambda": round(lam, 6), "lambda_max": lam_max_json(a.lambda_max), "lambda_lr": a.lambda_lr, "lambda_update": a.lambda_update,
-                         "lambda_target": C.LAMBDA_TARGET, "lambda_window": C.LAMBDA_UPDATE_WINDOW, "lambda_warmup": 0} if mech == "lagrange" else {})},
+                         "lambda_target": C.LAMBDA_TARGET, "lambda_window": C.LAMBDA_UPDATE_WINDOW, "lambda_warmup": 0,
+                         "lambda_cost": a.lambda_cost, **({"lambda_eval_episodes": a.lambda_eval_episodes} if a.lambda_cost == "greedy" else {})}
+                        if mech == "lagrange" else {}),
+                     **({"eps_steps": a.eps_steps} if a.eps_steps is not None else {})},
     }
     (run_dir / "results.json").write_text(json.dumps(res, indent=2))
     with open(run_dir / "summary.csv", "w", newline="") as f:
@@ -532,6 +568,11 @@ def main():
         w.writerow(["timestep", "episode_reward", "episode_ar", "episode_success", "episode_valid_placed",
                     "episode_cap_violated", "episode_conflict_violated", "lambda", "episode_exited"])
         w.writerows(cb.rows)
+    if mech == "lagrange":                              # v5.0.3.3: one row per lambda update
+        with open(run_dir / "lambda_updates.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["episode", "timestep", "jc_behavior", "jc_used", "lambda"])
+            w.writerows(cb.dual_rows)
     plot_curve(cb.rows, ilp_ar, run_dir / "training_curve.png",
                f"{algo_label(a.algo)} — {a.scen.upper()} — reward={a.reward} — {start + a.steps:,} steps"
                + (f" (resumed at {start:,})" if resumed else ""), history=curve_history(run_dir) if resumed else None,
