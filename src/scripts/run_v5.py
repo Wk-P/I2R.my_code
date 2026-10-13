@@ -450,7 +450,7 @@ def regret(V, key, algo, seed):
         subprocess.run([PY, str(ROOT / "src" / "scripts" / "diag_regret.py"), "--out", str(md), "--seed", str(seed), "--algo", algo,
                         *(["--n", "25", "--workers", "24"] if SMOKE else []),
                         "--manifest", str(V["manifest"].relative_to(ROOT)), "--key", key,
-                        "--label", f"v{V['version']} {lz}（种子 {seed}、20M）", "--label-en", f"v{V['version']} {le} (seed {seed}, 20M)"],
+                        "--label", f"v{V['version']} {lz}（种子 {seed}、{STEPS / 1e6:g}M）", "--label-en", f"v{V['version']} {le} (seed {seed}, {STEPS / 1e6:g}M)"],
                        cwd=ROOT, check=True)
     return json.loads(js.read_text())
 
@@ -726,7 +726,7 @@ def write_report(V, exp_ids, interim: bool = False):
                 L.append(f"| {sl(st)} | " + " | ".join(ms([curve[(i, s, sd, st)][2] for sd in SEEDS if (i, s, sd, st) in curve], pc)
                                                         for i in range(len(series))) + " |")
             L.append("")
-        L += ["", T("## 20M：测试集与训练集 gap、违约、前几步决策", "## 20M: test and training-set gap, violations, early decisions"), "",
+        L += ["", T(f"## {sl(STEPS)}：测试集与训练集 gap、违约、前几步决策", f"## {sl(STEPS)}: test and training-set gap, violations, early decisions"), "",
               T(f"| 场景 | 模型 | 测试集相对 gap | 训练集相对 gap | 测试未通过率（EXIT / 违约） | 训练集未通过率 | 容量违约率 | 隐私违约率 | 第 1–{EARLY} 步 regret | 第 1–{EARLY} 步选中最优 |",
                 f"| Scenario | Model | Test relative gap | Train relative gap | Test failure rate (EXIT / violation) | Train failure rate | Capacity violation rate | Privacy violation rate | Steps 1–{EARLY} regret | Steps 1–{EARLY} optimal-action rate |"),
               "|---|---|---|---|---|---|---|---|---|---|"]
@@ -740,8 +740,9 @@ def write_report(V, exp_ids, interim: bool = False):
                          f"{ms([x[0] for x in r], lambda v: f'{v:.4f}')} | {ms([x[1] for x in r], pc)} |")
         L += ["", T("regret 按合法 ECU 之间的最优差距定义，只适用于 Maskable；其余机制可能执行违约动作，记为 —。",
                     "Regret is defined over the legal ECUs, i.e. for Maskable only; the other mechanisms may execute violating actions (—)."), ""]
-        L += ["", T("## 逐种子测试集 gap（20M）", "## Test gap per seed (20M)"), "",
-              T("| 场景 | 模型 | 种子 1 | 种子 2 | 种子 3 |", "| Scenario | Model | Seed 1 | Seed 2 | Seed 3 |"), "|---|---|---|---|---|"]
+        L += ["", T(f"## 逐种子测试集 gap（{sl(STEPS)}）", f"## Test gap per seed ({sl(STEPS)})"), "",   # columns = this batch's seeds
+              T("| 场景 | 模型 | ", "| Scenario | Model | ") + " | ".join(T(f"种子 {sd}", f"Seed {sd}") for sd in SEEDS) + " |",
+              "|---|---|" + "---|" * len(SEEDS)]
         for s in SCENARIOS:
             for i in range(len(series)):
                 L.append(f"| {s.upper()} | {lab(i)} | " + " | ".join(pc(curve[(i, s, sd, STEPS)][0]) if (i, s, sd, STEPS) in curve else "—"
@@ -749,7 +750,7 @@ def write_report(V, exp_ids, interim: bool = False):
         L.append("")
         if times:
             q = lambda v, p_: float(np.percentile(v, p_))
-            L += [T("## 求解时间：每个 20M 模型 vs ILP（逐实例）", "## Solve time: every 20M model vs the ILP (per instance)"), "",
+            L += [T(f"## 求解时间：每个 {sl(STEPS)} 模型 vs ILP（逐实例）", f"## Solve time: every {sl(STEPS)} model vs the ILP (per instance)"), "",
                   T("单线程 CPU。模型：完整确定性 episode（reset、掩码、前向、step），另列仅前向；ILP：Dinkelbach + CBC 单线程，含建模，"
                     "每个场景对三个种子测试集的并集各求一次。加速比 = ILP 时间 / 模型时间，在同一批实例上计算（每个种子 400 个，三个种子合并）。",
                     "One CPU thread. Model: full deterministic episode (reset, mask, forward, step), and the forward passes alone; ILP: "

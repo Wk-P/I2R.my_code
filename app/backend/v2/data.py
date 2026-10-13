@@ -123,7 +123,8 @@ def results_json(run_dir: Path) -> dict | None:
 def metrics(data: dict | None, algo: str) -> dict | None:
     """The numbers the panel shows for a finished run. Relative gap = (ILP AR - AR) / ILP AR, AR over the test
     instances without violation (as the training script reports it); violation rates = share of test instances
-    with a capacity / privacy violation."""
+    with a capacity / privacy violation; viol = share with any violation (an instance with both counts once:
+    1 - violation-free - EXIT, EXIT being Maskable's only non-violating failure)."""
     if not data:
         return None
     key = next((k for k in (algo, data.get("algo")) if k and isinstance(data.get(k), dict)), None)
@@ -137,6 +138,8 @@ def metrics(data: dict | None, algo: str) -> dict | None:
             "success": clean(ev.get("success_rate")), "cap_viol": clean(ev.get("cap_viol_rate")),
             "priv_viol": clean(ev.get("conflict_viol_rate")), "exit": clean(ev.get("exit_rate")),
             "dead_end": clean(ev.get("dead_end_rate")),
+            "viol": (None if ev.get("success_rate") is None else
+                     round(max(0.0, 1 - float(ev["success_rate"]) - float(ev.get("exit_rate") or 0)), 6)),
             "final_lambda": clean(tr.get("final_lambda")), "lambda_max": clean(tr.get("lambda_max")),
             "train_seconds": clean(tr.get("train_seconds")), "episodes": tr.get("n_episodes"),
             "train_ar_last50": clean(tr.get("ar_last50")), "total_steps": tr.get("total_steps"),
@@ -168,8 +171,10 @@ def _trace_compute(path: str, points: int, window: int) -> dict:
         return {"n_episodes": 0, "window": window, "step": [], "series": {}}
     idx = np.unique(np.round(np.linspace(0, n - 1, min(points, n))).astype(int))
     lo = np.maximum(0, idx + 1 - window)
+    if "episode_cap_violated" in df and "episode_conflict_violated" in df:   # an episode with any violation, counted once
+        df["_viol"] = ((df["episode_cap_violated"] > 0) | (df["episode_conflict_violated"] > 0)).astype(float)
     out = {}
-    for c, name in TRACE_COLS.items():
+    for c, name in {**TRACE_COLS, "_viol": "viol"}.items():
         if c not in df:
             continue
         v = pd.to_numeric(df[c], errors="coerce").to_numpy(dtype="float64")
@@ -191,7 +196,7 @@ def trace(rdir: Path, points: int = 400, window: int = 1000) -> dict | None:
         mtime = p.stat().st_mtime
     except OSError:
         return None
-    key = hashlib.sha1(f"{p}|{mtime}|{points}|{window}".encode()).hexdigest()
+    key = hashlib.sha1(f"{p}|{mtime}|{points}|{window}|viol".encode()).hexdigest()
     cf = TRACE_CACHE / f"{key}.json"
     hit = read_json(cf)
     if hit is not None:

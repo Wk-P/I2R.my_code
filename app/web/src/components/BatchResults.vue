@@ -21,7 +21,7 @@ function cellOf(runs) {
   const prog = runs.find((r) => r.status === "running")?.progress;
   const live = runs.find((r) => r.status === "running")?.live;
   return { runs, done, status, progress: prog, live, ref: runs[0].role === "reference", label: runs[0].label,
-    gap: m("rel_gap"), cap: m("cap_viol"), priv: m("priv_viol"), exit: m("exit"), lam: m("final_lambda"),
+    gap: m("rel_gap"), cap: m("cap_viol"), priv: m("priv_viol"), viol: m("viol"), exit: m("exit"), lam: m("final_lambda"),
     lamMax: runs[0].params?.lambda_max ?? done[0]?.metrics?.lambda_max, waiting: runs.flatMap((r) => r.depends_on || []) };
 }
 const open = (r) => r && r.space && r.exp_id && router.push(`/runs/${r.space}/${r.scenario}/${r.dir}/${r.exp_id}`);
@@ -189,7 +189,7 @@ const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" :
                     <template v-for="c in [sweepCell(l, v, s)]" :key="s">
                       <div v-if="c && c.status === 'done'" style="cursor: pointer" @click="open(c.done[0])">
                         <b>{{ pct(effGap(l, v, s) ?? c.gap) }}</b>
-                        <div class="faint small">{{ t("违约", "viol.") }} {{ pct((c.cap ?? 0) + (c.priv ?? 0)) }} · λ {{ num(c.lam, 2) }}</div>
+                        <div class="faint small">{{ t("违约", "viol.") }} {{ pct(c.viol) }} · λ {{ num(c.lam, 2) }}</div>
                       </div>
                       <div v-else-if="c">
                         <span class="badge hide-sm" :class="STATUS_TONE[c.status]">{{ statusName(c.status) }}<template v-if="c.progress != null"> · {{ c.progress.toFixed(0) }}%</template></span>

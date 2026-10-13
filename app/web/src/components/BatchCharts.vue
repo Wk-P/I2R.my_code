@@ -32,12 +32,12 @@ const tradeoff = (s) => {
       if (!rs.length) continue;
       series.push({ type: "scatter", name: modelName(l, m), symbol: RL_SYMBOL[l], symbolSize: 13,
         itemStyle: { color: STRATEGY_COLOR[m], opacity: 0.9, borderColor: "#fff", borderWidth: 1 },
-        data: rs.map((r) => [P((r.metrics.cap_viol ?? 0) + (r.metrics.priv_viol ?? 0)), P(r.metrics.rel_gap), r.seed]) });
+        data: rs.map((r) => [P(r.metrics.viol ?? 0), P(r.metrics.rel_gap), r.seed]) });
     }
   return {
     grid: { left: 52, right: 18, top: 34, bottom: 44 },
     tooltip: { trigger: "item", formatter: (p) => `<b>${p.seriesName}</b><br>${t("违约", "violations")} ${p.value[0]?.toFixed(1)}% · gap ${p.value[1]?.toFixed(1)}%` },
-    xAxis: { ...axisPct(t("违约率（容量 + 隐私）", "violation rate (capacity + privacy)")), nameLocation: "middle", nameGap: 28, min: 0 },
+    xAxis: { ...axisPct(t("违约率（容量或隐私）", "violation rate (capacity or privacy)")), nameLocation: "middle", nameGap: 28, min: 0 },
     yAxis: { ...axisPct(t("相对 gap", "relative gap")), scale: true },
     series: [...series, { type: "line", data: [], markLine: { silent: true, symbol: "unconstraint", lineStyle: { type: "dashed", color: "#059669" },
       label: { formatter: t("目标 5%", "goal 5%"), position: "insideEndTop" }, data: [{ yAxis: 5 }] } }],
@@ -78,11 +78,11 @@ async function loadTraces() {
 onMounted(loadTraces);
 watch(traceWindow, loadTraces);
 const traceMetric = ref("ar");
-const TRACE_METRICS = computed(() => [["ar", t("训练局 AR", "Training-episode AR")], ["viol", t("违约局占比（容量 + 隐私）", "Episodes with a violation (capacity + privacy)")],
+const TRACE_METRICS = computed(() => [["ar", t("训练局 AR", "Training-episode AR")], ["viol", t("违约局占比（容量或隐私）", "Episodes with a violation (capacity or privacy)")],
   ["reward", t("每局回报", "Episode return")], ["success", t("无违约完成率", "Violation-free completion")]]);
 const traceVal = (tr, k) => {
   const S = tr.series;
-  if (k === "viol") return S.cap_viol?.map((v, i) => (v == null ? null : P(v + (S.priv_viol?.[i] ?? 0))));
+  if (k === "viol") return S.viol?.map((v) => P(v));     // any violation, an episode with both counted once
   if (k === "ar" || k === "success") return S[k]?.map((v) => P(v));
   return S[k];
 };
@@ -234,7 +234,7 @@ const chartH = (n) => Math.max(160, 26 * n + 50);
           <div v-for="s in scens" :key="s"><h3>{{ scenName(s) }}</h3><Chart :option="tradeoff(s)" :height="300" /></div>
         </div>
       </div>
-      <div class="card-note">{{ t("横轴：有容量违约的测试实例比例 + 有隐私违约的比例；纵轴：无违约实例上的相对 gap。", "x: share of test instances with a capacity violation + share with a privacy violation; y: relative gap on violation-free instances.") }}</div>
+      <div class="card-note">{{ t("横轴：有违约（容量或隐私，两种都有只算一次）的测试实例比例；纵轴：无违约实例上的相对 gap。", "x: share of test instances with a violation (capacity or privacy, counted once); y: relative gap on violation-free instances.") }}</div>
     </div>
 
     <div class="card">
