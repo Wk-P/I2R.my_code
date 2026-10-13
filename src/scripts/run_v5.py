@@ -45,13 +45,16 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "src" / "scripts"))
 PY, PY_GPU = str(ROOT / ".venv" / "bin" / "python"), str(ROOT / ".venv-gpu" / "bin" / "python")
 DATA, POOL = "v4.3.1.4", "results/sup_diag/{scen}.json"
+if os.environ.get("V5_SMOKE") == "1":              # docs/data_spec.md §3.6: every smoke test shares results/smoke/
+    os.environ.setdefault("RESULTS_SPACE", "smoke")   # (inherited by the training processes)
 RESULTS = ROOT / "results" / os.environ.get("RESULTS_SPACE", "unified")
 SCENARIOS, SEEDS = ["lt", "eq", "gt"], [1, 2, 3]
 STEPS = 20_000_000
 CKPTS = [1_000_000, 3_000_000, 5_000_000, 7_500_000, 10_000_000, 15_000_000]
 SMOKE = os.environ.get("V5_SMOKE") == "1"          # end-to-end test: tiny budget, seed 1, results in RESULTS_SPACE
-if SMOKE:
-    SEEDS, STEPS, CKPTS = [1], 41_000, [20_480]
+if SMOKE:                                            # V5_SMOKE_STEPS: smoke budget (default 41k)
+    STEPS = int(os.environ.get("V5_SMOKE_STEPS", 41_000))
+    SEEDS, CKPTS = [1], [max(2_048, STEPS // 2 // 2_048 * 2_048)]
 EARLY = 5
 
 # variant -> (algo, net, 50k pool?, label zh, label en)
@@ -87,16 +90,22 @@ CONFIG = {
               # check_v5 speed_mask_ppo.md); an interim report after each stage but the last.
               "stages": [{"name": "DQN / DDQN", "learners": ["dqn", "ddqn"], "parallel": 27, "mps": False},   # DQN: MPS no gain (speed_mask_dqn_ABCD)
                          {"name": "PPO", "learners": ["ppo"], "parallel": 18, "mps": True}]},  # Legacy MPS (Pascal 1080 Ti): 27 clients fail with "Failed to create/open SHM segment", 18 ran fine
-    "5.0.3": {"variants": {
-                           "ppo_mask": ("mask_ppo", "graph", True, "Maskable PPO", "Maskable PPO"),
+    "5.0.3": {"variants": {                         # every learner x mechanism trained in this batch (no cross-batch references)
                            "ppo_none": ("ppo", "graph", True, "无约束 PPO", "Unconstrained PPO"),
+                           "ppo_lagrange": ("lagrange_ppo", "graph", True, "Lagrangian PPO", "Lagrangian PPO"),
+                           "ppo_mask": ("mask_ppo", "graph", True, "Maskable PPO", "Maskable PPO"),
                            "ppo_repair": ("repair_ppo", "graph", True, "Repair PPO", "Repair PPO"),
-                           "ppo_lagrange": ("lagrange_ppo", "graph", True, "Lagrangian PPO（新）", "Lagrangian PPO (new)"),
-                           "dqn_lagrange": ("lagrange_dqn", "graph", True, "Lagrangian DQN（新）", "Lagrangian DQN (new)"),
-                           "ddqn_lagrange": ("lagrange_ddqn", "graph", True, "Lagrangian DDQN（新）", "Lagrangian DDQN (new)"),
+                           "dqn_none": ("dqn", "graph", True, "无约束 DQN", "Unconstrained DQN"),
+                           "dqn_lagrange": ("lagrange_dqn", "graph", True, "Lagrangian DQN", "Lagrangian DQN"),
+                           "dqn_mask": ("mask_dqn", "graph", True, "Maskable DQN", "Maskable DQN"),
+                           "dqn_repair": ("repair_dqn", "graph", True, "Repair DQN", "Repair DQN"),
+                           "ddqn_none": ("ddqn", "graph", True, "无约束 DDQN", "Unconstrained DDQN"),
+                           "ddqn_lagrange": ("lagrange_ddqn", "graph", True, "Lagrangian DDQN", "Lagrangian DDQN"),
+                           "ddqn_mask": ("mask_ddqn", "graph", True, "Maskable DDQN", "Maskable DDQN"),
+                           "ddqn_repair": ("repair_ddqn", "graph", True, "Repair DDQN", "Repair DDQN"),
                            },
-              "title": ("种子 1：PPO 四机制 + 新 Lagrangian（每步代价、d = 0.001）× PPO / DQN / DDQN（5 万实例、20M）",
-                        "Seed 1: PPO x four mechanisms + new Lagrangian (per-step cost, d = 0.001) x PPO / DQN / DDQN (50k instances, 20M)"),
+              "title": ("种子 1：无约束 / Lagrangian（每步代价、d = 0.001）/ Maskable / Repair × PPO / DQN / DDQN（5 万实例、20M）",
+                        "Seed 1: unconstrained / Lagrangian (per-step cost, d = 0.001) / Maskable / Repair x PPO / DQN / DDQN (50k instances, 20M)"),
               "seeds": [1], "parallel": 18, "mps": True, "time_bench": True,   # 18: Legacy MPS limit on the Pascal GPUs
               "lam_sweep": {"algo": "lagrange_dqn", "values": [1.0, 2.0, 5.0], "steps": 3_000_000, "ckpts": [1_000_000]}},
 }
@@ -117,7 +126,7 @@ def references(version):
             pts += [(sd, s, ids[str(sd)][s][key], pat, int(st)) for sd in SEEDS for s in SCENARIOS for pat, st in plan
                     if ids.get(str(sd), {}).get(s, {}).get(key)]
         refs.append(("Maskable PPO（v4.4.15–17）", "Maskable PPO (v4.4.15-17)", "mask_ppo", True, pts))
-    if version == "5.0.3":                          # v5.0.2 (same setting, seed 1): DQN / DDQN unconstrained / Repair / old Lagrangian
+    if version == "5.0.3-old-refs":                 # not used since the full 36-run plan; was: v5.0.2 (same setting, seed 1): DQN / DDQN unconstrained / Repair / old Lagrangian
         man = ROOT / "logs" / "v5.0.2" / "manifest.json"
         if man.exists():
             ids = json.loads(man.read_text())["exp_ids"]
@@ -128,7 +137,7 @@ def references(version):
                 pts = [(sd, s, ids[str(sd)][s][key], pat, st) for sd in SEEDS for s in SCENARIOS
                        for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)] if ids.get(str(sd), {}).get(s, {}).get(key)]
                 refs.append((f"{lz}（{'旧，' if old else ''}v5.0.2）", f"{le} ({'old, ' if old else ''}v5.0.2)", algo, True, pts))
-    if version in ("5.0.2", "5.0.3"):               # Maskable DQN / DDQN with the structure-aware network: v4.5.2
+    if version == "5.0.2":                          # Maskable DQN / DDQN with the structure-aware network: v4.5.2
         man = ROOT / "logs" / "v4.5.2" / "manifest.json"
         if man.exists():
             ids = json.loads(man.read_text())["exp_ids"]
@@ -208,7 +217,7 @@ def spec(V, key):
     lam_sweep_<value>, and every Lagrangian run gets --lambda-max (the sweep's choice)."""
     sw = V["cfg"].get("lam_sweep")
     if key.startswith("lam_sweep_"):
-        return (sw["algo"], "graph", True, 30_000 if SMOKE else sw["steps"], [10_240] if SMOKE else sw["ckpts"],
+        return (sw["algo"], "graph", True, STEPS if SMOKE else sw["steps"], CKPTS if SMOKE else sw["ckpts"],
                 ["--lambda-max", key.split("_")[-1]])
     algo, net, pool, *_ = V["cfg"]["variants"][key]
     extra = ["--lambda-max", str(V["lam_max"])] if sw and algo.startswith("lagrange_") else []
@@ -254,7 +263,7 @@ def plan_entry(V, seed, scen, key):
     from paper_rl.train import split_algo
     sw = V["cfg"].get("lam_sweep")
     if key.startswith("lam_sweep_"):
-        algo, net, pool, steps = sw["algo"], "graph", True, 30_000 if SMOKE else sw["steps"]
+        algo, net, pool, steps = sw["algo"], "graph", True, STEPS if SMOKE else sw["steps"]
     else:
         (algo, net, pool), steps = V["cfg"]["variants"][key][:3], STEPS
     mech, learner = split_algo(algo)
@@ -304,7 +313,7 @@ def write_manifest(V, exp_ids):
         V["refs"] = manifest_references(V)
     tmp = V["manifest"].with_suffix(".tmp")
     tmp.write_text(json.dumps({"schema": 2, "batch": V["log_dir"].name, "version": V["version"],
-                               "purpose": "smoke" if SMOKE else "main", "commit": commit, "results_space": RESULTS.name,
+                               "purpose": "smoke" if SMOKE else "main", "commit": commit, "results_space": RESULTS.name, "driver_pid": os.getpid(),
                                "title": {"zh": V["cfg"]["title"][0], "en": V["cfg"]["title"][1]},
                                "created_at": V.setdefault("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
                                "data": DATA, "steps": STEPS, "checkpoints": CKPTS,
@@ -700,7 +709,8 @@ def main():
     SEEDS = [1] if SMOKE else CONFIG[a.version].get("seeds", SEEDS)   # v5.0.3: seed 1 only
     sfx = "_smoke" if SMOKE else ""
     V = {"version": a.version, "cfg": CONFIG[a.version], "log_dir": ROOT / "logs" / f"v{a.version}{sfx}",
-         "out": ROOT / ("results" if SMOKE else "paper_contents") / (f"smoke_v{a.version}" if SMOKE else f"v{a.version}")}
+         # a smoke test's report stays with its batch (logs/<batch>/report/), not as a fake space under results/
+         "out": ROOT / "logs" / f"v{a.version}{sfx}" / "report" if SMOKE else ROOT / "paper_contents" / f"v{a.version}"}
     V["manifest"], V["report"] = V["log_dir"] / "manifest.json", V["out"] / "report.md"
     V["active_res"], V["gpu_node"] = {}, gpu_nodes()
     V["lam_max"] = json.loads(V["manifest"].read_text()).get("lambda_max") if (a.rerun or a.report) and V["manifest"].exists() else None

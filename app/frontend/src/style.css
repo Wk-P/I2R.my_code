@@ -48,6 +48,8 @@ h2 { font-size: 15px; margin: 0; font-weight: 650; }
 .nav-item:hover { background: rgba(255,255,255,.06); text-decoration: none; color: #fff; }
 .nav-item.active { background: var(--side-active); color: #fff; font-weight: 600; box-shadow: inset 3px 0 0 #60a5fa; }
 .nav-icon { width: 16px; text-align: center; opacity: .85; }
+.nav-group { font-size: 11px; letter-spacing: .06em; color: var(--side-text); opacity: .55; padding: 12px 12px 4px; }
+.nav-group:first-child { padding-top: 2px; }
 .nav-count { margin-left: auto; background: #2563eb; color: #fff; border-radius: 999px; font-size: 11px; padding: 0 7px; line-height: 18px; }
 .sidebar-foot { margin-top: auto; padding: 14px 18px; font-size: 11px; color: #6b7690; }
 
@@ -368,3 +370,7 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 /* whole-row click (App.vue onRowClick): rows with a link look clickable */
 .grid tbody tr:has(a[href]) { cursor: pointer; }
 .tab--check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; margin-left: auto; }
+.notice { background: #fff7e6; border: 1px solid #f5d38a; color: #7a5200; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+.stage-select { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); }
+.stage-select select { font-weight: 600; }
+.tree-space { width: 100%; font-weight: 600; }

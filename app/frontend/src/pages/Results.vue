@@ -211,7 +211,7 @@ function drill(row, s) {
 
 <template>
   <div class="page-head">
-    <h1>运行明细</h1>
+    <h1>结果对比</h1>
     <div class="page-sub">层级：版本 → 批次 → 场景 → 算法 → 单次运行 · 先选范围（版本或批次），再按场景、算法筛选，可切换明细 / 汇总对比</div>
   </div>
 
@@ -221,7 +221,11 @@ function drill(row, s) {
       选择范围：{{ f.batch || f.version || "全部实验" }} {{ treeOpen ? "▴" : "▾" }}
     </button>
     <aside class="panel tree" :class="{ 'tree--open': treeOpen }" @click="($event.target.closest('.tree-label, .tree-root') && (treeOpen = false))">
-      <div class="tree-branch"><b>{{ spaceLabel(branchShown) }}</b><div class="dim small mono">results/{{ branchShown }}/ · 顶栏切换</div></div>
+      <div class="tree-branch">
+        <select class="tree-space" :value="branchShown" @change="setViewBranch($event.target.value)" title="结果所在的阶段（results/ 下的目录）">
+          <option v-for="b in store.resultBranches" :key="b.name" :value="b.name">{{ b.label }} · {{ b.runs }}</option>
+        </select>
+      </div>
       <div class="tree-node tree-root" :class="{ active: !f.version && !f.batch }" @click="f.version = ''; f.batch = ''">
         全部实验 <span class="tree-count">{{ rows.length }}</span>
       </div>

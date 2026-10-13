@@ -112,6 +112,15 @@ def get_branch():
     }
 
 
+def _test_space_meta(name: str, meta: dict) -> dict:
+    """A results/ space not in result_spaces.json: smoke_* / check_* (smoke tests, speed checks) belong to the stage of
+    the active space as kind "test"; anything else is unlabelled."""
+    if re.match(r"(smoke|check_)", name):
+        stage = (meta.get(_active_space()) or {}).get("stage")
+        return {"label": f"测试 · {name}", "kind": "test", "order": 50, "stage": stage}
+    return {}
+
+
 def _result_branches() -> list[dict]:
     """Every results/<space>/ with runs, labelled from result_spaces.json
     (stage name, version range, branch vs. model collection) and the actual
@@ -127,11 +136,11 @@ def _result_branches() -> list[dict]:
         if not files:
             continue
         mtimes = [f.stat().st_mtime for f in files]
-        m = meta.get(b.name, {})
+        m = meta.get(b.name) or _test_space_meta(b.name, meta)
         out.append({
             "name": b.name, "runs": len(files),
             "label": m.get("label", b.name), "versions": m.get("versions"),
-            "kind": m.get("kind", "branch"), "order": m.get("order", 99),
+            "kind": m.get("kind", "branch"), "order": m.get("order", 99), "stage": m.get("stage"),
             "first": min(mtimes), "last": max(mtimes),
         })
     out.sort(key=lambda x: (x["order"], -x["last"]))
@@ -1321,6 +1330,17 @@ def _host_status() -> dict:
     }
 
 
+def _driver_alive(manifest: dict) -> bool:
+    """docs/data_spec.md §3: manifest v2 records the driver's pid; alive = that pid still runs a driver script."""
+    pid = manifest.get("driver_pid")
+    if not pid:
+        return False
+    try:
+        return "src/scripts/run_" in Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+    except (OSError, ValueError):
+        return False
+
+
 def _live_exp_ids(procs: list[dict]) -> set[str]:
     """exp_id of every live training process. Two sources, either is enough:
     the EXP_ID environment variable every campaign launcher passes to
@@ -1712,8 +1732,8 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     total = max(total if manifest else 0, len(runs))
     if (log_dir / ".cancelled").is_file():
         status = "cancelled"
-    elif counts["running"]:
-        status = "running"
+    elif counts["running"] or (counts["done"] < len(runs) and _driver_alive(manifest)):
+        status = "running"                            # v2: the driver is alive between launches too
     elif counts["done"] == len(runs):
         status = "finished"
     else:
@@ -1739,6 +1759,7 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
         "title": manifest.get("title"),
         "branch": branch or _active_space(),
         "steps": manifest.get("steps"),
+        "lam_sweep": manifest.get("lam_sweep"), "lambda_max": manifest.get("lambda_max"),
         "total_runs": total,
         **counts,
         "queued": counts["queued"] + (total - len(runs)),

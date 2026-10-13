@@ -55,7 +55,7 @@ const go = (h) => (window.location.hash = h);
 
 <template>
   <div class="page-head">
-    <h1>实验版本</h1>
+    <h1>版本报告</h1>
     <div class="page-sub">每个版本一行：改了什么、新变体在三个场景的测试集相对 gap 和相对基线的变化；点击查看完整报告。目标：三场景 gap 都降到 5% 以下。</div>
   </div>
 

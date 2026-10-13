@@ -51,7 +51,7 @@ const dclass = (d) => (d == null ? "" : d <= -0.5 ? "delta-good" : d >= 0.5 ? "d
 </script>
 
 <template>
-  <div class="crumbs"><a href="#/versions">实验版本</a> / {{ tag }}</div>
+  <div class="crumbs"><a href="#/versions">版本报告</a> / {{ tag }}</div>
   <div v-if="loading && !rep" class="empty">加载中…</div>
 
   <template v-else-if="rep">

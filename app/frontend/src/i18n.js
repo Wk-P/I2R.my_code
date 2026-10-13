@@ -10,6 +10,30 @@ const D = {
   "正式": "main", "参数扫描": "sweep", "参照": "reference", "来源": "source", "参数": "params", "λ_max 扫描": "λ_max sweep",
   "等待依赖（例如等参数扫描结束）": "waiting for a dependency (e.g. a parameter sweep)", "等待依赖": "waiting", "等待 ": "waiting for ",
   "运行 / 排队 / 等待依赖 / 中断": "running / queued / waiting / interrupted",
+  // navigation (sidebar groups), batches by stage, queue on the overview
+  "当前": "Now", "实验": "Experiments", "分析": "Analysis", "论文": "Paper", "进程监控": "Processes", "批次": "Batches",
+  "版本报告": "Version reports", "结果对比": "Compare results", "版本报告 →": "version report →", "结果对比 →": "compare results →",
+  "批次 →": "batches →", "进程监控 →": "processes →", "在结果对比中查看 →": "view in Compare results →", "全部 run": "All runs",
+  "正在进行的批次、实验队列与最新结果": "running batches, the experiment queue and the latest results",
+  "每次启动的训练 / 评估为一个批次，按版本分组；点击批次查看结果矩阵与各 run 的状态":
+    "each training / evaluation launch is a batch, grouped by version; click a batch for its result matrix and run status",
+  "阶段": "Stage", "全部阶段": "all stages", "（当前）": " (current)", "版本 ": "version ",
+  "实验队列": "Experiment queue", "待执行的项目 →": "pending items →", "已暂停": "paused", "等待前置任务": "waiting for prerequisite",
+  "队列已暂停：排队的项目不会自动启动（": "Queue paused: queued items will not start on their own (", "恢复）": " resumes)",
+  "队列中没有待执行的项目": "nothing pending in the queue", "项目": "item", "前置条件": "waits for", "数据空间": "data space",
+  "结果所在的阶段（results/ 下的目录）": "the stage the results belong to (a directory under results/)",
+  // batch detail: result matrix / sweep / run details
+  "结果矩阵": "Result matrix",
+  "每格一个模型（场景 × 模型 × 约束处理）：相对 gap 与测试集违约率；未完成的格子显示当前状态":
+    "one model per cell (scenario × model × constraint handling): relative gap and test violation rates; unfinished cells show their status",
+  "相对 gap = (ILP AR − AR) / ILP AR，只在无违约的测试实例上计算；容量 / 隐私 = 有容量 / 隐私违约的测试实例比例。点击已完成的格子查看该 run。":
+    "relative gap = (ILP AR − AR) / ILP AR, on violation-free test instances only; capacity / privacy = share of test instances with a capacity / privacy violation. Click a finished cell to open its run.",
+  "参照 · 非本批次训练": "reference · not trained in this batch", "个种子": " seeds", "隐私 ": "privacy ", "容量 ": "capacity ",
+  "参数扫描：λ_max": "Parameter sweep: λ_max", "选定 λ_max=": "chosen λ_max=", "完成 ": "done ", "步；": " steps; ",
+  "· 扫描结束后自动选定，Lagrangian 各格随后开始训练": "· chosen automatically when the sweep ends; the Lagrangian cells start training then",
+  "选择规则：三场景平均\"有效 gap\"最低（有违约的实例按 AR = 0 计），详见报告 lam_sweep.md。":
+    "Selection: lowest mean \"effective gap\" over the three scenarios (a violating instance counts as AR = 0); see the report lam_sweep.md.",
+  "（每个 run 的种子、状态与全部指标，共": "(seeds, status and all metrics of every run; ", "组）": " groups)", "类别": "kind",
   "区分同一模型 × 约束处理下不同 run 的参数（docs/data_spec.md）": "parameters that tell runs of the same model × constraint handling apart (docs/data_spec.md)",
   "显示测试批次（smoke 等": "show test batches (smoke etc., ", "个）": ")", "冒烟测试": "smoke test", "测试": "test", "步数=": "steps=",
   "次数": "count", "该版本没有独立文档": "this version has no separate doc", "顶栏切换": "switch in the top bar",

@@ -83,7 +83,7 @@ const totalCpu = computed(() => training.value.reduce((s, p) => s + (p.cpu_perce
 
 <template>
   <div class="page-head">
-    <h1>训练监控</h1>
+    <h1>进程监控</h1>
     <div class="page-sub" data-no-i18n>{{ curLang === "en" ? "Processes of this project on this machine, refreshed every 5 s" : "本机正在运行的项目进程，每 5 秒刷新" }}
       · {{ curLang === "en" ? "queue" : "实验队列" }}：<template v-if="queue.items.length">{{ queue.items.filter((x) => ["queued", "waiting"].includes(x.status)).length }} {{ curLang === "en" ? "waiting" : "项等待" }}</template><template v-else>{{ curLang === "en" ? "empty" : "空" }}</template>
       · {{ curLang === "en" ? "runner" : "执行器" }} {{ queue.runner }}</div>

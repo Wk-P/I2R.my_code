@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { getExperiments, resultFile } from "../api.js";
-import { setViewBranch } from "../store.js";
 import { algoLabel, SCENARIO_LABEL, zeroRepairViol } from "../labels.js";
 import { fmt, pct, shortTime } from "../format.js";
 
@@ -18,7 +17,6 @@ const siblings = ref([]);   // other seeds of the same batch / scenario / algo /
 
 watch(() => [props.branch, props.scenario, props.algo, props.run], async () => {
   loaded.value = false;
-  setViewBranch(props.branch);
   const all = (await getExperiments(props.branch)).map(zeroRepairViol);
   row.value = all.find((r) => r.scenario === props.scenario && r.algo === props.algo && r.run === props.run) ?? null;
   siblings.value = row.value?.batch
@@ -29,7 +27,6 @@ watch(() => [props.branch, props.scenario, props.algo, props.run], async () => {
 }, { immediate: true });
 
 const q = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
-const versionLink = computed(() => `#/results?${q({ branch: props.branch, version: row.value?.version })}`);
 const algoLink = computed(() => `#/results?${q({ branch: props.branch, version: row.value?.version, batch: row.value?.batch, scen: props.scenario, algo: props.algo })}`);
 const gap = computed(() => (row.value?.ilp_ar == null || row.value?.test_ar_mean == null ? null : row.value.ilp_ar - row.value.test_ar_mean));
 const img = (file) => resultFile(props.branch, props.scenario, props.algo, props.run, file);
@@ -37,13 +34,13 @@ const img = (file) => resultFile(props.branch, props.scenario, props.algo, props
 
 <template>
   <div class="crumbs">
-    <a href="#/results">运行明细</a> /
-    <a :href="`#/results?branch=${encodeURIComponent(branch)}`">{{ branch }}</a> /
-    <template v-if="row?.version"><a :href="versionLink">{{ row.version }}</a> / </template>
-    <template v-if="row?.batch"><a :href="`#/batches/${row.batch}`">{{ row.batch }}</a> / </template>
-    {{ scenario.toUpperCase() }} /
-    <a :href="algoLink">{{ algoLabel(algo) }}</a> /
-    {{ run }}
+    <template v-if="row?.batch">
+      <a href="#/batches">批次</a> /
+      <template v-if="row.version"><a :href="`#/batches?version=${encodeURIComponent(row.version)}`">v{{ String(row.version).replace(/^v/, "") }}</a> / </template>
+      <a :href="`#/batches/${row.batch}`">{{ row.batch }}</a> /
+    </template>
+    <template v-else><a :href="`#/results?branch=${encodeURIComponent(branch)}`">结果对比</a> / </template>
+    {{ scenario.toUpperCase() }} · <a :href="algoLink">{{ algoLabel(algo) }}</a> · <span class="mono">{{ run }}</span>
   </div>
 
   <div v-if="!loaded" class="empty">加载中…</div>
@@ -69,7 +66,7 @@ const img = (file) => resultFile(props.branch, props.scenario, props.algo, props
       <section class="panel">
         <div class="panel-head"><h2>基本信息</h2></div>
         <div class="table-scroll"><table class="kv">
-          <tr><th>分支</th><td>{{ branch }}</td></tr>
+          <tr><th>数据空间</th><td class="mono small">{{ branch }}</td></tr>
           <tr><th>版本 / 批次</th><td>{{ row.version ?? "—" }} / {{ row.batch ?? "—" }}</td></tr>
           <tr><th>训练 / 测试实例数</th><td>{{ row.train_count ?? "—" }} / {{ row.test_count ?? "—" }}</td></tr>
           <tr><th>训练回合数</th><td>{{ row.train_episodes?.toLocaleString() ?? "—" }}</td></tr>

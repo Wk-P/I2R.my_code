@@ -82,13 +82,17 @@ Rules:
 2. A `null` value in `params` means "decided by a group this run depends on, not known yet" (e.g. `lambda_max` before the sweep ends); the driver fills it in once known.
 3. `depends_on` lists the groups to wait for; until every run of such a group has finished, a dependent run shows as "waiting for <group>".
 4. `exp_ids` (the old nested form `{seed: {scenario: {key: exp_id}}}`) is derived from `runs` and kept only for older scripts such as `diag_regret.py`.
-5. Smoke batches: `purpose: "smoke"`, the batch name ends in `_smoke`, data go to a separate data space (`RESULTS_SPACE`).
+5. `driver_pid`: the driver's pid. While the driver is alive and not every run has finished, the batch shows as running (also between launches), and runs not started yet show as queued or waiting.
+6. Smoke batches: `purpose: "smoke"`, the batch name ends in `_smoke`; data all go to `results/smoke/` (smoke tests are told apart by exp_id and batch, no new space per test), the report to `logs/<batch>/report/`. The old `smoke_v50x` and `check_*` directories stay where they are; the panel files them as test spaces of the current stage.
 
 ## 4. Panel display
 
 - The batch detail table has fixed columns: **scenario / model (learner) / constraint handling (mechanism) / params / seeds / metrics**. The params column shows `params` as badges: `λ_max=2`, `steps=3M` (`steps` only when it differs from the batch's default).
-- Role tabs: **main / sweep / reference**. Reference rows show their source; their metrics come from the source run's `results.json`.
+- A reference (`references`) only fills a matrix cell when this batch has no run for it, marked "reference · not trained in this batch"; its metrics come from the source run's `results.json`.
 - The batch list hides batches whose `purpose` is `smoke` / `test` by default; tick "show test batches" to see them.
+- There is no global data-space switch: the batch list and the overview read every space at once and filter by **stage** (`stage` in `app/backend/result_spaces.json`, default: the current stage). The data space only shows as a path on a run's page; "Compare results" has its own scope selector.
+- A batch page centres on the **result matrix** (one per scenario: rows = learner, columns = constraint handling, a cell = relative gap and capacity / privacy violation rates, or the run's status); parameter sweeps and all runs are folded below.
+- Navigation groups: Now (overview, processes) / Experiments (batches, version reports) / Analysis (compare results, charts) / Paper.
 - Run status: `done` / `running` / `waiting` (for a dependency) / `queued` / `stopped` (interrupted) / `skipped` (never ran).
 
 ## 5. Converting old batches (no schema)

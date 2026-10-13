@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { getBatch } from "../api.js";
-import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel, reporting, reportText, reportPct, ROLES, ROLE_LABEL, GROUP_LABEL } from "../labels.js";
+import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, mechOf, LEARNERS, MECHANISMS, MECH_LABEL, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel, reporting, reportText, reportPct, ROLES, ROLE_LABEL, GROUP_LABEL } from "../labels.js";
 import { langRef as curLang } from "../i18n.js";
 import { pct, fmt, pm, shortTime, secToHuman, steps } from "../format.js";
 
@@ -10,7 +10,6 @@ const props = defineProps({ name: { type: String, required: true } });
 const data = ref(null);
 const missing = ref(false);
 const scen = ref("all");
-const role = ref("main");
 let timer = null;
 
 async function load() {
@@ -22,7 +21,6 @@ async function load() {
 watch(() => props.name, () => {
   data.value = null;
   scen.value = "all";
-  role.value = "main";
   clearInterval(timer);
   load();
   timer = setInterval(load, 10000);
@@ -31,33 +29,79 @@ onUnmounted(() => clearInterval(timer));
 
 const roleOf = (r) => r.role || "main";
 const roleCount = (k) => (data.value?.rows || []).filter((r) => roleOf(r) === k).length;
-const shownRoles = computed(() => ROLES.filter((k) => roleCount(k)));
+const multiRole = computed(() => ROLES.filter((k) => roleCount(k)).length > 1);
+const inScen = (r) => scen.value === "all" || r.scenario === scen.value;
+// run details: every run of the batch (all roles), sweep and references after the formal runs
 const rows = computed(() => {
-  const rs = (data.value?.rows || []).filter((r) => (scen.value === "all" || r.scenario === scen.value) && roleOf(r) === role.value);
+  const rs = (data.value?.rows || []).filter(inScen);
   return [...rs].sort((a, b) =>
+    ROLES.indexOf(roleOf(a)) - ROLES.indexOf(roleOf(b)) ||
     SCENARIOS.indexOf(a.scenario) - SCENARIOS.indexOf(b.scenario) ||
-    algoIndex(a.algo) - algoIndex(b.algo) || a.variant.localeCompare(b.variant));
+    algoIndex(a.algo) - algoIndex(b.algo) || a.variant.localeCompare(b.variant) ||
+    (a.params?.lambda_max ?? 0) - (b.params?.lambda_max ?? 0));
 });
+
+// ── main view: per scenario, learner (rows) x constraint handling (columns); one cell = one formal result ──
+// a reference (another batch's run) fills a cell only when this batch has no run for it, and says where it is from
+const cellRows = computed(() => (data.value?.rows || []).filter((r) => roleOf(r) !== "sweep" && LEARNERS.includes(learnerOf(r.algo))));
+const cellKey = (r) => `${r.scenario}|${learnerOf(r.algo)}|${mechOf(r.algo)}`;
+const cells = computed(() => {
+  const out = {};
+  for (const r of cellRows.value) {
+    const k = cellKey(r);
+    if (roleOf(r) === "reference" && out[k]) continue;
+    if (out[k] && roleOf(out[k]) !== "reference") { out[k] = "dup"; continue; }
+    out[k] = r;
+  }
+  return out;
+});
+// the matrix only works when every formal (scenario, learner, mechanism) has exactly one run group
+const matrixOk = computed(() => cellRows.value.length > 0 && !Object.values(cells.value).includes("dup"));
+const matrixScens = computed(() => SCENARIOS.filter((s) => (scen.value === "all" || s === scen.value) && cellRows.value.some((r) => r.scenario === s)));
+const matrixLearners = (s) => LEARNERS.filter((l) => cellRows.value.some((r) => r.scenario === s && learnerOf(r.algo) === l));
+const matrixMechs = computed(() => MECHANISMS.filter((m) => cellRows.value.some((r) => mechOf(r.algo) === m)));
+const cell = (s, l, m) => cells.value[`${s}|${l}|${m}`];
+// a cell's state when it has no metrics yet: the most advanced seed status
+function cellState(r) {
+  const ss = r.seeds || [];
+  for (const k of ["running", "waiting", "queued", "stopped", "skipped"]) {
+    const s = ss.find((x) => x.status === k);
+    if (s) return s;
+  }
+  return null;
+}
+const cellLink = (r) => {
+  const s = (r.seeds || []).find((x) => x.status === "done");
+  return roleOf(r) === "reference" || !s ? null : runLink(r, s);
+};
+
+// ── parameter sweeps (role "sweep"), grouped by params, one column per scenario ──
+const sweepRows = computed(() => (data.value?.rows || []).filter((r) => roleOf(r) === "sweep"));
+const sweepValues = computed(() => [...new Set(sweepRows.value.map((r) => r.params?.lambda_max))].sort((a, b) => a - b));
+const sweepCell = (v, s) => sweepRows.value.find((r) => r.params?.lambda_max === v && r.scenario === s);
+const sweepDone = computed(() => sweepRows.value.filter((r) => r.n_done === r.n_total).length);
+const chosenLam = computed(() => (data.value?.lambda_max == null || data.value.lambda_max !== data.value.lambda_max ? null : data.value.lambda_max));
+
 // docs/data_spec.md §4: params as badges; a legacy variant equal to the row's network is already in the 网络 column,
 // steps only when they differ from the batch's default
 function paramTags(r) {
   const out = [];
   for (const [k, v] of Object.entries(r.params || {})) {
-    if (k === "variant") { if (v && v !== r.net) out.push(variantLabel(v)); }
-    else if (k === "lambda_max") out.push(`λ_max=${v ?? "?"}`);
+    if (k === "variant") { if (v && v !== (r.net ?? "graph")) out.push(variantLabel(v)); }   // a run without results: graph (the default net)
+    else if (k === "lambda_max") { if (v != null) out.push(`λ_max=${v}`); }                  // null: still decided by a sweep (shown as 等待 …)
     else out.push(`${k}=${v}`);
   }
   if (r.steps && data.value?.steps && r.steps !== data.value.steps) out.push(`步数=${steps(r.steps)}`);
   return out;
 }
 const hasParams = computed(() => rows.value.some((r) => paramTags(r).length || (r.waiting_for || []).length));
-const scenCount = (s) => (data.value?.rows || []).filter((r) => r.scenario === s && roleOf(r) === role.value).length;
+const scenCount = (s) => (data.value?.rows || []).filter((r) => r.scenario === s && (isEval.value || roleOf(r) !== "sweep")).length;
 const refLabel = (r) => (r.label ? (curLang.value === "en" ? r.label.en : r.label.zh) : null);
 
 // first row of each scenario group gets a divider
 const firstOfLearner = (i) =>
   firstOfScen(i) || learnerOf(rows.value[i - 1].algo) !== learnerOf(rows.value[i].algo);
-const firstOfScen = (i) => i === 0 || rows.value[i - 1].scenario !== rows.value[i].scenario;
+const firstOfScen = (i) => i === 0 || rows.value[i - 1].scenario !== rows.value[i].scenario || roleOf(rows.value[i - 1]) !== roleOf(rows.value[i]);
 
 // evaluation batches (kind === "eval"): best-of-K / single deterministic re-evaluation
 const isEval = computed(() => data.value?.kind === "eval");
@@ -89,17 +133,20 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
 </script>
 
 <template>
-  <div class="crumbs"><a href="#/versions">实验版本</a> / <a v-if="data?.version" :href="`#/versions/v${String(data.version).replace(/^v/, '')}`">v{{ String(data.version).replace(/^v/, "") }}</a><template v-if="data?.version"> / </template>{{ name }}</div>
+  <div class="crumbs"><a href="#/batches">批次</a> / <template v-if="data?.version"><a :href="`#/batches?version=${encodeURIComponent(data.version)}`">v{{ String(data.version).replace(/^v/, "") }}</a> / </template>{{ name }}</div>
   <div v-if="missing" class="empty">找不到批次 {{ name }}</div>
   <div v-else-if="!data" class="empty">加载中…</div>
   <template v-else>
     <div class="page-head page-head--row">
       <div>
         <h1>{{ name }} <span class="badge badge--lg" :class="statusClass(data.status)">{{ statusLabel(data.status) }}</span></h1>
-        <div class="page-sub" v-if="!isEval">版本 {{ data.version ?? "—" }} · 分支 {{ data.branch }} · {{ steps(data.steps) }} 步 · 开始于 {{ shortTime(data.started_at) }}</div>
+        <div class="page-sub" v-if="!isEval">版本 {{ data.version ?? "—" }}<template v-if="data.purpose && data.purpose !== 'main'"> · {{ data.purpose === "smoke" ? "冒烟测试" : "测试" }}</template> · {{ steps(data.steps) }} 步 · 开始于 {{ shortTime(data.started_at) }}</div>
         <div class="page-sub" v-else>评估批次（不训练）· 版本 {{ data.version ?? "—" }} · {{ data.workers ?? "—" }} 个并行进程 · 开始于 {{ shortTime(data.started_at) }}</div>
       </div>
-      <a v-if="!isEval" class="btn" :href="resultsLink">在运行明细中对比 →</a>
+      <div v-if="!isEval" class="head-links">
+        <a v-if="data.version" class="btn btn--ghost" :href="`#/versions/v${String(data.version).replace(/^v/, '')}`">版本报告 →</a>
+        <a class="btn" :href="resultsLink">在结果对比中查看 →</a>
+      </div>
     </div>
 
     <div class="kpis">
@@ -116,15 +163,10 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <div class="kpi-foot">最后更新 {{ shortTime(data.last_updated) }}</div></div>
     </div>
 
-    <div v-if="!isEval && shownRoles.length > 1" class="tabs">
-      <button v-for="k in shownRoles" :key="k" class="tab" :class="{ active: role === k }" @click="role = k">
-        {{ ROLE_LABEL[k] }} <span class="tab-count">{{ roleCount(k) }}</span>
-      </button>
-    </div>
     <div class="tabs">
-      <button class="tab" :class="{ active: scen === 'all' }" @click="scen = 'all'">全部场景 <span class="tab-count">{{ isEval ? data.rows.length : roleCount(role) }}</span></button>
+      <button class="tab" :class="{ active: scen === 'all' }" @click="scen = 'all'">全部场景</button>
       <button v-for="s in SCENARIOS" :key="s" v-show="scenCount(s)" class="tab" :class="{ active: scen === s }" @click="scen = s">
-        {{ s.toUpperCase() }} <span class="tab-count">{{ scenCount(s) }}</span>
+        {{ s.toUpperCase() }}
       </button>
     </div>
 
@@ -191,22 +233,97 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       </div>
     </section>
 
-    <section v-else class="panel">
+    <template v-else>
+    <section v-if="matrixOk" class="panel">
+      <div class="panel-title">结果矩阵 <span class="dim small">每格一个模型（场景 × 模型 × 约束处理）：相对 gap 与测试集违约率；未完成的格子显示当前状态</span></div>
+      <div v-for="s in matrixScens" :key="s" class="mx-block">
+        <div class="mx-scen"><span class="scen" :class="`scen--${s}`">{{ s.toUpperCase() }}</span> <span class="dim small">{{ SCENARIO_LABEL[s] }}</span></div>
+        <div class="table-scroll"><table class="grid mx">
+          <thead><tr><th>模型</th><th v-for="m in matrixMechs" :key="m">{{ MECH_LABEL[m] }}</th></tr></thead>
+          <tbody>
+            <tr v-for="l in matrixLearners(s)" :key="l">
+              <td class="mx-learner"><b>{{ l.toUpperCase() }}</b></td>
+              <td v-for="m in matrixMechs" :key="m" class="mx-cell">
+                <template v-if="cell(s, l, m)">
+                  <component :is="cellLink(cell(s, l, m)) ? 'a' : 'div'" :href="cellLink(cell(s, l, m))" class="mx-in">
+                    <template v-if="cell(s, l, m).n_done">
+                      <div class="mx-gap">{{ pct(relGap(cell(s, l, m))) }}<span class="mx-unit">gap</span></div>
+                      <div class="mx-viol">
+                        <span :class="{ warn: cell(s, l, m).test_cap_viol_rate_mean }">容量 {{ pct(cell(s, l, m).test_cap_viol_rate_mean) }}</span>
+                        · <span :class="{ warn: cell(s, l, m).test_conflict_viol_rate_mean }">隐私 {{ pct(cell(s, l, m).test_conflict_viol_rate_mean) }}</span>
+                        <template v-if="cell(s, l, m).test_exit_rate_mean"> · <span class="warn">EXIT {{ pct(cell(s, l, m).test_exit_rate_mean) }}</span></template>
+                      </div>
+                      <div v-if="cell(s, l, m).n_done < cell(s, l, m).n_total" class="dim small">{{ cell(s, l, m).n_done }}/{{ cell(s, l, m).n_total }} 个种子</div>
+                    </template>
+                    <div v-else-if="cellState(cell(s, l, m))" class="mx-state" :class="`mx-state--${cellState(cell(s, l, m)).status}`">
+                      <template v-if="cellState(cell(s, l, m)).status === 'running'">
+                        运行中 {{ cellState(cell(s, l, m)).progress_pct != null ? Math.round(cellState(cell(s, l, m)).progress_pct) + "%" : "" }}
+                        <div class="bar"><div class="bar-fill" :style="{ width: (cellState(cell(s, l, m)).progress_pct || 0) + '%' }"></div></div>
+                      </template>
+                      <template v-else-if="cellState(cell(s, l, m)).status === 'waiting'">等待 {{ (cell(s, l, m).waiting_for || []).map((g) => GROUP_LABEL[g] ?? g).join("、") }}</template>
+                      <template v-else>{{ statusLabel(cellState(cell(s, l, m)).status) }}</template>
+                    </div>
+                    <div class="mx-tags">
+                      <span v-for="t in paramTags(cell(s, l, m))" :key="t" class="tag tag--param">{{ t }}</span>
+                      <span v-if="roleOf(cell(s, l, m)) === 'reference'" class="tag tag--wait" :title="refLabel(cell(s, l, m))">参照 · 非本批次训练</span>
+                    </div>
+                  </component>
+                </template>
+                <span v-else class="dim">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="legend"><span>相对 gap = (ILP AR − AR) / ILP AR，只在无违约的测试实例上计算；容量 / 隐私 = 有容量 / 隐私违约的测试实例比例。点击已完成的格子查看该 run。</span></div>
+    </section>
+
+    <details v-if="sweepRows.length" class="panel mx-details" :open="!matrixOk">
+      <summary>
+        <b>参数扫描：λ_max</b>
+        <span class="dim small">（{{ algoLabel(sweepRows[0].algo) }}，{{ steps(sweepRows[0].steps) }} 步；完成 {{ sweepDone }}/{{ sweepRows.length }}）</span>
+        <span v-if="chosenLam != null" class="tag tag--param">选定 λ_max={{ chosenLam }}</span>
+        <span v-else class="dim small">· 扫描结束后自动选定，Lagrangian 各格随后开始训练</span>
+      </summary>
+      <div class="table-scroll"><table class="grid mx">
+        <thead><tr><th>λ_max</th><th v-for="s in SCENARIOS" :key="s">{{ s.toUpperCase() }}</th></tr></thead>
+        <tbody>
+          <tr v-for="v in sweepValues" :key="v" :class="{ 'mx-chosen': v === chosenLam }">
+            <td><b>{{ v }}</b><span v-if="v === chosenLam" class="dim small"> ✓</span></td>
+            <td v-for="s in SCENARIOS" :key="s" class="mx-cell">
+              <template v-if="sweepCell(v, s)">
+                <template v-if="sweepCell(v, s).n_done">
+                  <div class="mx-gap">{{ pct(relGap(sweepCell(v, s))) }}<span class="mx-unit">gap</span></div>
+                  <div class="mx-viol">容量 {{ pct(sweepCell(v, s).test_cap_viol_rate_mean) }} · 隐私 {{ pct(sweepCell(v, s).test_conflict_viol_rate_mean) }}</div>
+                </template>
+                <div v-else-if="cellState(sweepCell(v, s))" class="mx-state">{{ statusLabel(cellState(sweepCell(v, s)).status) }}{{ cellState(sweepCell(v, s)).progress_pct != null ? " " + Math.round(cellState(sweepCell(v, s)).progress_pct) + "%" : "" }}</div>
+              </template>
+              <span v-else class="dim">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+      <div class="legend"><span>选择规则：三场景平均"有效 gap"最低（有违约的实例按 AR = 0 计），详见报告 lam_sweep.md。</span></div>
+    </details>
+
+    <details class="panel mx-details" :open="!matrixOk">
+      <summary><b>全部 run</b> <span class="dim small">（每个 run 的种子、状态与全部指标，共 {{ rows.length }} 组）</span></summary>
       <div class="table-scroll"><table class="grid">
         <thead>
           <tr>
-            <th>场景</th><th>模型</th><th>约束处理</th><th v-if="role === 'reference'">来源</th><th v-if="hasParams" title="区分同一模型 × 约束处理下不同 run 的参数（docs/data_spec.md）">参数</th><th v-if="hasNet">网络 / 设备</th><th>种子</th>
+            <th v-if="multiRole">类别</th><th>场景</th><th>模型</th><th>约束处理</th><th v-if="roleCount('reference')">来源</th><th v-if="hasParams" title="区分同一模型 × 约束处理下不同 run 的参数（docs/data_spec.md）">参数</th><th v-if="hasNet">网络 / 设备</th><th>种子</th>
             <th class="num" title="success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例">success_rate</th><th class="num" title="AR = average resource utilization（平均资源利用率，优化目标）">AR</th><th class="num">ILP AR</th><th class="num" title="AR gap = ILP AR − AR">AR gap</th>
             <th class="num" title="相对 gap = (ILP AR − AR) / ILP AR">相对 gap</th>
             <th class="num">容量违规</th><th class="num">冲突违规</th><th class="num" title="Maskable 选了 EXIT 的测试实例比例">EXIT 率</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(r, i) in rows" :key="r.scenario + r.algo + JSON.stringify(r.params) + r.steps + (refLabel(r) || '')" :class="{ 'row-sep': firstOfScen(i) }">
+          <tr v-for="(r, i) in rows" :key="roleOf(r) + r.scenario + r.algo + JSON.stringify(r.params) + r.steps + (refLabel(r) || '')" :class="{ 'row-sep': firstOfScen(i) }">
+            <td v-if="multiRole" class="small">{{ firstOfScen(i) ? ROLE_LABEL[roleOf(r)] : "" }}</td>
             <td><span v-if="firstOfScen(i)" class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
             <td><b v-if="firstOfLearner(i)">{{ learnerLabel(r.algo) }}</b></td>
             <td :class="{ dim: mechLabel(r.algo) === '无约束' }">{{ mechLabel(r.algo) }}</td>
-            <td v-if="role === 'reference'" class="small">{{ refLabel(r) }}</td>
+            <td v-if="roleCount('reference')" class="small">{{ refLabel(r) }}</td>
             <td v-if="hasParams">
               <span v-for="t in paramTags(r)" :key="t" class="tag tag--param">{{ t }}</span>
               <span v-for="g in r.waiting_for || []" :key="g" class="tag tag--wait">等待 {{ GROUP_LABEL[g] ?? g }}</span>
@@ -226,8 +343,8 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <td class="num dim">{{ fmt(r.ilp_ar_mean) }}</td>
             <td class="num">{{ fmt(gap(r)) }}</td>
             <td class="num">{{ pct(relGap(r)) }}</td>
-              <td class="num" :class="{ warn: r.test_cap_viol_rate_mean }">{{ pct(r.test_cap_viol_rate_mean) }}</td>
-              <td class="num" :class="{ warn: r.test_conflict_viol_rate_mean }">{{ pct(r.test_conflict_viol_rate_mean) }}</td>
+            <td class="num" :class="{ warn: r.test_cap_viol_rate_mean }">{{ pct(r.test_cap_viol_rate_mean) }}</td>
+            <td class="num" :class="{ warn: r.test_conflict_viol_rate_mean }">{{ pct(r.test_conflict_viol_rate_mean) }}</td>
             <td class="num" :class="{ warn: r.test_exit_rate_mean }">{{ pct(r.test_exit_rate_mean) }}</td>
           </tr>
         </tbody>
@@ -241,7 +358,8 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <span><i class="seed seed--stopped"></i>已中断</span>
         <span>指标为已完成种子的均值 ± 标准差；AR = average resource utilization；AR gap = ILP AR − AR；相对 gap = (ILP AR − AR) / ILP AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例</span>
       </div>
-    </section>
+    </details>
+    </template>
   </template>
 </template>
 
@@ -250,4 +368,24 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
 .method-sep td { border-top: 1px solid var(--border, #e3e6ec); }
 .k-first { border-left: 1px solid var(--border, #ddd); }
 .ilp-row td { background: var(--bg-soft, rgba(127,127,127,.06)); }
+.panel-title { font-weight: 600; margin-bottom: 10px; }
+.head-links { display: flex; gap: 8px; flex-wrap: wrap; }
+.mx-block { margin-bottom: 14px; }
+.mx-scen { margin-bottom: 6px; }
+.mx { table-layout: fixed; min-width: 640px; }
+.mx th:first-child, .mx td:first-child { width: 80px; }
+.mx td.mx-cell { vertical-align: top; white-space: normal; padding: 8px 10px; }
+.mx-in { display: block; color: inherit; text-decoration: none; }
+a.mx-in:hover .mx-gap { color: var(--primary, #2f6fde); }
+.mx-gap { font-size: 18px; font-weight: 600; line-height: 1.2; }
+.mx-unit { font-size: 11px; font-weight: 400; color: var(--text-dim); margin-left: 4px; }
+.mx-viol { font-size: 12px; color: var(--text-dim); }
+.mx-state { font-size: 13px; color: var(--text-dim); }
+.mx-state--running { color: var(--primary, #2f6fde); }
+.mx-state .bar { margin-top: 4px; }
+.mx-tags { margin-top: 4px; }
+.mx-tags .tag { margin-right: 4px; }
+.mx-chosen td { background: var(--primary-soft, #eef4ff); }
+.mx-details > summary { cursor: pointer; padding: 2px 0 8px; }
+.mx-details[open] > summary { margin-bottom: 6px; }
 </style>

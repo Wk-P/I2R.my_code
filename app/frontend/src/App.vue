@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import { store, startPolling, trainingProcs, setViewBranch } from "./store.js";
+import { store, startPolling, trainingProcs } from "./store.js";
 import { getBatches } from "./api.js";
 import Overview from "./pages/Overview.vue";
 import Monitor from "./pages/Monitor.vue";
@@ -15,13 +15,14 @@ import PaperDraft from "./components/PaperDraft.vue";
 import PaperDraftEn from "./components/PaperDraftEn.vue";
 import { langRef as curLang, setLang } from "./i18n.js";
 
-// Hash routes:
-//   #/                       总览
-//   #/monitor                训练监控
-//   #/batches[/<name>]       全部批次 / 批次详情（导航归入「实验版本」）
-//   #/results                运行明细
-//   #/run/<branch>/<scen>/<algo>/<run>   运行详情
-//   #/versions[/<tag>]       实验版本（报告时间线）/ 版本详情（报告）
+// Hash routes (sidebar groups: 当前 / 实验 / 分析 / 论文):
+//   #/                       总览（进行中的批次、实验队列、机器）
+//   #/monitor                进程监控
+//   #/batches[/<name>]       批次（按版本分组，按阶段筛选）/ 批次详情（结果矩阵）
+//   #/run/<space>/<scen>/<algo>/<run>   run 详情（面包屑：批次 / 版本 / 批次名 / run）
+//   #/versions[/<tag>]       版本报告（时间线）/ 某版本的报告
+//   #/results                结果对比（跨批次明细 / 透视）
+//   #/charts                 图表
 //   #/paper                  论文草稿
 const hash = ref(window.location.hash || "#/");
 const menuOpen = ref(false);   // mobile navigation drawer
@@ -52,21 +53,30 @@ const route = computed(() => {
   const h = decodeURIComponent(hash.value.replace(/^#/, "").split("?")[0]) || "/";
   let m;
   if ((m = h.match(/^\/run\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/)))
-    return { page: "run", nav: "results", props: { branch: m[1], scenario: m[2], algo: m[3], run: m[4] } };
-  if ((m = h.match(/^\/batches\/(.+)$/))) return { page: "batch", nav: "versions", props: { name: m[1] } };
+    return { page: "run", nav: "batches", props: { branch: m[1], scenario: m[2], algo: m[3], run: m[4] } };
+  if ((m = h.match(/^\/batches\/(.+)$/))) return { page: "batch", nav: "batches", props: { name: m[1] } };
   if ((m = h.match(/^\/versions\/(.+)$/))) return { page: "version", nav: "versions", props: { tag: m[1] } };
   const simple = { "/monitor": "monitor", "/batches": "batches", "/results": "results", "/versions": "versions", "/paper": "paper", "/charts": "charts" };
   const page = simple[h] ?? "overview";
-  return { page, nav: page === "batches" ? "versions" : page, props: {} };
+  return { page, nav: page, props: {} };
 });
 
 const NAV = [
-  { key: "overview", href: "#/", icon: "▦", label: "总览" },
-  { key: "monitor", href: "#/monitor", icon: "◉", label: "训练监控" },
-  { key: "versions", href: "#/versions", icon: "⎇", label: "实验版本" },
-  { key: "charts", href: "#/charts", icon: "◔", label: "图表" },
-  { key: "results", href: "#/results", icon: "▤", label: "运行明细" },
-  { key: "paper", href: "#/paper", icon: "✎", label: "论文草稿" },
+  { group: "当前", items: [
+    { key: "overview", href: "#/", icon: "▦", label: "总览" },
+    { key: "monitor", href: "#/monitor", icon: "◉", label: "进程监控" },
+  ] },
+  { group: "实验", items: [
+    { key: "batches", href: "#/batches", icon: "☰", label: "批次" },
+    { key: "versions", href: "#/versions", icon: "⎇", label: "版本报告" },
+  ] },
+  { group: "分析", items: [
+    { key: "results", href: "#/results", icon: "▤", label: "结果对比" },
+    { key: "charts", href: "#/charts", icon: "◔", label: "图表" },
+  ] },
+  { group: "论文", items: [
+    { key: "paper", href: "#/paper", icon: "✎", label: "论文草稿" },
+  ] },
 ];
 
 const running = computed(() => trainingProcs().filter((p) => !p.frozen).length);
@@ -104,10 +114,13 @@ const updated = computed(() =>
         <div class="brand-sub">ILP vs RL · 服务部署</div>
       </div>
       <nav>
-        <a v-for="n in NAV" :key="n.key" :href="n.href" class="nav-item" :class="{ active: route.nav === n.key }">
-          <span class="nav-icon">{{ n.icon }}</span>{{ n.label }}
-          <span v-if="n.key === 'monitor' && running" class="nav-count">{{ running }}</span>
-        </a>
+        <template v-for="g in NAV" :key="g.group">
+          <div class="nav-group">{{ g.group }}</div>
+          <a v-for="n in g.items" :key="n.key" :href="n.href" class="nav-item" :class="{ active: route.nav === n.key }">
+            <span class="nav-icon">{{ n.icon }}</span>{{ n.label }}
+            <span v-if="n.key === 'monitor' && running" class="nav-count">{{ running }}</span>
+          </a>
+        </template>
       </nav>
       <div class="sidebar-foot">只读面板，不影响任何训练进程</div>
     </aside>
@@ -117,16 +130,6 @@ const updated = computed(() =>
         <div class="topbar-left">
           <button class="menu-btn" aria-label="菜单" @click="menuOpen = !menuOpen">☰</button>
           <input v-model="search" class="global-search" placeholder="搜索 exp_id / 批次名 / 算法，回车" @keyup.enter="doSearch" />
-          <label class="branch-select" title="切换要查看的数据空间（results/ 下的目录，不会执行 git checkout）">
-            <span>数据空间</span>
-            <select :value="store.viewBranch" @change="setViewBranch($event.target.value)">
-              <option v-for="b in store.resultBranches" :key="b.name" :value="b.name">
-                {{ b.label }}（{{ b.versions }}）· {{ b.runs }} 次{{ b.name === store.branch ? " · 新训练写入此处" : "" }}
-              </option>
-            </select>
-          </label>
-          <span v-if="store.viewBranch && store.viewBranch !== store.branch" class="chip chip--warn-bg"
-            :title="`新训练写入 results/${store.branch}/`">新训练写入 <b>{{ store.branch }}</b></span>
         </div>
         <div class="topbar-right">
           <a href="#/monitor" class="chip" :class="running ? 'chip--run' : ''">训练中 <b>{{ running }}</b><template v-if="frozen"> · 冻结 <b>{{ frozen }}</b></template></a>

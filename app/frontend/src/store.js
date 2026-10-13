@@ -7,7 +7,7 @@ import { getBranch, getSystem } from "./api.js";
 export const store = reactive({
   branch: null,          // checked-out branch
   branches: [],
-  viewBranch: null,      // branch whose results are being browsed (global selector)
+  viewBranch: null,      // space browsed on the 结果对比 page (its own selector; other pages show every space)
   resultBranches: [],    // [{name, runs}] branches that have a results/ tree
   system: null,
   updatedAt: null,
@@ -51,3 +51,15 @@ export function setViewBranch(b) {
 
 // "阶段5 · 论文最终实验" for a results space name (falls back to the name).
 export const spaceLabel = (name) => store.resultBranches.find((b) => b.name === name)?.label ?? name;
+
+// Project stages (result_spaces.json "stage"): batches and spaces are grouped by stage, test spaces (smoke / check)
+// belong to the current stage. [{stage, label, current}] newest first; label = the stage's main space label.
+export const stageOf = (space) => store.resultBranches.find((b) => b.name === space)?.stage ?? null;
+export const currentStage = () => stageOf(store.branch);
+export function stages() {
+  const out = new Map();
+  for (const b of store.resultBranches)
+    if (b.stage != null && b.kind === "branch" && !out.has(b.stage))
+      out.set(b.stage, { stage: b.stage, label: b.label, current: b.stage === currentStage() });
+  return [...out.values()].sort((a, b) => b.stage - a.stage);
+}

@@ -82,13 +82,17 @@
 2. `params` 中值为 `null` 表示"由依赖的组决定、尚未确定"（例如扫描结束前的 `lambda_max`）；确定后驱动脚本回填。
 3. `depends_on` 列出要等待的组名；组内 run 全部结束之前，依赖它的 run 显示为"等待 <组名>"。
 4. `exp_ids`（旧的嵌套格式 `{种子: {场景: {key: exp_id}}}`）由 `runs` 派生，只为 `diag_regret.py` 等旧脚本保留。
-5. smoke 批次：`purpose: "smoke"`，批次名以 `_smoke` 结尾，数据写到单独的数据空间（`RESULTS_SPACE`）。
+5. `driver_pid`：驱动进程的 pid。驱动还活着、run 尚未全部完成时，批次显示为"运行中"（两次启动之间也一样），未启动的 run 显示为排队或等待依赖。
+6. smoke 批次：`purpose: "smoke"`，批次名以 `_smoke` 结尾；数据统一写到 `results/smoke/`（各 smoke 靠 exp_id 与批次区分，不再每次新建空间），报告写到 `logs/<批次名>/report/`。旧的 `smoke_v50x`、`check_*` 目录保留不动，看板把它们归为当前阶段的测试空间。
 
 ## 4. 看板显示
 
 - 批次详情表的列固定为：**场景 / 模型（learner）/ 约束处理（mechanism）/ 参数 / 种子 / 指标**。参数列把 `params` 显示成徽章：`λ_max=2`、`步数=3M`（`steps` 与批次默认步数不同时才显示）。
-- 角色标签页：**正式 / 扫描 / 参照**。参照行标出来源批次，指标从来源 run 的 `results.json` 读。
+- 参照（`references`）只在本批次没有对应 run 时填进矩阵的格子，并标"参照 · 非本批次训练"；指标从来源 run 的 `results.json` 读。
 - 批次列表默认隐藏 `purpose` 为 `smoke` / `test` 的批次，勾选"显示测试批次"后才显示。
+- 没有全局的数据空间开关：批次列表、总览同时读取所有空间；按**阶段**筛选（`app/backend/result_spaces.json` 的 `stage`，默认当前阶段）。数据空间只在 run 详情页作为路径显示，"结果对比"页自带范围选择。
+- 批次详情的主体是**结果矩阵**（每个场景一张：行 = learner，列 = 约束处理，格内为相对 gap 与容量 / 隐私违约率或运行状态）；参数扫描、全部 run 折叠在下方。
+- 导航分组：当前（总览、进程监控）/ 实验（批次、版本报告）/ 分析（结果对比、图表）/ 论文。
 - run 状态：`done` 已完成 / `running` 运行中 / `waiting` 等待依赖 / `queued` 排队中 / `stopped` 已中断 / `skipped` 未运行。
 
 ## 5. 旧批次（schema 缺省）的转换
