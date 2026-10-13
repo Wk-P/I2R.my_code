@@ -258,7 +258,10 @@ def system() -> dict:
         l1 = l5 = l15 = None
     cpu_model = next((l.split(":", 1)[1].strip() for l in Path("/proc/cpuinfo").read_text().splitlines()
                       if l.startswith("model name")), None) if Path("/proc/cpuinfo").exists() else None
-    return {"hostname": os.uname().nodename, "cpu_model": cpu_model, "cpu_count": os.cpu_count(),
+    with _hist_lock:                                     # latest CPU sample of the sampler thread (rates need two samples)
+        cpu = _hist[-1]["cpu"] if _hist else None
+    return {"hostname": os.uname().nodename, "cpu_model": cpu_model, "cpu_count": os.cpu_count(), "cpu": cpu,
+            "rapl_domains": [_read(d / "name") for d in _rapl_domains()],
             "load_avg": {"1m": l1, "5m": l5, "15m": l15}, "memory": _meminfo(), "gpus": gs, "processes": procs}
 
 

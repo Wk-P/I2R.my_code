@@ -30,8 +30,9 @@ const groups = computed(() => {
 });
 const router = useRouter();
 const open = (r) => r.space && r.exp_id && router.push(`/runs/${r.space}/${r.scenario}/${r.dir}/${r.exp_id}`);
-const paramText = (p) => Object.entries(p || {}).filter(([k, x]) => x != null && JSON.stringify(x) !== JSON.stringify(props.params?.[k]))
-  .map(([k, x]) => `${k}=${k === "steps" ? steps(x) : x}`).join(" · ");
+const paramList = (p) => Object.entries(p || {}).filter(([k, x]) => x != null && JSON.stringify(x) !== JSON.stringify(props.params?.[k]))
+  .map(([k, x]) => `${k}=${k === "steps" ? steps(x) : x}`);
+const paramText = (p) => paramList(p).join(" · ");
 const stale = (r) => r.live?.updated && Date.now() / 1000 - r.live.updated > 600;
 </script>
 
@@ -47,7 +48,7 @@ const stale = (r) => r.live?.updated && Date.now() / 1000 - r.live.updated > 600
     <div v-for="r in shown" :key="'c' + r.exp_id" class="lr" @click="open(r)">
       <div class="lr-h">
         <b>{{ r.scenario.toUpperCase() }} · {{ r.RL_algorithm }}</b><span class="dim">{{ r.strategy }}</span>
-        <span v-if="paramText(r.params)" class="tag">{{ paramText(r.params) }}</span>
+        <span v-for="x in paramList(r.params)" :key="x" class="tag">{{ x }}</span>
         <router-link v-if="batch" class="small" :to="`/batches/${r.batch}`" @click.stop>{{ r.batch }}</router-link>
       </div>
       <div class="row" style="flex-wrap: nowrap; gap: 8px; margin: 6px 0">
@@ -109,6 +110,7 @@ const stale = (r) => r.live?.updated && Date.now() / 1000 - r.live.updated > 600
 .lr { border-top: 1px solid var(--border); padding: 9px 0; cursor: pointer; }
 .lr:first-child { border-top: 0; padding-top: 0; }
 .lr-h { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lr-h .tag { font-size: 11.5px; }   /* one tag per param: long params (v5.0.3.1) wrap between tags, not inside a value */
 .lr-s { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 .grp { background: var(--panel-2); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
 .grp-r { display: grid; grid-template-columns: 52px 40px 1fr 1.4fr 1fr; gap: 4px; font-size: 12px; padding: 3px 0; font-variant-numeric: tabular-nums; }

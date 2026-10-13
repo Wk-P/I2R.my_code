@@ -10,6 +10,7 @@ import Status from "../components/Status.vue";
 import Progress from "../components/Progress.vue";
 import LiveRuns from "../components/LiveRuns.vue";
 import GpuCard from "../components/GpuCard.vue";
+import CpuCard from "../components/CpuCard.vue";
 import Th from "../components/Th.vue";
 import { useSort } from "../sort.js";
 
@@ -49,6 +50,16 @@ const gpuSamples = (i) => hist.value.map((x) => ({ t: x.t, ...(x.gpus.find((g) =
     </div>
     <div v-if="!d" class="empty">{{ t("加载中…", "Loading…") }}</div>
     <template v-else>
+      <div class="section-title"><h2>{{ t("机器", "Machine") }}</h2><span class="faint small">{{ sys.hostname }} · {{ sys.cpu_model }}</span></div>
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-l">{{ t("内存可用", "Memory available") }}</div><div class="kpi-v" style="font-size: 18px">{{ bytes(sys.memory?.available) }}</div><div class="kpi-s">/ {{ bytes(sys.memory?.total) }}</div></div>
+        <div class="kpi"><div class="kpi-l">{{ t("训练进程", "Training processes") }}</div><div class="kpi-v">{{ (sys.processes || []).filter((p) => p.kind === "train").length }}</div><div class="kpi-s">MPS {{ (sys.processes || []).some((p) => p.mps) ? t("开", "on") : t("关", "off") }}</div></div>
+      </div>
+      <CpuCard :sys="sys" :samples="hist" />
+      <div class="gpu-grid">
+        <GpuCard v-for="g in sys.gpus" :key="g.index" :gpu="g" :samples="gpuSamples(g.index)" />
+      </div>
+      <div class="section-title"><h2>{{ t("训练", "Training") }}</h2></div>
       <div v-if="!d.batches.length" class="card empty">{{ t("当前没有批次在训练。", "No batch is training right now.") }}</div>
       <div v-for="b in d.batches" :key="b.name" class="card">
         <div class="card-h">
@@ -99,15 +110,6 @@ const gpuSamples = (i) => hist.value.map((x) => ({ t: x.t, ...(x.gpus.find((g) =
         </div>
       </div>
 
-      <div class="section-title"><h2>{{ t("机器", "Machine") }}</h2><span class="faint small">{{ sys.hostname }} · {{ sys.cpu_model }}</span></div>
-      <div class="kpis">
-        <div class="kpi"><div class="kpi-l">{{ t("CPU 负载 1 / 5 / 15 分钟", "CPU load 1 / 5 / 15 min") }}</div><div class="kpi-v" style="font-size: 18px">{{ sys.load_avg?.["1m"]?.toFixed(1) }} / {{ sys.load_avg?.["5m"]?.toFixed(1) }} / {{ sys.load_avg?.["15m"]?.toFixed(1) }}</div><div class="kpi-s">{{ sys.cpu_count }} {{ t("线程", "threads") }}</div></div>
-        <div class="kpi"><div class="kpi-l">{{ t("内存可用", "Memory available") }}</div><div class="kpi-v" style="font-size: 18px">{{ bytes(sys.memory?.available) }}</div><div class="kpi-s">/ {{ bytes(sys.memory?.total) }}</div></div>
-        <div class="kpi"><div class="kpi-l">{{ t("训练进程", "Training processes") }}</div><div class="kpi-v">{{ (sys.processes || []).filter((p) => p.kind === "train").length }}</div><div class="kpi-s">MPS {{ (sys.processes || []).some((p) => p.mps) ? t("开", "on") : t("关", "off") }}</div></div>
-      </div>
-      <div class="gpu-grid">
-        <GpuCard v-for="g in sys.gpus" :key="g.index" :gpu="g" :samples="gpuSamples(g.index)" />
-      </div>
       <div class="card">
         <div class="card-h"><h2>{{ t("其他项目进程", "Other project processes") }}</h2></div>
         <div class="card-b table-wrap">

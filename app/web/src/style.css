@@ -186,6 +186,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; color: var(--
   .kpi-v { font-size: 18px; }
   .grid-auto { grid-template-columns: 1fr; }
   .hide-sm { display: none !important; }
+  .tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }   /* a tag longer than the screen (paths) wraps instead of overflowing */
   .show-sm { display: block; }
   .show-sm-i { display: inline; }
   .tbl { font-size: 12.5px; }

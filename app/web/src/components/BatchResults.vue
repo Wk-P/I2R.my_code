@@ -73,8 +73,9 @@ const variants = computed(() => {
   return [...out.values()];
 });
 const variantCell = (v, s) => cellOf(main.value.filter((r) => (r.key || `${r.dir}|${JSON.stringify(r.params)}`) === v.k && r.scenario === s));
-const paramText = (p) => Object.entries(p || {}).filter(([k, x]) => x != null && x !== "" && JSON.stringify(x) !== JSON.stringify(props.b.params?.[k]))
-  .map(([k, x]) => `${k}=${k === "steps" ? steps(x) : x}`).join(" · ");
+const paramList = (p) => Object.entries(p || {}).filter(([k, x]) => x != null && x !== "" && JSON.stringify(x) !== JSON.stringify(props.b.params?.[k]))
+  .map(([k, x]) => `${k}=${k === "steps" ? steps(x) : x}`);
+const paramText = (p) => paramList(p).join(" · ");
 const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" : "bad");
 </script>
 
@@ -125,7 +126,25 @@ const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" :
 
     <div v-else-if="main.length" class="card">
       <div class="card-h"><h2>{{ t("结果", "Results") }}</h2><span class="faint small">{{ t("每行一个变体，每格为各种子的均值", "one row per variant; cells average the seeds") }}</span></div>
-      <div class="card-b table-wrap">
+      <!-- phones: one block per variant, its params as separate tags, one line per scenario -->
+      <div class="card-b show-sm">
+        <div v-for="v in variants" :key="'c' + v.k" class="vc">
+          <div class="vc-h"><b>{{ v.rl }} · {{ v.strategy }}</b><span v-for="x in paramList(v.params)" :key="x" class="tag">{{ x }}</span></div>
+          <div v-for="s in scens" :key="s" class="vc-r">
+            <span class="dim small">{{ scenName(s) }}</span>
+            <div><template v-for="c in [variantCell(v, s)]" :key="s">
+                <span v-if="!c" class="faint">—</span>
+                <div v-else-if="c.status === 'done'" :class="{ click: c.done.length }" @click="open(c.done[0])" style="cursor: pointer">
+                  <b :class="['gapv', gapTone(c.gap)]">{{ pct(c.gap) }}</b>
+                  <span class="faint small"> · {{ t("容量", "cap") }} {{ pct(c.cap) }} · {{ t("隐私", "priv") }} {{ pct(c.priv) }}</span>
+                  <span class="faint small" v-if="c.runs.length > 1"> · {{ c.done.length }} {{ t("种子", "seeds") }}</span>
+                </div>
+                <span v-else class="badge" :class="STATUS_TONE[c.status]">{{ statusName(c.status) }}<template v-if="c.progress != null"> · {{ c.progress.toFixed(0) }}%</template></span>
+              </template></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-b table-wrap hide-sm">
         <table class="tbl">
           <thead><tr><th>{{ t("变体", "Variant") }}</th><th v-for="s in scens" :key="s">{{ scenName(s) }}</th></tr></thead>
           <tbody>
@@ -228,4 +247,9 @@ table.mx { width: 100%; border-collapse: separate; border-spacing: 6px; margin: 
 .mid { color: var(--text); }
 .bad { color: var(--bad); }
 tr.chosen td { background: var(--accent-soft); }
+.vc { border-top: 1px solid var(--border); padding: 9px 0; }
+.vc:first-child { border-top: 0; padding-top: 0; }
+.vc-h { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.vc-h .tag { font-size: 11.5px; }
+.vc-r { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 6px; align-items: baseline; padding: 2px 0; }
 </style>
