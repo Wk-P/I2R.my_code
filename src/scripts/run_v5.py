@@ -9,15 +9,14 @@ PPO / DQN hyper-parameters from paper_rl/config.py, the same for both networks.
            Maskable DQN / DDQN from v4.5.2 (same setting, one continuous 20M run each; the v5.0.0 code trains them
            bit-identically, so re-running them would reproduce the same models). Maskable PPO is re-trained here because
            v4.4.15-17 reached 20M by resuming twice (5M -> 10M -> 20M).
-    5.0.3  seed 1 only: every learner x mechanism ({PPO, DQN, DDQN} x {unconstrained, Lagrangian, Maskable, Repair})
-           trained in this batch. New Lagrangian: per-step cost lambda * c_t, lambda adapted per episode by dual
-           ascent and fixed within an episode, J_C = violations per episode, d = 0.001, window 1000, eta 0.5; its cap
-           lambda_max is chosen per learner by a short sweep (Lagrangian PPO / DQN / DDQN, 3M steps, {1, 2, 5}): the
-           value with the lowest mean effective gap (violating instances count as AR = 0); a learner's Lagrangian runs
-           start when its sweep is done.
-    5.0.4  same plan as 5.0.3 (36 runs + the per-learner lambda_max sweep), re-versioned before launch because the
-           code and the panel changed after the 5.0.3 tag (per-learner sweep, report_data.json and
-           lam_sweep_<learner>.json for the panel, panel v2 at / with the old one at /classic/).
+    5.0.3  the lambda_max sweep for the new Lagrangian (27 runs): Lagrangian PPO / DQN / DDQN x lambda_max {1, 2, 5}
+           x 3 scenarios, seed 1, 3M steps. New Lagrangian: per-step cost lambda * c_t, lambda adapted per episode by
+           dual ascent and fixed within an episode, J_C = violations per episode, d = 0.001, window 1000, eta 0.5;
+           lambda_max is only its cap. Each learner takes the value with the lowest mean effective gap over the
+           scenarios (violating instances count as AR = 0); written to the manifest as "lambda_max".
+    5.0.4  seed 1 only: every learner x mechanism ({PPO, DQN, DDQN} x {unconstrained, Lagrangian, Maskable, Repair},
+           36 runs, 20M steps); each learner's Lagrangian run uses the lambda_max that v5.0.3 chose for it (the driver
+           refuses to start without all three).
 
 Speed-ups that leave training unchanged (v5.0.0, checked by src/scripts/check_v5.py: training is bit-identical to the
 v4.5 code on CPU and GPU): Mask DQN / DDQN build the state features once for Q-values and mask (1.20x total throughput
@@ -96,7 +95,13 @@ CONFIG = {
               # check_v5 speed_mask_ppo.md); an interim report after each stage but the last.
               "stages": [{"name": "DQN / DDQN", "learners": ["dqn", "ddqn"], "parallel": 27, "mps": False},   # DQN: MPS no gain (speed_mask_dqn_ABCD)
                          {"name": "PPO", "learners": ["ppo"], "parallel": 18, "mps": True}]},  # Legacy MPS (Pascal 1080 Ti): 27 clients fail with "Failed to create/open SHM segment", 18 ran fine
-    "5.0.3": {"variants": {                         # every learner x mechanism trained in this batch (no cross-batch references)
+    "5.0.3": {"variants": {},                      # the lambda_max sweep only; its choice is used by 5.0.4
+              "title": ("λ_max 扫描：Lagrangian PPO / DQN / DDQN × λ_max {1, 2, 5}（种子 1、3M、5 万实例）",
+                        "λ_max sweep: Lagrangian PPO / DQN / DDQN x λ_max {1, 2, 5} (seed 1, 3M, 50k instances)"),
+              "seeds": [1], "parallel": 18, "mps": True,
+              "lam_sweep": {"algos": {"ppo": "lagrange_ppo", "dqn": "lagrange_dqn", "ddqn": "lagrange_ddqn"},
+                            "values": [1.0, 2.0, 5.0], "steps": 3_000_000, "ckpts": [1_000_000]}},
+    "5.0.4": {"variants": {                         # every learner x mechanism trained in this batch (no cross-batch references)
                            "ppo_none": ("ppo", "graph", True, "无约束 PPO", "Unconstrained PPO"),
                            "ppo_lagrange": ("lagrange_ppo", "graph", True, "Lagrangian PPO", "Lagrangian PPO"),
                            "ppo_mask": ("mask_ppo", "graph", True, "Maskable PPO", "Maskable PPO"),
@@ -113,14 +118,9 @@ CONFIG = {
               "title": ("种子 1：无约束 / Lagrangian（每步代价、d = 0.001）/ Maskable / Repair × PPO / DQN / DDQN（5 万实例、20M）",
                         "Seed 1: unconstrained / Lagrangian (per-step cost, d = 0.001) / Maskable / Repair x PPO / DQN / DDQN (50k instances, 20M)"),
               "seeds": [1], "parallel": 18, "mps": True, "time_bench": True,   # 18: Legacy MPS limit on the Pascal GPUs
-              # lambda_max: swept per learner (PPO / DQN / DDQN each {1, 2, 5}, 3M steps); each learner's Lagrangian run
-              # uses its own choice
-              "lam_sweep": {"algos": {"ppo": "lagrange_ppo", "dqn": "lagrange_dqn", "ddqn": "lagrange_ddqn"},
-                            "values": [1.0, 2.0, 5.0], "steps": 3_000_000, "ckpts": [1_000_000]}},
+              # lambda_max per learner: chosen by the v5.0.3 sweep (logs/v5.0.3/manifest.json "lambda_max"); no sweep here
+              "lam_max_from": "5.0.3"},
 }
-CONFIG["5.0.4"] = CONFIG["5.0.3"]                   # 5.0.4: the 5.0.3 plan, re-versioned before launch (5.0.3 code and panel
-                                                    # changed after its tag); 5.0.3 stays for its smoke batch / --report
-
 
 def references(version):
     """(label zh, label en, algo, [(seed, scen, exp_id, pattern, step)]) of the curves to compare against."""
@@ -234,7 +234,8 @@ def sweep_key(key):
 def lagrange_learner(V, key):
     """The learner of a Lagrangian variant key (whose lambda_max comes from that learner's sweep), else None."""
     v = V["cfg"]["variants"].get(key)
-    return v[0].split("_")[-1] if V["cfg"].get("lam_sweep") and v and v[0].startswith("lagrange_") else None
+    per_learner = V["cfg"].get("lam_sweep") or V["cfg"].get("lam_max_from")
+    return v[0].split("_")[-1] if per_learner and v and v[0].startswith("lagrange_") else None
 
 
 def spec(V, key):
@@ -301,6 +302,8 @@ def plan_entry(V, seed, scen, key):
     elif sw and mech == "lagrange":
         lm = V["lam_max"].get(learner)
         e.update(group="lagrange", depends_on=[f"lam_sweep_{learner}"], params={"lambda_max": lm if lm is not None and lm == lm else None})
+    elif V["cfg"].get("lam_max_from") and mech == "lagrange":       # 5.0.4: fixed by an earlier sweep batch
+        e.update(group="lagrange", params={"lambda_max": V["lam_max"][learner]})
     return e
 
 
@@ -345,6 +348,7 @@ def write_manifest(V, exp_ids):
                                "created_at": V.setdefault("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
                                "data": DATA, "steps": STEPS, "checkpoints": CKPTS,
                                **({"lam_sweep": V["cfg"]["lam_sweep"], "lambda_max": V.get("lam_max")} if V["cfg"].get("lam_sweep") else {}),
+                               **({"lambda_max": V["lam_max"], "lambda_max_from": V["lam_max_from"]} if V.get("lam_max_from") else {}),
                                "reward": "ar_pen", "gamma": 1.0, "full_episode": True, "exit_action": "Maskable only",
                                "scenarios": SCENARIOS, "seeds": SEEDS,
                                "runs": runs, "references": V["refs"], "exp_ids": exp_ids}, indent=2))
@@ -528,7 +532,33 @@ def write_report_data(V, series, curve, reg, times, interim):
     (V["out"] / "report_data.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
 
 
+def write_sweep_report(V):
+    """report.md (+ .en.md) of a sweep-only batch (5.0.3): the chosen lambda_max per learner, then each learner's
+    lam_sweep_<learner>.md as written by choose_lam_max."""
+    learners = list(V["cfg"]["lam_sweep"]["algos"])
+    for zh in (True, False):
+        T = lambda z, e: z if zh else e
+        L = [f"# v{V['version']} {T(*V['cfg']['title'])}", "",
+             T(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/run_v5.py --version {V['version']}`；"
+               f"manifest：`{V['manifest'].relative_to(ROOT)}`。",
+               f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/run_v5.py --version {V['version']}`; "
+               f"manifest: `{V['manifest'].relative_to(ROOT)}`."),
+             T("- 选定的 λ_max 由下一版本（正式实验）读取：manifest 的 `lambda_max`。",
+               "- The chosen λ_max is read by the next version (the main experiment): `lambda_max` in the manifest."), "",
+             T("| Learner | 选定 λ_max |", "| Learner | Chosen λ_max |"), "|---|---|"]
+        L += [f"| {l.upper()} | {V['lam_max'].get(l, float('nan')):g} |" for l in learners]
+        for l in learners:
+            f = V["out"] / (f"lam_sweep_{l}.md" if zh else f"lam_sweep_{l}.en.md")
+            if f.exists():
+                L += ["", "#" + f.read_text().split("\n", 1)[0], *f.read_text().split("\n")[1:]]
+        p = V["report"] if zh else V["report"].with_suffix(".en.md")
+        p.write_text("\n".join(L) + "\n")
+        print(f"report -> {p}", flush=True)
+
+
 def write_report(V, exp_ids, interim: bool = False):
+    if not V["cfg"]["variants"]:                     # 5.0.3: the lambda_max sweep only
+        return write_sweep_report(V)
     vs = V["cfg"]["variants"]
     series = [(lz, le, algo, pool, [(sd, s, exp_ids[str(sd)][s][k], pat, st) for sd in SEEDS for s in SCENARIOS
                                    for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)]
@@ -732,18 +762,23 @@ def run_batch(V, runs, limit, exp_ids) -> list[str]:
     sweeping = lambda l: (any((sweep_key(r[2]) or ("",))[0] == l for r in pending)
                           or any((sweep_key(a[2].split()[-1]) or ("",))[0] == l for a in active))
     gated = lambda r: lagrange_learner(V, r[2]) is not None and V["lam_max"].get(lagrange_learner(V, r[2])) is None
-    while pending or active:
+    def choose_ready():
+        """Pick lambda_max for every learner whose sweep has just finished (or drop its Lagrangian runs)."""
+        nonlocal pending
         for l in (V["cfg"].get("lam_sweep") or {}).get("algos", {}):
             if V["lam_max"].get(l) is not None or sweeping(l):
                 continue
             if any(f"lam_sweep_{l}_" in f for f in failed):       # no lambda_max: drop this learner's Lagrangian runs
                 dropped = [r for r in pending if lagrange_learner(V, r[2]) == l]
                 pending = [r for r in pending if lagrange_learner(V, r[2]) != l]
-                failed += [f"seed{sd} {s} {k} (not started: sweep failed)" for sd, s, k in dropped]
+                failed.extend(f"seed{sd} {s} {k} (not started: sweep failed)" for sd, s, k in dropped)
                 V["lam_max"][l] = float("nan")
             else:
                 V["lam_max"][l] = choose_lam_max(V, exp_ids, l)
             write_manifest(V, exp_ids)
+
+    while pending or active:
+        choose_ready()
         while len(active) < limit:
             nxt = next((r for r in pending if not gated(r)), None)
             if nxt is None:
@@ -766,6 +801,7 @@ def run_batch(V, runs, limit, exp_ids) -> list[str]:
         if len(running) == len(active):             # nothing finished: wait before polling again
             time.sleep(2 if SMOKE else 30)
         active = running
+    choose_ready()                                  # the sweep that finished last (5.0.3: nothing runs after it)
     if V["mps"]:
         mps_stop()
     return failed
@@ -789,6 +825,17 @@ def main():
     # {learner: lambda_max} (v5.0.3); an older manifest's single value applies to every learner
     lm = json.loads(V["manifest"].read_text()).get("lambda_max") if (a.rerun or a.report) and V["manifest"].exists() else None
     V["lam_max"] = lm if isinstance(lm, dict) else {l: lm for l in ("ppo", "dqn", "ddqn")} if lm is not None else {}
+    src = V["cfg"].get("lam_max_from")
+    if src:                                          # 5.0.4: lambda_max per learner from the sweep batch (v5.0.3)
+        V["lam_max_from"] = f"v{src}{sfx}"
+        p = ROOT / "logs" / V["lam_max_from"] / "manifest.json"
+        lm = json.loads(p.read_text()).get("lambda_max") if p.exists() else None
+        need = sorted({lagrange_learner(V, k) for k in V["cfg"]["variants"]} - {None})
+        bad = [l for l in need if not isinstance(lm, dict) or not isinstance(lm.get(l), (int, float)) or lm[l] != lm[l]]
+        if bad:
+            sys.exit(f"v{a.version}: lambda_max of {', '.join(bad)} not chosen in {p.relative_to(ROOT)} -- run v{src} first")
+        V["lam_max"] = {l: float(lm[l]) for l in need}
+        print(f"lambda_max from {V['lam_max_from']}: " + ", ".join(f"{l} {v:g}" for l, v in V["lam_max"].items()), flush=True)
     V["numa"] = os.environ.get("V5_NUMA", "0") == "1"      # off by default: no gain in check_v5 speed (0.99x)
     V["mps"] = os.environ.get("V5_MPS", "0") == "1" and any(v[1] == "graph" for v in V["cfg"]["variants"].values())
     V["log_dir"].mkdir(parents=True, exist_ok=True)
