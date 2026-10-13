@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { getBatch } from "../api.js";
-import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, mechOf, LEARNERS, MECHANISMS, MECH_LABEL, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel, reporting, reportText, reportPct, ROLES, ROLE_LABEL, GROUP_LABEL } from "../labels.js";
+import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, mechOf, LEARNERS, MECHANISMS, MECH_LABEL, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel, reporting, reportText, reportPct, ROLES, ROLE_LABEL, GROUP_LABEL, groupLabel } from "../labels.js";
 import { langRef as curLang } from "../i18n.js";
 import { pct, fmt, pm, shortTime, secToHuman, steps } from "../format.js";
 
@@ -75,12 +75,27 @@ const cellLink = (r) => {
   return roleOf(r) === "reference" || !s ? null : runLink(r, s);
 };
 
-// ── parameter sweeps (role "sweep"), grouped by params, one column per scenario ──
+// matrix tags: a Lagrangian cell says that lambda adapts (dual ascent) up to lambda_max, and where it ended
+function cellTags(r) {
+  const out = paramTags(r).filter((x) => !x.startsWith("λ_max="));
+  const lm = r.params?.lambda_max;
+  if (lm != null) out.unshift(`λ 自适应 · 上限 ${lm}`);
+  if (r.final_lambda_mean != null) out.push(`末 λ=${r.final_lambda_mean.toFixed(2)}`);
+  return out;
+}
+
+// ── parameter sweeps (role "sweep"): per learner, one row per lambda_max, one column per scenario ──
 const sweepRows = computed(() => (data.value?.rows || []).filter((r) => roleOf(r) === "sweep"));
-const sweepValues = computed(() => [...new Set(sweepRows.value.map((r) => r.params?.lambda_max))].sort((a, b) => a - b));
-const sweepCell = (v, s) => sweepRows.value.find((r) => r.params?.lambda_max === v && r.scenario === s);
+const sweepLearners = computed(() => LEARNERS.filter((l) => sweepRows.value.some((r) => learnerOf(r.algo) === l)));
+const sweepValues = (l) => [...new Set(sweepRows.value.filter((r) => learnerOf(r.algo) === l).map((r) => r.params?.lambda_max))].sort((a, b) => a - b);
+const sweepCell = (l, v, s) => sweepRows.value.find((r) => learnerOf(r.algo) === l && r.params?.lambda_max === v && r.scenario === s);
 const sweepDone = computed(() => sweepRows.value.filter((r) => r.n_done === r.n_total).length);
-const chosenLam = computed(() => (data.value?.lambda_max == null || data.value.lambda_max !== data.value.lambda_max ? null : data.value.lambda_max));
+// lambda_max chosen per learner (v5.0.3: {learner: value}; older manifests: one value for all)
+const chosen = (l) => {
+  const v = data.value?.lambda_max;
+  const x = v != null && typeof v === "object" ? v[l] : v;
+  return x == null || x !== x ? null : x;
+};
 
 // docs/data_spec.md §4: params as badges; a legacy variant equal to the row's network is already in the 网络 column,
 // steps only when they differ from the batch's default
@@ -260,11 +275,11 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
                         运行中 {{ cellState(cell(s, l, m)).progress_pct != null ? Math.round(cellState(cell(s, l, m)).progress_pct) + "%" : "" }}
                         <div class="bar"><div class="bar-fill" :style="{ width: (cellState(cell(s, l, m)).progress_pct || 0) + '%' }"></div></div>
                       </template>
-                      <template v-else-if="cellState(cell(s, l, m)).status === 'waiting'">等待 {{ (cell(s, l, m).waiting_for || []).map((g) => GROUP_LABEL[g] ?? g).join("、") }}</template>
+                      <template v-else-if="cellState(cell(s, l, m)).status === 'waiting'">等待 {{ (cell(s, l, m).waiting_for || []).map((g) => groupLabel(g)).join("、") }}</template>
                       <template v-else>{{ statusLabel(cellState(cell(s, l, m)).status) }}</template>
                     </div>
                     <div class="mx-tags">
-                      <span v-for="t in paramTags(cell(s, l, m))" :key="t" class="tag tag--param">{{ t }}</span>
+                      <span v-for="t in cellTags(cell(s, l, m))" :key="t" class="tag tag--param">{{ t }}</span>
                       <span v-if="roleOf(cell(s, l, m)) === 'reference'" class="tag tag--wait" :title="refLabel(cell(s, l, m))">参照 · 非本批次训练</span>
                     </div>
                   </component>
@@ -281,29 +296,31 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
     <details v-if="sweepRows.length" class="panel mx-details" :open="!matrixOk">
       <summary>
         <b>参数扫描：λ_max</b>
-        <span class="dim small">（{{ algoLabel(sweepRows[0].algo) }}，{{ steps(sweepRows[0].steps) }} 步；完成 {{ sweepDone }}/{{ sweepRows.length }}）</span>
-        <span v-if="chosenLam != null" class="tag tag--param">选定 λ_max={{ chosenLam }}</span>
-        <span v-else class="dim small">· 扫描结束后自动选定，Lagrangian 各格随后开始训练</span>
+        <span class="dim small">（每个 learner 各扫一次，{{ steps(sweepRows[0].steps) }} 步；完成 {{ sweepDone }}/{{ sweepRows.length }}）</span>
+        <span v-for="l in sweepLearners" :key="l" class="tag tag--param">{{ l.toUpperCase() }}：{{ chosen(l) != null ? "λ_max=" + chosen(l) : "待定" }}</span>
       </summary>
       <div class="table-scroll"><table class="grid mx">
-        <thead><tr><th>λ_max</th><th v-for="s in SCENARIOS" :key="s">{{ s.toUpperCase() }}</th></tr></thead>
+        <thead><tr><th>模型</th><th>λ_max</th><th v-for="s in SCENARIOS" :key="s">{{ s.toUpperCase() }}</th></tr></thead>
         <tbody>
-          <tr v-for="v in sweepValues" :key="v" :class="{ 'mx-chosen': v === chosenLam }">
-            <td><b>{{ v }}</b><span v-if="v === chosenLam" class="dim small"> ✓</span></td>
-            <td v-for="s in SCENARIOS" :key="s" class="mx-cell">
-              <template v-if="sweepCell(v, s)">
-                <template v-if="sweepCell(v, s).n_done">
-                  <div class="mx-gap">{{ pct(relGap(sweepCell(v, s))) }}<span class="mx-unit">gap</span></div>
-                  <div class="mx-viol">容量 {{ pct(sweepCell(v, s).test_cap_viol_rate_mean) }} · 隐私 {{ pct(sweepCell(v, s).test_conflict_viol_rate_mean) }}</div>
+          <template v-for="l in sweepLearners" :key="l">
+            <tr v-for="(v, i) in sweepValues(l)" :key="l + v" :class="{ 'mx-chosen': v === chosen(l), 'row-sep': i === 0 }">
+              <td><b v-if="i === 0">{{ l.toUpperCase() }}</b></td>
+              <td><b>{{ v }}</b><span v-if="v === chosen(l)" class="dim small"> ✓ 选定</span></td>
+              <td v-for="s in SCENARIOS" :key="s" class="mx-cell">
+                <template v-if="sweepCell(l, v, s)">
+                  <template v-if="sweepCell(l, v, s).n_done">
+                    <div class="mx-gap">{{ pct(relGap(sweepCell(l, v, s))) }}<span class="mx-unit">gap</span></div>
+                    <div class="mx-viol">容量 {{ pct(sweepCell(l, v, s).test_cap_viol_rate_mean) }} · 隐私 {{ pct(sweepCell(l, v, s).test_conflict_viol_rate_mean) }}<template v-if="sweepCell(l, v, s).final_lambda_mean != null"> · 末 λ={{ sweepCell(l, v, s).final_lambda_mean.toFixed(2) }}</template></div>
+                  </template>
+                  <div v-else-if="cellState(sweepCell(l, v, s))" class="mx-state">{{ statusLabel(cellState(sweepCell(l, v, s)).status) }}{{ cellState(sweepCell(l, v, s)).progress_pct != null ? " " + Math.round(cellState(sweepCell(l, v, s)).progress_pct) + "%" : "" }}</div>
                 </template>
-                <div v-else-if="cellState(sweepCell(v, s))" class="mx-state">{{ statusLabel(cellState(sweepCell(v, s)).status) }}{{ cellState(sweepCell(v, s)).progress_pct != null ? " " + Math.round(cellState(sweepCell(v, s)).progress_pct) + "%" : "" }}</div>
-              </template>
-              <span v-else class="dim">—</span>
-            </td>
-          </tr>
+                <span v-else class="dim">—</span>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table></div>
-      <div class="legend"><span>选择规则：三场景平均"有效 gap"最低（有违约的实例按 AR = 0 计），详见报告 lam_sweep.md。</span></div>
+      <div class="legend"><span>λ 在训练中按局对偶上升自适应，λ_max 只是它的上限。每个 learner 选三场景平均"有效 gap"最低的上限（有违约的实例按 AR = 0 计），该 learner 的 Lagrangian 格子随后开始训练；详见报告 lam_sweep_&lt;learner&gt;.md。</span></div>
     </details>
 
     <details class="panel mx-details" :open="!matrixOk">
@@ -326,7 +343,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <td v-if="roleCount('reference')" class="small">{{ refLabel(r) }}</td>
             <td v-if="hasParams">
               <span v-for="t in paramTags(r)" :key="t" class="tag tag--param">{{ t }}</span>
-              <span v-for="g in r.waiting_for || []" :key="g" class="tag tag--wait">等待 {{ GROUP_LABEL[g] ?? g }}</span>
+              <span v-for="g in r.waiting_for || []" :key="g" class="tag tag--wait">等待 {{ groupLabel(g) }}</span>
             </td>
             <td v-if="hasNet">{{ netLabel(r.net) }}<span v-if="r.device" class="dim small"> · {{ r.device.toUpperCase() }}</span></td>
             <td>

@@ -78,6 +78,8 @@ export const ROLE_LABEL = { main: "正式", sweep: "参数扫描", reference: "�
 export const ROLES = ["main", "sweep", "reference"];
 // a manifest group a run waits for
 export const GROUP_LABEL = { lam_sweep: "λ_max 扫描" };
+// v5.0.3: one sweep group per learner, lam_sweep_<learner>
+export const groupLabel = (g) => GROUP_LABEL[g] ?? (/^lam_sweep_/.test(g) ? `λ_max 扫描（${g.split("_").pop().toUpperCase()}）` : g);
 
 // v4.4.3: a run's variant is its reward mode (older pilots) or its policy network
 const VARIANT_LABEL = { graph: "结构感知网络", mlp: "MLP" };

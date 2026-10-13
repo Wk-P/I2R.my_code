@@ -229,6 +229,7 @@ def _row_from_run(scenario: str, algo: str, run_dir: Path) -> dict | None:
         "test_exit_rate":  _nan_to_none(algo_eval.get("exit_rate")),
         "net":             data.get("net") or "mlp",
         "full_episode":    bool(data.get("full_episode")),   # v4.3.7+: Repair can violate at a dead end
+        "final_lambda":    training.get("final_lambda"),      # Lagrangian: lambda at the end of training (dual ascent)
         "device":          data.get("device") or "cpu",
         "obs":             data.get("obs"),
         "train_seconds":   training.get("train_seconds"),
@@ -1928,7 +1929,8 @@ def get_batch_progress(batch_name: str):
             row = _row_from_run(r["scenario"], r["algo"], run_dir)
             if row:
                 for k in ("test_success_rate", "test_ar_mean", "ilp_ar",
-                          "test_cap_viol_rate", "test_conflict_viol_rate", "test_exit_rate", "device", "net", "full_episode"):
+                          "test_cap_viol_rate", "test_conflict_viol_rate", "test_exit_rate", "device", "net", "full_episode",
+                          "final_lambda"):
                     r[k] = row.get(k)
         elif r["status"] == "running":
             r["progress_pct"] = _log_train_pct(LOGS_ROOT / batch_name, r["exp_id"])
@@ -1957,7 +1959,7 @@ def get_batch_progress(batch_name: str):
                                  "progress_pct": r["progress_pct"]} for r in rs),
                                key=lambda x: (x["seed"] is None, x["seed"] or 0))}
         for k in ("test_success_rate", "test_ar_mean", "ilp_ar", "test_cap_viol_rate", "test_conflict_viol_rate",
-                  "test_exit_rate"):
+                  "test_exit_rate", "final_lambda"):
             row[k + "_mean"], row[k + "_std"] = agg([r.get(k) for r in done])
         rows.append(row)
     scen_order = {"lt": 0, "eq": 1, "gt": 2}

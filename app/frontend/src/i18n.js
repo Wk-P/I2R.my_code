@@ -22,6 +22,11 @@ const D = {
   "队列已暂停：排队的项目不会自动启动（": "Queue paused: queued items will not start on their own (", "恢复）": " resumes)",
   "队列中没有待执行的项目": "nothing pending in the queue", "项目": "item", "前置条件": "waits for", "数据空间": "data space",
   "结果所在的阶段（results/ 下的目录）": "the stage the results belong to (a directory under results/)",
+  // v5.0.3: per-learner lambda_max sweep, adaptive lambda
+  "λ 自适应 · 上限 ": "λ adaptive · cap ", "末 λ=": "final λ=", "待定": "pending", "选定": "chosen",
+  "（每个 learner 各扫一次，": "(one sweep per learner, ", "λ_max 扫描（": "λ_max sweep (",
+  "λ 在训练中按局对偶上升自适应，λ_max 只是它的上限。每个 learner 选三场景平均\"有效 gap\"最低的上限（有违约的实例按 AR = 0 计），该 learner 的 Lagrangian 格子随后开始训练；详见报告 lam_sweep_<learner>.md。":
+    "λ adapts per episode by dual ascent during training; λ_max is only its cap. Each learner takes the cap with the lowest mean \"effective gap\" over the three scenarios (a violating instance counts as AR = 0); its Lagrangian cells start training then; see the report lam_sweep_<learner>.md.",
   // batch detail: result matrix / sweep / run details
   "结果矩阵": "Result matrix",
   "每格一个模型（场景 × 模型 × 约束处理）：相对 gap 与测试集违约率；未完成的格子显示当前状态":
