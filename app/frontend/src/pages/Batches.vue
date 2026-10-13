@@ -9,6 +9,9 @@ import { shortTime, steps } from "../format.js";
 const batches = ref([]);
 const loading = ref(true);
 const filter = ref("all");
+// docs/data_spec.md: smoke / test batches are hidden unless asked for
+const showTests = ref(false);
+const isTest = (b) => b.purpose && b.purpose !== "main";
 let timer = null;
 const go = (h) => (window.location.hash = h);
 
@@ -22,8 +25,10 @@ watch(() => store.viewBranch, () => { loading.value = true; load(); }, { immedia
 onUnmounted(() => clearInterval(timer));
 
 const FILTERS = [["all", "全部"], ["running", "运行中"], ["finished", "已完成"], ["stopped", "已中断"], ["cancelled", "已作废"]];
-const count = (k) => (k === "all" ? batches.value.length : batches.value.filter((b) => b.status === k).length);
-const shown = computed(() => (filter.value === "all" ? batches.value : batches.value.filter((b) => b.status === filter.value)));
+const visible = computed(() => batches.value.filter((b) => showTests.value || !isTest(b)));
+const nTests = computed(() => batches.value.filter(isTest).length);
+const count = (k) => (k === "all" ? visible.value.length : visible.value.filter((b) => b.status === k).length);
+const shown = computed(() => (filter.value === "all" ? visible.value : visible.value.filter((b) => b.status === filter.value)));
 // 版本 -> 批次 (batches are already newest first, so groups come out newest first)
 const groups = computed(() => {
   const m = new Map();
@@ -50,6 +55,7 @@ const groups = computed(() => {
     <button v-for="[k, label] in FILTERS" :key="k" class="tab" :class="{ active: filter === k }" @click="filter = k">
       {{ label }} <span class="tab-count">{{ count(k) }}</span>
     </button>
+    <label v-if="nTests" class="tab tab--check"><input type="checkbox" v-model="showTests" /> 显示测试批次（smoke 等 {{ nTests }} 个）</label>
   </div>
 
   <section class="panel">
@@ -70,7 +76,8 @@ const groups = computed(() => {
         </tr>
         <tr v-for="b in g.items" :key="b.batch_name" class="clickable" @click="go(`#/batches/${b.batch_name}`)">
           <td class="indent"><a :href="`#/batches/${b.batch_name}`">{{ b.batch_name }}</a></td>
-          <td><span class="tag">{{ b.kind === "eval" ? "评估" : "训练" }}</span></td>
+          <td><span class="tag">{{ b.kind === "eval" ? "评估" : "训练" }}</span>
+            <span v-if="isTest(b)" class="tag tag--wait">{{ b.purpose === "smoke" ? "冒烟测试" : "测试" }}</span></td>
           <td><span class="badge" :class="statusClass(b.status)">{{ statusLabel(b.status) }}</span>
             <div v-if="reporting(b)" class="small report-note" data-no-i18n>{{ reportText(b.report, curLang) }}</div></td>
           <td>{{ b.version ?? "—" }}</td>

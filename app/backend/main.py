@@ -1414,6 +1414,29 @@ def _manifest_runs(manifest: dict) -> list[dict]:
     return runs
 
 
+def _v2_runs(manifest: dict) -> list[dict]:
+    """manifest v2 (docs/data_spec.md §3): every planned run with its role / group / params; "variant" stays empty
+    (params replace it)."""
+    return [{"scenario": r["scenario"], "algo": r["algo"], "seed": r.get("seed"), "variant": "", "exp_id": r.get("exp_id"),
+             "key": r.get("key"), "role": r.get("role") or "main", "group": r.get("group"),
+             "depends_on": r.get("depends_on") or [], "params": r.get("params") or {}, "steps": r.get("steps")}
+            for r in manifest.get("runs", [])]
+
+
+def _legacy_runs(runs: list[dict]) -> list[dict]:
+    """docs/data_spec.md §5: an old manifest's runs in the v2 shape -- role main, the old variant label in
+    params.variant (the panel drops it when it equals the network)."""
+    for r in runs:
+        r.update(key=None, role="main", group=None, depends_on=[], steps=None,
+                 params={"variant": r["variant"]} if r["variant"] else {})
+    return runs
+
+
+def _slot(r: dict) -> tuple:
+    """A run's place in the plan: scenario, algo, role, params, steps, seed."""
+    return (r["scenario"], r["algo"], r.get("role"), json.dumps(r.get("params") or {}, sort_keys=True), r.get("steps"), r["seed"])
+
+
 def _batch_runs(log_dir: Path) -> tuple[list[dict], dict]:
     """(runs, manifest) of one batch. manifest.json wins when present;
     otherwise runs come from old-style log file names."""
@@ -1423,7 +1446,9 @@ def _batch_runs(log_dir: Path) -> tuple[list[dict], dict]:
             manifest = json.loads(manifest_path.read_text())
             if manifest.get("kind") == "eval":       # no training runs / exp_ids, see _eval_batch_state
                 return [], manifest
-            return _manifest_runs(manifest), manifest
+            if manifest.get("schema") == 2:          # docs/data_spec.md §3: the plan is explicit
+                return _v2_runs(manifest), manifest
+            return _legacy_runs(_manifest_runs(manifest)), manifest
         except (json.JSONDecodeError, OSError):
             pass
     runs = []
@@ -1432,7 +1457,7 @@ def _batch_runs(log_dir: Path) -> tuple[list[dict], dict]:
         if m:
             runs.append({"scenario": m["scenario"], "algo": m["algo"], "seed": int(m["seed"]),
                          "variant": "", "exp_id": m["exp_id"]})
-    return runs, {}
+    return _legacy_runs(runs), {}
 
 
 def _branch_holding(runs: list[dict]) -> str | None:
@@ -1642,7 +1667,7 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
         return _eval_batch_state(batch_name, manifest)
     if not runs:
         return None
-    branch = manifest.get("branch") or _branch_holding(runs)
+    branch = manifest.get("results_space") or manifest.get("branch") or _branch_holding(runs)
     results_root = _results_root(branch)
     for r in runs:
         if r["exp_id"] is None:
@@ -1659,13 +1684,18 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
             r["status"] = "queued"
 
     # A slot can hold several attempts after a crash/retry: keep the best one.
-    rank = {"done": 0, "running": 1, "queued": 2, "stopped": 3}
+    rank = {"done": 0, "running": 1, "waiting": 2, "queued": 2, "stopped": 3}
     best: dict[tuple, dict] = {}
     for r in runs:
-        slot = (r["scenario"], r["algo"], r["variant"], r["seed"])
+        slot = _slot(r)
         if slot not in best or rank[r["status"]] < rank[best[slot]["status"]]:
             best[slot] = r
     runs = list(best.values())
+    # v2: a run that waits for a group (e.g. the lambda_max sweep) still running or queued
+    open_groups = {r["group"] for r in runs if r.get("group") and r["status"] in ("running", "queued", "waiting")}
+    for r in runs:
+        if r["status"] == "queued" and any(g in open_groups for g in r.get("depends_on") or []):
+            r["status"] = "waiting"
 
     counts = {s: sum(1 for r in runs if r["status"] == s) for s in rank}
     # A manifest only lists runs launched so far; the planned total is the
@@ -1677,6 +1707,8 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     for k in dims:
         if isinstance(manifest.get(k), (list, dict)) and manifest[k]:
             total *= len(manifest[k])
+    if manifest.get("schema") == 2:                   # the plan is explicit
+        total = len(manifest.get("runs", []))
     total = max(total if manifest else 0, len(runs))
     if (log_dir / ".cancelled").is_file():
         status = "cancelled"
@@ -1689,10 +1721,10 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     if status in ("stopped", "cancelled", "finished"):
         # nothing is going to launch them any more
         for r in runs:
-            if r["status"] == "queued":
+            if r["status"] in ("queued", "waiting"):
                 r["status"] = "skipped"
-        counts["skipped"] = counts.pop("queued")
-        counts["queued"] = 0
+        counts["skipped"] = counts.pop("queued") + counts.pop("waiting")
+        counts["queued"] = counts["waiting"] = 0
     else:
         counts["skipped"] = 0
     log_files = list(log_dir.glob("*.log"))
@@ -1702,6 +1734,9 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
         "batch_name": batch_name,
         "status": status,
         "version": manifest.get("version"),
+        # docs/data_spec.md: main / smoke / test (old batches: from the name)
+        "purpose": manifest.get("purpose") or ("smoke" if "smoke" in batch_name else "main"),
+        "title": manifest.get("title"),
         "branch": branch or _active_space(),
         "steps": manifest.get("steps"),
         "total_runs": total,
@@ -1820,6 +1855,37 @@ def list_batches(all: bool = False, branch: str | None = None):
     return {"batches": batches}
 
 
+def _reference_rows(batch_name: str, agg) -> list[dict]:
+    """docs/data_spec.md §3: the manifest's references (other batches' runs), one row per (scenario, label), with
+    the metrics of their results.json; role "reference"."""
+    try:
+        manifest = json.loads((LOGS_ROOT / batch_name / "manifest.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    groups: dict[tuple, list[dict]] = {}
+    for ref in manifest.get("references") or []:
+        groups.setdefault((ref["scenario"], ref["algo"], json.dumps(ref.get("label") or {}, sort_keys=True)), []).append(ref)
+    rows = []
+    keys = ("test_success_rate", "test_ar_mean", "ilp_ar", "test_cap_viol_rate", "test_conflict_viol_rate", "test_exit_rate")
+    for (scenario, algo, _), refs in groups.items():
+        got = []
+        for ref in refs:
+            run = _row_from_run(scenario, algo, _results_root(ref.get("results_space")) / scenario / algo / str(ref.get("exp_id")))
+            got.append((ref, run))
+        done = [run for _, run in got if run]
+        row = {"scenario": scenario, "algo": algo, "variant": "", "key": None, "role": "reference",
+               "label": refs[0].get("label"), "params": refs[0].get("params") or {}, "steps": refs[0].get("steps"),
+               "waiting_for": [], "net": refs[0].get("net"), "device": None,
+               "full_episode": any(run.get("full_episode") for run in done), "n_done": len(done), "n_total": len(refs),
+               "seeds": sorted(({"seed": ref.get("seed"), "status": "done" if run else "stopped", "exp_id": ref.get("exp_id"),
+                                 "progress_pct": None, "branch": ref.get("results_space")} for ref, run in got),
+                               key=lambda x: x["seed"] or 0)}
+        for k in keys:
+            row[k + "_mean"], row[k + "_std"] = agg([run.get(k) for run in done])
+        rows.append(row)
+    return rows
+
+
 @app.get("/api/batch_progress/{batch_name}")
 def get_batch_progress(batch_name: str):
     """Per-run status and metrics of one batch, plus mean/std per
@@ -1854,11 +1920,14 @@ def get_batch_progress(batch_name: str):
 
     groups: dict[tuple, list[dict]] = {}
     for r in st["runs"]:
-        groups.setdefault((r["scenario"], r["algo"], r["variant"]), []).append(r)
+        groups.setdefault(_slot(r)[:5], []).append(r)
     rows = []
-    for (scenario, algo, variant), rs in groups.items():
+    for (scenario, algo, *_), rs in groups.items():
         done = [r for r in rs if r["status"] == "done"]
-        row = {"scenario": scenario, "algo": algo, "variant": variant,
+        r0 = rs[0]
+        row = {"scenario": scenario, "algo": algo, "variant": r0["variant"], "key": r0.get("key"),
+               "role": r0.get("role") or "main", "params": r0.get("params") or {}, "steps": r0.get("steps"),
+               "waiting_for": sorted({g for r in rs if r["status"] == "waiting" for g in r.get("depends_on") or []}),
                "net": next((r.get("net") for r in done if r.get("net")), None),
                "device": "/".join(sorted({r["device"] for r in done if r.get("device")})) or None,
                "full_episode": any(r.get("full_episode") for r in done),
@@ -1872,7 +1941,7 @@ def get_batch_progress(batch_name: str):
         rows.append(row)
     scen_order = {"lt": 0, "eq": 1, "gt": 2}
     rows.sort(key=lambda x: (scen_order.get(x["scenario"], 9), x["algo"], x["variant"]))
-    st["rows"] = rows
+    st["rows"] = rows + _reference_rows(batch_name, agg)
     st["elapsed_seconds"] = _elapsed(st)
     st["report"] = _report_progress(batch_name) if st["status"] != "running" else None
     return st

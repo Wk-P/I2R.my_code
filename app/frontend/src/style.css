@@ -175,6 +175,9 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 .seed--done { background: var(--ok); }
 .seed--running { background: var(--run); }
 .seed--queued { background: #cfd5df; color: #5d6778; }
+.seed--waiting { background: #fff; color: #5d6778; border: 1px solid #cfd5df; }
+.tag--param { font-variant-numeric: tabular-nums; }
+.tag--wait { background: transparent; border: 1px dashed #cfd5df; color: #5d6778; }
 .seed--skipped { background: #fff; color: #98a1b0; border: 1px dashed #cfd5df; }
 .seed--stopped { background: #e0a65a; }
 .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--text-dim); margin-top: 12px; }
@@ -364,3 +367,4 @@ a.seed:hover { text-decoration: none; outline: 2px solid var(--primary-soft); }
 
 /* whole-row click (App.vue onRowClick): rows with a link look clickable */
 .grid tbody tr:has(a[href]) { cursor: pointer; }
+.tab--check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; margin-left: auto; }

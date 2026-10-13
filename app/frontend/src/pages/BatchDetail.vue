@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from "vue";
 import { getBatch } from "../api.js";
-import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel, reporting, reportText, reportPct } from "../labels.js";
+import { SCENARIOS, SCENARIO_LABEL, algoLabel, algoIndex, learnerLabel, mechLabel, learnerOf, statusLabel, statusClass, zeroRepairViol, variantLabel, netLabel, reporting, reportText, reportPct, ROLES, ROLE_LABEL, GROUP_LABEL } from "../labels.js";
 import { langRef as curLang } from "../i18n.js";
 import { pct, fmt, pm, shortTime, secToHuman, steps } from "../format.js";
 
@@ -10,6 +10,7 @@ const props = defineProps({ name: { type: String, required: true } });
 const data = ref(null);
 const missing = ref(false);
 const scen = ref("all");
+const role = ref("main");
 let timer = null;
 
 async function load() {
@@ -21,22 +22,37 @@ async function load() {
 watch(() => props.name, () => {
   data.value = null;
   scen.value = "all";
+  role.value = "main";
   clearInterval(timer);
   load();
   timer = setInterval(load, 10000);
 }, { immediate: true });
 onUnmounted(() => clearInterval(timer));
 
+const roleOf = (r) => r.role || "main";
+const roleCount = (k) => (data.value?.rows || []).filter((r) => roleOf(r) === k).length;
+const shownRoles = computed(() => ROLES.filter((k) => roleCount(k)));
 const rows = computed(() => {
-  const rs = (data.value?.rows || []).filter((r) => scen.value === "all" || r.scenario === scen.value);
+  const rs = (data.value?.rows || []).filter((r) => (scen.value === "all" || r.scenario === scen.value) && roleOf(r) === role.value);
   return [...rs].sort((a, b) =>
     SCENARIOS.indexOf(a.scenario) - SCENARIOS.indexOf(b.scenario) ||
     algoIndex(a.algo) - algoIndex(b.algo) || a.variant.localeCompare(b.variant));
 });
-// a variant equal to the row's network is already in the 网络 column
-const variantOf = (r) => (r.variant && r.variant !== r.net ? r.variant : "");
-const hasVariant = computed(() => (data.value?.rows || []).some((r) => variantOf(r)));
-const scenCount = (s) => (data.value?.rows || []).filter((r) => r.scenario === s).length;
+// docs/data_spec.md §4: params as badges; a legacy variant equal to the row's network is already in the 网络 column,
+// steps only when they differ from the batch's default
+function paramTags(r) {
+  const out = [];
+  for (const [k, v] of Object.entries(r.params || {})) {
+    if (k === "variant") { if (v && v !== r.net) out.push(variantLabel(v)); }
+    else if (k === "lambda_max") out.push(`λ_max=${v ?? "?"}`);
+    else out.push(`${k}=${v}`);
+  }
+  if (r.steps && data.value?.steps && r.steps !== data.value.steps) out.push(`步数=${steps(r.steps)}`);
+  return out;
+}
+const hasParams = computed(() => rows.value.some((r) => paramTags(r).length || (r.waiting_for || []).length));
+const scenCount = (s) => (data.value?.rows || []).filter((r) => r.scenario === s && roleOf(r) === role.value).length;
+const refLabel = (r) => (r.label ? (curLang.value === "en" ? r.label.en : r.label.zh) : null);
 
 // first row of each scenario group gets a divider
 const firstOfLearner = (i) =>
@@ -68,7 +84,7 @@ const hasNet = computed(() => (data.value?.rows || []).some((r) => r.net));
 const seedTitle = (s) =>
   `种子 ${s.seed ?? "—"} · ${statusLabel(s.status)}${s.progress_pct != null ? ` ${s.progress_pct}%` : ""}${s.exp_id ? " · " + s.exp_id : ""}`;
 const runLink = (r, s) =>
-  s.status === "done" ? `#/run/${data.value.branch}/${r.scenario}/${r.algo}/${s.exp_id}` : null;
+  s.status === "done" ? `#/run/${s.branch || data.value.branch}/${r.scenario}/${r.algo}/${s.exp_id}` : null;
 const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.value?.branch ?? "")}&version=${encodeURIComponent(data.value?.version ?? "未标注版本")}&batch=${encodeURIComponent(props.name)}&view=pivot`);
 </script>
 
@@ -90,7 +106,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       <div class="kpi"><div class="kpi-label">总进度</div><div class="kpi-value">{{ data.overall_pct }}%</div>
         <div class="bar bar--kpi"><div class="bar-fill" :style="{ width: data.overall_pct + '%' }"></div></div></div>
       <div class="kpi"><div class="kpi-label">已完成</div><div class="kpi-value">{{ data.done }}<span class="kpi-unit">/ {{ data.total_runs }}</span></div></div>
-      <div class="kpi"><div class="kpi-label">运行 / 排队 / 中断{{ data.skipped ? " / 未运行" : "" }}</div><div class="kpi-value kpi-value--sm">{{ data.running }} / {{ data.queued }} / {{ data.stopped }}{{ data.skipped ? " / " + data.skipped : "" }}</div></div>
+      <div class="kpi"><div class="kpi-label">运行 / 排队 / 等待依赖 / 中断{{ data.skipped ? " / 未运行" : "" }}</div><div class="kpi-value kpi-value--sm">{{ data.running }} / {{ data.queued }} / {{ data.waiting ?? 0 }} / {{ data.stopped }}{{ data.skipped ? " / " + data.skipped : "" }}</div></div>
       <div v-if="data.report && !data.report.finished" class="kpi kpi--wide" data-no-i18n>
         <div class="kpi-label">{{ curLang === "en" ? "Report (after training)" : "生成报告（训练结束后）" }}</div>
         <div class="kpi-value kpi-value--sm">{{ reportPct(data.report).toFixed(0) }}%</div>
@@ -100,8 +116,13 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <div class="kpi-foot">最后更新 {{ shortTime(data.last_updated) }}</div></div>
     </div>
 
+    <div v-if="!isEval && shownRoles.length > 1" class="tabs">
+      <button v-for="k in shownRoles" :key="k" class="tab" :class="{ active: role === k }" @click="role = k">
+        {{ ROLE_LABEL[k] }} <span class="tab-count">{{ roleCount(k) }}</span>
+      </button>
+    </div>
     <div class="tabs">
-      <button class="tab" :class="{ active: scen === 'all' }" @click="scen = 'all'">全部场景 <span class="tab-count">{{ data.rows.length }}</span></button>
+      <button class="tab" :class="{ active: scen === 'all' }" @click="scen = 'all'">全部场景 <span class="tab-count">{{ isEval ? data.rows.length : roleCount(role) }}</span></button>
       <button v-for="s in SCENARIOS" :key="s" v-show="scenCount(s)" class="tab" :class="{ active: scen === s }" @click="scen = s">
         {{ s.toUpperCase() }} <span class="tab-count">{{ scenCount(s) }}</span>
       </button>
@@ -174,18 +195,22 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
       <div class="table-scroll"><table class="grid">
         <thead>
           <tr>
-            <th>场景</th><th>模型</th><th>约束处理</th><th v-if="hasVariant" title="奖励模式（早期试跑）或策略网络（v4.4.3）">变体</th><th v-if="hasNet">网络 / 设备</th><th>种子</th>
+            <th>场景</th><th>模型</th><th>约束处理</th><th v-if="role === 'reference'">来源</th><th v-if="hasParams" title="区分同一模型 × 约束处理下不同 run 的参数（docs/data_spec.md）">参数</th><th v-if="hasNet">网络 / 设备</th><th>种子</th>
             <th class="num" title="success_rate = 测试实例中 M 个服务全部合法放置且无违规的比例">success_rate</th><th class="num" title="AR = average resource utilization（平均资源利用率，优化目标）">AR</th><th class="num">ILP AR</th><th class="num" title="AR gap = ILP AR − AR">AR gap</th>
             <th class="num" title="相对 gap = (ILP AR − AR) / ILP AR">相对 gap</th>
             <th class="num">容量违规</th><th class="num">冲突违规</th><th class="num" title="Maskable 选了 EXIT 的测试实例比例">EXIT 率</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(r, i) in rows" :key="r.scenario + r.algo + r.variant" :class="{ 'row-sep': firstOfScen(i) }">
+          <tr v-for="(r, i) in rows" :key="r.scenario + r.algo + JSON.stringify(r.params) + r.steps + (refLabel(r) || '')" :class="{ 'row-sep': firstOfScen(i) }">
             <td><span v-if="firstOfScen(i)" class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
             <td><b v-if="firstOfLearner(i)">{{ learnerLabel(r.algo) }}</b></td>
             <td :class="{ dim: mechLabel(r.algo) === '无约束' }">{{ mechLabel(r.algo) }}</td>
-            <td v-if="hasVariant"><span v-if="variantOf(r)" class="tag">{{ variantLabel(variantOf(r)) }}</span></td>
+            <td v-if="role === 'reference'" class="small">{{ refLabel(r) }}</td>
+            <td v-if="hasParams">
+              <span v-for="t in paramTags(r)" :key="t" class="tag tag--param">{{ t }}</span>
+              <span v-for="g in r.waiting_for || []" :key="g" class="tag tag--wait">等待 {{ GROUP_LABEL[g] ?? g }}</span>
+            </td>
             <td v-if="hasNet">{{ netLabel(r.net) }}<span v-if="r.device" class="dim small"> · {{ r.device.toUpperCase() }}</span></td>
             <td>
               <span class="seeds">
@@ -211,6 +236,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
         <span><i class="seed seed--done"></i>已完成（可点击查看）</span>
         <span><i class="seed seed--running"></i>运行中（数字为训练进度 %）</span>
         <span><i class="seed seed--queued"></i>排队中</span>
+        <span v-if="data.waiting"><i class="seed seed--waiting"></i>等待依赖（例如等参数扫描结束）</span>
         <span v-if="data.skipped"><i class="seed seed--skipped"></i>未运行（批次已结束）</span>
         <span><i class="seed seed--stopped"></i>已中断</span>
         <span>指标为已完成种子的均值 ± 标准差；AR = average resource utilization；AR gap = ILP AR − AR；相对 gap = (ILP AR − AR) / ILP AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例</span>

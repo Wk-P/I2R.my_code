@@ -392,6 +392,15 @@ def main():
     exp_id = resolve_exp_id(outdir)
     run_dir = outdir / exp_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    # v5.0.3: self-describing run (docs/data_spec.md §2); batch / key / role / group / params come from the driver
+    (run_dir / "run.json").write_text(json.dumps({
+        "schema": 1, "exp_id": exp_id, "batch": os.environ.get("RUN_BATCH"), "key": os.environ.get("RUN_KEY"),
+        "role": os.environ.get("RUN_ROLE", "main"), "group": os.environ.get("RUN_GROUP") or None,
+        "version": VERSION, "commit": git_commit(), "scenario": a.scen, "seed": a.seed, "algo": a.algo,
+        "learner": learner, "mechanism": mech, "net": a.net, "steps": a.steps,
+        "params": {**({"lambda_max": a.lambda_max} if mech == "lagrange" else {}),
+                   **json.loads(os.environ.get("RUN_PARAMS") or "{}")},
+        "started_at": datetime.datetime.now().isoformat(timespec="seconds"), "argv": sys.argv[1:]}, indent=2))
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
           f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | separate_critic={a.separate_critic} | pair_head={a.pair_head} | group_k={a.group_k} | train={len(train)} | plan={a.plan} | plan_decay={a.plan_decay} | glob3={a.glob3} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 

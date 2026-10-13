@@ -55,6 +55,7 @@ export const STATUS = {
   stopped: ["已中断", "warn"],
   cancelled: ["已作废", "off"],
   queued: ["排队中", "off"],
+  waiting: ["等待依赖", "off"],
   skipped: ["未运行", "off"],
 };
 export const statusLabel = (s) => (STATUS[s] ?? [s])[0];
@@ -71,6 +72,12 @@ export function zeroRepairViol(obj) {
     for (const k of Object.keys(obj)) if (VIOL_KEYS.test(k) && obj[k] != null) obj[k] = 0;
   return obj;
 }
+
+// docs/data_spec.md: a run's role in its batch
+export const ROLE_LABEL = { main: "正式", sweep: "参数扫描", reference: "参照" };
+export const ROLES = ["main", "sweep", "reference"];
+// a manifest group a run waits for
+export const GROUP_LABEL = { lam_sweep: "λ_max 扫描" };
 
 // v4.4.3: a run's variant is its reward mode (older pilots) or its policy network
 const VARIANT_LABEL = { graph: "结构感知网络", mlp: "MLP" };

@@ -219,8 +219,12 @@ def launch(V, seed, scen, key, exp_ids):
     algo, net, pool, steps, ckpts, extra = spec(V, key)
     exp_id = new_exp_id()
     log = open(V["log_dir"] / f"seed{seed}_{scen}_{key}_{exp_id}.log", "w")
+    e = plan_entry(V, seed, scen, key)
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "EXP_ID": exp_id, "TRAIN_SEED": str(seed),
-           "PAPER_VERSION": V["version"], "DATA_VERSION": DATA}
+           "PAPER_VERSION": V["version"], "DATA_VERSION": DATA,
+           # v5.0.3: run.json (docs/data_spec.md §2)
+           "RUN_BATCH": V["log_dir"].name, "RUN_KEY": key, "RUN_ROLE": e["role"], "RUN_GROUP": e["group"] or "",
+           "RUN_PARAMS": json.dumps(e["params"])}
     gpu = net == "graph"
     g, node = place(V, gpu)
     if gpu:
@@ -243,35 +247,71 @@ def launch(V, seed, scen, key, exp_ids):
     return proc, log
 
 
-def variant_tag(V, key, v):
-    """Panel variant label of a manifest key. v5.0.3: the lambda_max sweep runs are "λ_max=<v> · 3M", the
-    Lagrangian runs "λ_max=<chosen>" (the network has its own panel column); before: the network (+ · 1600)."""
+def plan_entry(V, seed, scen, key):
+    """One planned run of the batch (docs/data_spec.md §3): role / group / depends_on / params of a run key.
+    v5.0.3: the lambda_max sweep runs are role "sweep", group "lam_sweep"; the Lagrangian runs wait for it and get
+    params.lambda_max = the chosen value (null until then)."""
+    from paper_rl.train import split_algo
     sw = V["cfg"].get("lam_sweep")
-    if not sw:
-        return f"{v[1]}{'' if v[2] else ' · 1600'}"
     if key.startswith("lam_sweep_"):
-        return f"λ_max={key.split('_')[-1]} · {sw['steps'] / 1e6:g}M"
-    if v[0].startswith("lagrange_"):
+        algo, net, pool, steps = sw["algo"], "graph", True, 30_000 if SMOKE else sw["steps"]
+    else:
+        (algo, net, pool), steps = V["cfg"]["variants"][key][:3], STEPS
+    mech, learner = split_algo(algo)
+    e = {"key": key, "role": "main", "group": None, "depends_on": [], "scenario": scen, "seed": seed, "algo": algo,
+         "learner": learner, "mechanism": mech, "net": net, "steps": steps, "params": {}, "train_pool": POOL if pool else None}
+    if key.startswith("lam_sweep_"):
+        e.update(role="sweep", group="lam_sweep", params={"lambda_max": float(key.split("_")[-1])})
+    elif sw and mech == "lagrange":
         lm = V.get("lam_max")
-        return f"λ_max={lm:g}" if lm is not None and lm == lm else "λ_max=?"
-    return ""
+        e.update(group="lagrange", depends_on=["lam_sweep"], params={"lambda_max": lm if lm is not None and lm == lm else None})
+    return e
+
+
+def ref_lam_max(run):
+    """lambda_max of a finished Lagrangian run (runs before v5.0.3 do not record it: 50)."""
+    try:
+        return json.loads((run / "results.json").read_text())["training"].get("lambda_max", 50.0)
+    except (OSError, KeyError, json.JSONDecodeError):
+        return 50.0
+
+
+def manifest_references(V):
+    """The report's reference series (other batches' 20M models) as manifest v2 references; they always live in the
+    default data space (formal batches), also when this batch is a smoke test."""
+    from paper_rl.train import split_algo
+    from shared.version_config import RESULTS_SPACE as REF_SPACE
+    out = []
+    for lz, le, algo, pool, pts in references(V["version"]):
+        mech, learner = split_algo(algo)
+        out += [{"label": {"zh": lz, "en": le}, "results_space": REF_SPACE, "scenario": s, "seed": sd, "algo": algo,
+                 "learner": learner, "mechanism": mech, "net": "graph", "steps": st, "exp_id": eid,
+                 "params": {"lambda_max": ref_lam_max(ROOT / "results" / REF_SPACE / s / algo / eid)} if mech == "lagrange" else {}}
+                for sd, s, eid, pat, st in pts if pat == "model_*"]
+    return out
 
 
 def write_manifest(V, exp_ids):
+    """manifest v2 (docs/data_spec.md §3): the whole plan up front, exp_id filled in at launch; "exp_ids" (the old
+    nested form) is kept for diag_regret.py and --report / --rerun."""
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    vs = dict(V["cfg"]["variants"])
-    if V["cfg"].get("lam_sweep"):                   # v5.0.3: the sweep runs are variants too (the panel counts them)
-        sw = V["cfg"]["lam_sweep"]
-        vs.update({f"lam_sweep_{v:g}": (sw["algo"], "graph", True) for v in sw["values"]})
-    algos = sorted({v[0] for v in vs.values()})
+    runs = []
+    for sd, s, k in V["plan_keys"]:
+        e = plan_entry(V, sd, s, k)
+        e["exp_id"] = exp_ids.get(str(sd), {}).get(s, {}).get(k)
+        runs.append(e)
+    if "refs" not in V:
+        V["refs"] = manifest_references(V)
     tmp = V["manifest"].with_suffix(".tmp")
-    tmp.write_text(json.dumps({"version": V["version"], "commit": commit, "data": DATA, "steps": STEPS, "checkpoints": CKPTS,
+    tmp.write_text(json.dumps({"schema": 2, "batch": V["log_dir"].name, "version": V["version"],
+                               "purpose": "smoke" if SMOKE else "main", "commit": commit, "results_space": RESULTS.name,
+                               "title": {"zh": V["cfg"]["title"][0], "en": V["cfg"]["title"][1]},
+                               "created_at": V.setdefault("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
+                               "data": DATA, "steps": STEPS, "checkpoints": CKPTS,
                                **({"lam_sweep": V["cfg"]["lam_sweep"], "lambda_max": V.get("lam_max")} if V["cfg"].get("lam_sweep") else {}),
                                "reward": "ar_pen", "gamma": 1.0, "full_episode": True, "exit_action": "Maskable only",
-                               "scenarios": SCENARIOS, "algos": algos[:1] if len(algos) == 1 else algos,
-                               "keys": {k: variant_tag(V, k, v) for k, v in vs.items()},
-                               "variants": {k: {"algo": v[0], "net": v[1], "train_pool": POOL if v[2] else None} for k, v in vs.items()},
-                               "seeds": SEEDS, "exp_ids": exp_ids}, indent=2))
+                               "scenarios": SCENARIOS, "seeds": SEEDS,
+                               "runs": runs, "references": V["refs"], "exp_ids": exp_ids}, indent=2))
     tmp.replace(V["manifest"])
 
 
@@ -668,6 +708,11 @@ def main():
     V["mps"] = os.environ.get("V5_MPS", "0") == "1" and any(v[1] == "graph" for v in V["cfg"]["variants"].values())
     V["log_dir"].mkdir(parents=True, exist_ok=True)
     V["out"].mkdir(parents=True, exist_ok=True)
+    # every planned run (manifest v2): the lambda_max sweep first (v5.0.3: the Lagrangian runs wait for it), then the
+    # variants, longest first (v5.0.0: PPO, then DQN / DDQN) so that the slowest runs do not start last
+    keys = sorted(V["cfg"]["variants"], key=lambda k: V["cfg"]["variants"][k][0].split("_")[-1] != "ppo")
+    V["plan_keys"] = ([(sd, s, f"lam_sweep_{v:g}") for v in V["cfg"]["lam_sweep"]["values"] for sd in SEEDS for s in SCENARIOS]
+                      if V["cfg"].get("lam_sweep") else []) + [(sd, s, k) for sd in SEEDS for k in keys for s in SCENARIOS]
     if a.report:
         write_report(V, json.loads(V["manifest"].read_text())["exp_ids"])
         return
@@ -682,11 +727,7 @@ def main():
         exp_ids = {}
         write_manifest(V, exp_ids)
         print(f"=== v{a.version} start {time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
-        runs = [(sd, s, k) for sd in SEEDS for k in V["cfg"]["variants"] for s in SCENARIOS]
-        # v5.0.0: longest first (PPO, then DQN / DDQN) so that the slowest runs do not start last
-        runs.sort(key=lambda r: V["cfg"]["variants"][r[2]][0].split("_")[-1] != "ppo")
-        if V["cfg"].get("lam_sweep"):               # v5.0.3: the lambda_max sweep first (the Lagrangian runs wait for it)
-            runs = [(sd, s, f"lam_sweep_{v:g}") for v in V["cfg"]["lam_sweep"]["values"] for sd in SEEDS for s in SCENARIOS] + runs
+        runs = list(V["plan_keys"])
     env_par = int(os.environ.get("V5_PARALLEL", 0))
     stages = V["cfg"].get("stages") if not a.rerun else None
     if stages:                                      # v5.0.2: one stage after the other

@@ -6,6 +6,12 @@ import { DATA } from "./i18n_data.js";
 
 const D = {
   ...DATA,
+  // docs/data_spec.md (manifest v2): roles, params, waiting, test batches
+  "正式": "main", "参数扫描": "sweep", "参照": "reference", "来源": "source", "参数": "params", "λ_max 扫描": "λ_max sweep",
+  "等待依赖（例如等参数扫描结束）": "waiting for a dependency (e.g. a parameter sweep)", "等待依赖": "waiting", "等待 ": "waiting for ",
+  "运行 / 排队 / 等待依赖 / 中断": "running / queued / waiting / interrupted",
+  "区分同一模型 × 约束处理下不同 run 的参数（docs/data_spec.md）": "parameters that tell runs of the same model × constraint handling apart (docs/data_spec.md)",
+  "显示测试批次（smoke 等": "show test batches (smoke etc., ", "个）": ")", "冒烟测试": "smoke test", "测试": "test", "步数=": "steps=",
   "次数": "count", "该版本没有独立文档": "this version has no separate doc", "顶栏切换": "switch in the top bar",
   "上一页": "Prev", "下一页": "Next", "不存在": "not found",
   "个任务完成": " jobs done", "个任务，调度器按空闲 CPU 依次启动": " jobs; the scheduler starts them as CPUs free up",
