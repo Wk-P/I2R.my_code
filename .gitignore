@@ -44,7 +44,6 @@ notion/
 # editable install metadata (src layout)
 *.egg-info/
 build/
-chat.md
 GPU_FAN*.sh
 **/.cache/
 
@@ -54,3 +53,5 @@ deploy/ref-src/
 
 
 *.zip
+
+chat/
