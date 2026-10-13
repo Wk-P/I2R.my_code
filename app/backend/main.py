@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 APP_DIR           = Path(__file__).parent
@@ -39,7 +39,11 @@ RESULTS_ROOT_BASE = PROJECT_ROOT / "results"
 SCENARIOS         = ["eq", "gt", "lt"]
 
 app = FastAPI(title="my-code experiment dashboard")
-app.mount("/assets", StaticFiles(directory=APP_DIR / "static" / "assets"), name="assets")
+# v6 (2026-10-13): the new panel (app/web -> static_v2, API in v2/) is served at /, the old one (app/frontend ->
+# static, built with base /classic/) at /classic/. Both read the same files; the old API below stays as it is.
+(APP_DIR / "static_v2" / "assets").mkdir(parents=True, exist_ok=True)
+app.mount("/classic/assets", StaticFiles(directory=APP_DIR / "static" / "assets"), name="classic-assets")
+app.mount("/assets", StaticFiles(directory=APP_DIR / "static_v2" / "assets"), name="assets")
 
 
 # ── Git branch awareness ────────────────────────────────────────────────────
@@ -1979,6 +1983,8 @@ ICONS = ["favicon.ico", "favicon.svg", "favicon-16x16.png", "favicon-32x32.png",
 def icon(name: str):
     """Icons from app/frontend/public (copied into static/ by the Vite build). iOS also probes
     apple-touch-icon-precomposed.png on its own; it gets the normal 180px icon."""
+    if name == "classic":                               # /classic -> the old panel (this route is matched first)
+        return RedirectResponse("/classic/")
     if name not in ICONS:
         raise HTTPException(404)
     path = APP_DIR / "static" / ("apple-touch-icon.png" if name == "apple-touch-icon-precomposed.png" else name)
@@ -1987,10 +1993,23 @@ def icon(name: str):
     return FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard():
+@app.get("/classic/", response_class=HTMLResponse)
+def classic_dashboard():
     html = (APP_DIR / "static" / "index.html").read_text()
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+    new = APP_DIR / "static_v2" / "index.html"
+    html = (new if new.is_file() else APP_DIR / "static" / "index.html").read_text()
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+from .v2 import router as v2_router  # noqa: E402  (v2 imports this module lazily)
+from .v2.api import warm_traces  # noqa: E402
+app.include_router(v2_router)
+app.on_event("startup")(warm_traces)
 
 
 if __name__ == "__main__":

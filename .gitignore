@@ -23,6 +23,10 @@ archive/
 app/frontend/node_modules/
 app/backend/static/assets/
 app/backend/static/index.html
+# new panel (app/web, built into app/backend/static_v2; served at /)
+app/web/node_modules/
+app/backend/static_v2/
+app/backend/v2/.trace_cache/
 old-conference-data/
 old-research-code/
 logs/

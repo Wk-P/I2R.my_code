@@ -57,7 +57,7 @@ const D = {
   "单元格为筛选范围内所有运行的均值 ± 样本标准差（n 为运行数），绿色为该列最优。点击单元格进入对应明细。AR = average resource utilization（优化目标），AR gap = ILP AR − AR；success_rate = M 个服务全部合法放置且无违规的测试实例比例。跨批次汇总时请先在左侧限定批次，避免混入不同代码版本。":
     "Each cell is the mean ± sample std over all runs in the filter (n = runs); green is the best in its column. Click a cell for details. AR = average resource utilization (the objective), AR gap = ILP AR − AR; success_rate = share of test instances with all M services placed legally. When aggregating across batches, restrict the batch on the left first to avoid mixing code versions.",
   "单次耗时（逐个运行；合并成 batch 时更低）": "time per run (one by one; lower when batched)", "单次耗时 ms": "time per run ms",
-  "只在成功的测试实例上平均": "averaged over successful test instances only", "只读面板，不影响任何训练进程": "read-only panel; does not affect any training process",
+  "只在成功的测试实例上平均": "averaged over successful test instances only", "只读面板，不影响任何训练进程": "read-only panel; does not affect any training process", "新版面板 →": "New panel →",
   "同一批成功实例上 ILP 最优解的 AR": "AR of the ILP optimum on the same successful instances", "同组其他种子": "other seeds in this group",
   "在实验结果中对比 →": "compare in Results →", "场景": "scenario", "基本信息": "basic info", "奖励模式": "reward mode",
   "完成于": "finished at", "完成时间": "finished", "完成": "done", "实验管理台": "Experiment Console", "实验结果": "Results",

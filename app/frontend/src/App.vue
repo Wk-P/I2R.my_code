@@ -122,6 +122,7 @@ const updated = computed(() =>
           </a>
         </template>
       </nav>
+      <a class="new-panel-link" href="/">新版面板 →</a>
       <div class="sidebar-foot">只读面板，不影响任何训练进程</div>
     </aside>
 
