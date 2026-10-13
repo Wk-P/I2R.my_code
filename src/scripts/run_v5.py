@@ -9,6 +9,11 @@ PPO / DQN hyper-parameters from paper_rl/config.py, the same for both networks.
            Maskable DQN / DDQN from v4.5.2 (same setting, one continuous 20M run each; the v5.0.0 code trains them
            bit-identically, so re-running them would reproduce the same models). Maskable PPO is re-trained here because
            v4.4.15-17 reached 20M by resuming twice (5M -> 10M -> 20M).
+    5.0.3  seed 1 only: PPO x {Maskable, unconstrained, Repair} and the new Lagrangian (per-step cost lambda * c_t,
+           lambda fixed within an episode, J_C = violations per episode, d = 0.001, window 1000, eta 0.5) x
+           {PPO, DQN, DDQN}. lambda_max is chosen first by a short sweep (Lagrangian DQN, 3M steps, {1, 2, 5}): the
+           value with the lowest mean effective gap (violating instances count as AR = 0); the Lagrangian runs start
+           when the sweep is done. DQN / DDQN unconstrained / Repair and the old Lagrangian: v5.0.2 seed 1.
 
 Speed-ups that leave training unchanged (v5.0.0, checked by src/scripts/check_v5.py: training is bit-identical to the
 v4.5 code on CPU and GPU): Mask DQN / DDQN build the state features once for Q-values and mask (1.20x total throughput
@@ -82,6 +87,18 @@ CONFIG = {
               # check_v5 speed_mask_ppo.md); an interim report after each stage but the last.
               "stages": [{"name": "DQN / DDQN", "learners": ["dqn", "ddqn"], "parallel": 27, "mps": False},   # DQN: MPS no gain (speed_mask_dqn_ABCD)
                          {"name": "PPO", "learners": ["ppo"], "parallel": 18, "mps": True}]},  # Legacy MPS (Pascal 1080 Ti): 27 clients fail with "Failed to create/open SHM segment", 18 ran fine
+    "5.0.3": {"variants": {
+                           "ppo_mask": ("mask_ppo", "graph", True, "Maskable PPO", "Maskable PPO"),
+                           "ppo_none": ("ppo", "graph", True, "无约束 PPO", "Unconstrained PPO"),
+                           "ppo_repair": ("repair_ppo", "graph", True, "Repair PPO", "Repair PPO"),
+                           "ppo_lagrange": ("lagrange_ppo", "graph", True, "Lagrangian PPO（新）", "Lagrangian PPO (new)"),
+                           "dqn_lagrange": ("lagrange_dqn", "graph", True, "Lagrangian DQN（新）", "Lagrangian DQN (new)"),
+                           "ddqn_lagrange": ("lagrange_ddqn", "graph", True, "Lagrangian DDQN（新）", "Lagrangian DDQN (new)"),
+                           },
+              "title": ("种子 1：PPO 四机制 + 新 Lagrangian（每步代价、d = 0.001）× PPO / DQN / DDQN（5 万实例、20M）",
+                        "Seed 1: PPO x four mechanisms + new Lagrangian (per-step cost, d = 0.001) x PPO / DQN / DDQN (50k instances, 20M)"),
+              "seeds": [1], "parallel": 18, "mps": True, "time_bench": True,   # 18: Legacy MPS limit on the Pascal GPUs
+              "lam_sweep": {"algo": "lagrange_dqn", "values": [1.0, 2.0, 5.0], "steps": 3_000_000, "ckpts": [1_000_000]}},
 }
 
 
@@ -100,7 +117,18 @@ def references(version):
             pts += [(sd, s, ids[str(sd)][s][key], pat, int(st)) for sd in SEEDS for s in SCENARIOS for pat, st in plan
                     if ids.get(str(sd), {}).get(s, {}).get(key)]
         refs.append(("Maskable PPO（v4.4.15–17）", "Maskable PPO (v4.4.15-17)", "mask_ppo", True, pts))
-    if version == "5.0.2":                          # Maskable DQN / DDQN with the structure-aware network: v4.5.2
+    if version == "5.0.3":                          # v5.0.2 (same setting, seed 1): DQN / DDQN unconstrained / Repair / old Lagrangian
+        man = ROOT / "logs" / "v5.0.2" / "manifest.json"
+        if man.exists():
+            ids = json.loads(man.read_text())["exp_ids"]
+            for key, (algo, _, _, lz, le) in CONFIG["5.0.2"]["variants"].items():
+                if not key.startswith(("dqn_", "ddqn_")):
+                    continue
+                old = key.endswith("_lagrange")
+                pts = [(sd, s, ids[str(sd)][s][key], pat, st) for sd in SEEDS for s in SCENARIOS
+                       for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)] if ids.get(str(sd), {}).get(s, {}).get(key)]
+                refs.append((f"{lz}（{'旧，' if old else ''}v5.0.2）", f"{le} ({'old, ' if old else ''}v5.0.2)", algo, True, pts))
+    if version in ("5.0.2", "5.0.3"):               # Maskable DQN / DDQN with the structure-aware network: v4.5.2
         man = ROOT / "logs" / "v4.5.2" / "manifest.json"
         if man.exists():
             ids = json.loads(man.read_text())["exp_ids"]
@@ -175,8 +203,20 @@ def new_exp_id():
                           cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
 
 
-def launch(V, seed, scen, key, exp_ids):
+def spec(V, key):
+    """(algo, net, 50k pool?, steps, checkpoints, extra train args) of a run key; v5.0.3: the lambda_max sweep keys
+    lam_sweep_<value>, and every Lagrangian run gets --lambda-max (the sweep's choice)."""
+    sw = V["cfg"].get("lam_sweep")
+    if key.startswith("lam_sweep_"):
+        return (sw["algo"], "graph", True, 30_000 if SMOKE else sw["steps"], [10_240] if SMOKE else sw["ckpts"],
+                ["--lambda-max", key.split("_")[-1]])
     algo, net, pool, *_ = V["cfg"]["variants"][key]
+    extra = ["--lambda-max", str(V["lam_max"])] if sw and algo.startswith("lagrange_") else []
+    return algo, net, pool, STEPS, CKPTS, extra
+
+
+def launch(V, seed, scen, key, exp_ids):
+    algo, net, pool, steps, ckpts, extra = spec(V, key)
     exp_id = new_exp_id()
     log = open(V["log_dir"] / f"seed{seed}_{scen}_{key}_{exp_id}.log", "w")
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "EXP_ID": exp_id, "TRAIN_SEED": str(seed),
@@ -190,7 +230,7 @@ def launch(V, seed, scen, key, exp_ids):
     pre = ["numactl", f"--cpunodebind={node}", f"--preferred={node}"] if V["numa"] else []
     cmd = pre + [PY_GPU if gpu else PY, "-u", "-m", "paper_rl.train", "--scen", scen, "--algo", algo, "--net", net,
            "--reward", "ar_pen", "--reward-norm", "none", "--obs", "base", "--gamma", "1.0", "--full-episode",
-           "--steps", str(STEPS), "--checkpoints", ",".join(map(str, CKPTS)), "--seed", str(seed)]
+           "--steps", str(steps), "--checkpoints", ",".join(map(str, ckpts)), "--seed", str(seed)] + extra
     cmd += ["--exit-action"] if algo.startswith("mask_") else []   # EXIT exists for Maskable only (PlacementEnv ignores it otherwise)
     cmd += ["--device", "cuda"] if gpu else []
     cmd += ["--train-pool", POOL] if pool else []
@@ -203,31 +243,61 @@ def launch(V, seed, scen, key, exp_ids):
     return proc, log
 
 
+def variant_tag(V, key, v):
+    """Panel variant label of a manifest key. v5.0.3: the lambda_max sweep runs are "λ_max=<v> · 3M", the
+    Lagrangian runs "λ_max=<chosen>" (the network has its own panel column); before: the network (+ · 1600)."""
+    sw = V["cfg"].get("lam_sweep")
+    if not sw:
+        return f"{v[1]}{'' if v[2] else ' · 1600'}"
+    if key.startswith("lam_sweep_"):
+        return f"λ_max={key.split('_')[-1]} · {sw['steps'] / 1e6:g}M"
+    if v[0].startswith("lagrange_"):
+        lm = V.get("lam_max")
+        return f"λ_max={lm:g}" if lm is not None and lm == lm else "λ_max=?"
+    return ""
+
+
 def write_manifest(V, exp_ids):
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    vs = V["cfg"]["variants"]
+    vs = dict(V["cfg"]["variants"])
+    if V["cfg"].get("lam_sweep"):                   # v5.0.3: the sweep runs are variants too (the panel counts them)
+        sw = V["cfg"]["lam_sweep"]
+        vs.update({f"lam_sweep_{v:g}": (sw["algo"], "graph", True) for v in sw["values"]})
     algos = sorted({v[0] for v in vs.values()})
     tmp = V["manifest"].with_suffix(".tmp")
     tmp.write_text(json.dumps({"version": V["version"], "commit": commit, "data": DATA, "steps": STEPS, "checkpoints": CKPTS,
+                               **({"lam_sweep": V["cfg"]["lam_sweep"], "lambda_max": V.get("lam_max")} if V["cfg"].get("lam_sweep") else {}),
                                "reward": "ar_pen", "gamma": 1.0, "full_episode": True, "exit_action": "Maskable only",
                                "scenarios": SCENARIOS, "algos": algos[:1] if len(algos) == 1 else algos,
-                               "keys": {k: f"{v[1]}{'' if v[2] else ' · 1600'}" for k, v in vs.items()},
+                               "keys": {k: variant_tag(V, k, v) for k, v in vs.items()},
                                "variants": {k: {"algo": v[0], "net": v[1], "train_pool": POOL if v[2] else None} for k, v in vs.items()},
                                "seeds": SEEDS, "exp_ids": exp_ids}, indent=2))
     tmp.replace(V["manifest"])
 
 
 # ── evaluation ──────────────────────────────────────────────────────────────
-def _gap(model, insts, learner, mech="mask", lam=0.0):
+def _gap(model, insts, learner, mech="mask", lam=0.0, lam_max=50.0):
     """Relative gap on the violation-free instances (Mask: not EXITed -- Mask never violates), the share of
     instances that are not (EXIT / any violation), and the capacity / privacy violation rates (v5.0.0)."""
     from paper_rl.train import evaluate
     obs = "raw" if model.policy.__class__.__name__.startswith("Graph") else "base"
-    ev = evaluate(model, insts, mech, "ar_pen", lam, learner, obs, True, True)
+    ev = evaluate(model, insts, mech, "ar_pen", lam, learner, obs, True, True, lam_max=lam_max)
     ok = [e for e in ev if not e["exited"] and e["cap_v"] == 0 and e["conf_v"] == 0]
     ar, ilp = (np.mean([e["ar"] for e in ok]), np.mean([e["ar_star"] for e in ok])) if ok else (np.nan, np.nan)
     return (float((ilp - ar) / ilp), 1 - len(ok) / len(ev),
             float(np.mean([e["cap_v"] > 0 for e in ev])), float(np.mean([e["conf_v"] > 0 for e in ev])))
+
+
+def lagrange_lambda(run, mech, pat="model_*", step=None):
+    """(lambda the policy was trained at, lambda_max = its scale in the observation) of a saved model (v5.0.0);
+    runs before v5.0.3 do not record lambda_max: 50."""
+    if mech != "lagrange":
+        return 0.0, 50.0
+    if pat.startswith("ckpt_"):
+        d = json.loads((run / "ckpt_lambda.json").read_text())
+        return d[str(step)], d.get("lambda_max", 50.0)
+    t = json.loads((run / "results.json").read_text())["training"]
+    return t["final_lambda"], t.get("lambda_max", 50.0)
 
 
 def ckpt_eval(job):
@@ -246,12 +316,8 @@ def ckpt_eval(job):
         p = json.loads((ROOT / POOL.format(scen=s)).read_text())
         train = [p[i] for i in sorted(random.Random(0).sample(range(len(p)), 1600))]
     model = model_class(learner, mech).load(str(files[0]), device="cpu")
-    lam = 0.0
-    if mech == "lagrange":                          # v5.0.0: evaluate with the lambda the policy was trained at
-        run = RESULTS / s / algo / eid
-        lam = (json.loads((run / "ckpt_lambda.json").read_text())[str(step)] if pat.startswith("ckpt_")
-               else json.loads((run / "results.json").read_text())["training"]["final_lambda"])
-    (te, ex, cap, conf), (tr, ex_tr, *_) = _gap(model, test, learner, mech, lam), _gap(model, train, learner, mech, lam)
+    lam, lam_max = lagrange_lambda(RESULTS / s / algo / eid, mech, pat, step)
+    (te, ex, cap, conf), (tr, ex_tr, *_) = _gap(model, test, learner, mech, lam, lam_max), _gap(model, train, learner, mech, lam, lam_max)
     return job, (te, tr, ex, cap, conf, ex_tr)
 
 
@@ -295,9 +361,9 @@ def policy_time(job):
     mech, learner = split_algo(algo)
     test = split_instances(s, sd)[2]
     model = model_class(learner, mech).load(str(files[0]), device="cpu")
-    lam = json.loads((RESULTS / s / algo / eid / "results.json").read_text())["training"].get("final_lambda", 0.0) if mech == "lagrange" else 0.0
+    lam, lam_max = lagrange_lambda(RESULTS / s / algo / eid, mech)
     obs_mode = "raw" if model.policy.__class__.__name__.startswith("Graph") else "base"
-    env = PlacementEnv(test, mech, "ar_pen", lam=lam, obs_mode=obs_mode, full_episode=True, exit_action=True)
+    env = PlacementEnv(test, mech, "ar_pen", lam=lam, obs_mode=obs_mode, full_episode=True, exit_action=True, lam_max=lam_max)
     masked_ppo = learner == "ppo" and mech == "mask"
 
     def episode(k):
@@ -478,16 +544,93 @@ def write_report(V, exp_ids, interim: bool = False):
         print(f"report -> {p}", flush=True)
 
 
+# ── lambda_max sweep (v5.0.3) ───────────────────────────────────────────────
+def sweep_eval(job):
+    """Effective gap (violating instances count as AR = 0), violation-free share and the gap on the violation-free
+    instances of one sweep model on its seed's test split."""
+    import torch
+    torch.set_num_threads(1)
+    from paper_rl.train import evaluate, model_class, split_algo, split_instances
+    algo, sd, s, eid = job
+    run = RESULTS / s / algo / eid
+    mech, learner = split_algo(algo)
+    model = model_class(learner, mech).load(str(next(run.glob("model_*"))), device="cpu")
+    lam, lam_max = lagrange_lambda(run, mech)
+    ev = evaluate(model, split_instances(s, sd)[2], mech, "ar_pen", lam, learner, "raw", True, True, lam_max=lam_max)
+    ok = [e["cap_v"] == 0 and e["conf_v"] == 0 for e in ev]
+    ilp = np.mean([e["ar_star"] for e in ev])
+    eff = 1 - np.mean([e["ar"] * o for e, o in zip(ev, ok)]) / ilp
+    g = [e for e, o in zip(ev, ok) if o]
+    gap = (np.mean([e["ar_star"] for e in g]) - np.mean([e["ar"] for e in g])) / np.mean([e["ar_star"] for e in g]) if g else float("nan")
+    return job, (float(eff), float(np.mean(ok)), float(gap), lam)
+
+
+def choose_lam_max(V, exp_ids) -> float:
+    """Evaluate the sweep and pick the lambda_max with the lowest mean effective gap; report (zh + en)."""
+    sw = V["cfg"]["lam_sweep"]
+    keys = [f"lam_sweep_{v:g}" for v in sw["values"]]
+    jobs = [(sw["algo"], sd, s, exp_ids[str(sd)][s][k]) for k in keys for sd in SEEDS for s in SCENARIOS]
+    with Pool(min(len(jobs), 18)) as pool:
+        res = dict(pool.map(sweep_eval, jobs))
+    row = {k: {s: res[(sw["algo"], sd, s, exp_ids[str(sd)][s][k])] for sd in SEEDS for s in SCENARIOS} for k in keys}
+    score = {v: np.mean([row[k][s][0] for s in SCENARIOS]) for v, k in zip(sw["values"], keys)}
+    best = min(score, key=score.get)
+    if os.environ.get("V5_LAM_MAX"):                # manual override
+        best = float(os.environ["V5_LAM_MAX"])
+    pc = lambda x: "—" if x != x else f"{100 * x:.1f}%"
+    for zh in (True, False):
+        T = lambda z, e: z if zh else e
+        L = [f"# v{V['version']} " + T("λ_max 扫描", "λ_max sweep"), "",
+             T(f"- {sw['algo']}、种子 {SEEDS[0]}、{sw['steps'] / 1e6:g}M 步，λ_max ∈ {{{', '.join(f'{v:g}' for v in sw['values'])}}}；"
+               "测试集 400 实例确定性评估。",
+               f"- {sw['algo']}, seed {SEEDS[0]}, {sw['steps'] / 1e6:g}M steps, λ_max ∈ {{{', '.join(f'{v:g}' for v in sw['values'])}}}; "
+               "deterministic evaluation on the 400 test instances."),
+             T("- 有效 gap：有违约的实例按 AR = 0 计，1 − 平均 AR / 平均 ILP AR；按三场景平均有效 gap 最小选 λ_max。",
+               "- Effective gap: a violating instance counts as AR = 0, 1 − mean AR / mean ILP AR; λ_max = lowest mean effective gap over the scenarios."),
+             T(f"- **选定 λ_max = {best:g}**", f"- **Chosen λ_max = {best:g}**")
+             + (T("（V5_LAM_MAX 手动指定）", " (set by V5_LAM_MAX)") if os.environ.get("V5_LAM_MAX") else ""), "",
+             "| λ_max | " + " | ".join(f"{s.upper()} " + T("有效 gap / 无违约 / gap / 末 λ", "eff. gap / violation-free / gap / final λ") for s in SCENARIOS)
+             + " | " + T("平均有效 gap", "mean eff. gap") + " |",
+             "|---" * (len(SCENARIOS) + 2) + "|"]
+        for v, k in zip(sw["values"], keys):
+            L.append(f"| {v:g} | " + " | ".join(f"{pc(row[k][s][0])} / {pc(row[k][s][1])} / {pc(row[k][s][2])} / {row[k][s][3]:.3f}"
+                                               for s in SCENARIOS) + f" | {pc(score[v])} |")
+        (V["out"] / ("lam_sweep.md" if zh else "lam_sweep.en.md")).write_text("\n".join(L) + "\n")
+    print(f"[{time.strftime('%H:%M:%S')}] lambda_max sweep: " + ", ".join(f"{v:g} -> {100 * x:.1f}%" for v, x in score.items())
+          + f" | chosen {best:g}", flush=True)
+    return best
+
+
 def run_batch(V, runs, limit, exp_ids) -> list[str]:
-    """Train `runs` with at most `limit` at a time (inside MPS when V["mps"]); returns the failed labels."""
+    """Train `runs` with at most `limit` at a time (inside MPS when V["mps"]); returns the failed labels.
+    v5.0.3: with a lambda_max sweep, the Lagrangian runs wait until every sweep run has finished and lambda_max is chosen."""
     failed = []
     if V["mps"]:
         mps_start()
     pending, active = list(runs), []
+    sweeping = lambda: any(r[2].startswith("lam_sweep_") for r in pending) or any(a[2].split()[-1].startswith("lam_sweep_") for a in active)
+    gated = lambda r: (V["cfg"].get("lam_sweep") and V.get("lam_max") is None
+                       and V["cfg"]["variants"].get(r[2], ("",))[0].startswith("lagrange_"))
     while pending or active:
-        while pending and len(active) < limit:
-            sd, s, k = pending.pop(0)
+        if V["cfg"].get("lam_sweep") and V.get("lam_max") is None and not sweeping():
+            sw_failed = [f for f in failed if "lam_sweep_" in f]
+            if sw_failed:                           # no lambda_max: drop the Lagrangian runs
+                dropped = [r for r in pending if gated(r)]
+                pending = [r for r in pending if not gated(r)]
+                failed += [f"seed{sd} {s} {k} (not started: sweep failed)" for sd, s, k in dropped]
+                V["lam_max"] = float("nan")
+            else:
+                V["lam_max"] = choose_lam_max(V, exp_ids)
+                write_manifest(V, exp_ids)
+        while len(active) < limit:
+            nxt = next((r for r in pending if not gated(r)), None)
+            if nxt is None:
+                break
+            pending.remove(nxt)
+            sd, s, k = nxt
             active.append((*launch(V, sd, s, k, exp_ids), f"seed{sd} {s} {k}"))
+        if not active:
+            continue
         running = []
         for p, f, label in active:
             if p.poll() is None:
@@ -513,11 +656,14 @@ def main():
     ap.add_argument("--rerun", nargs=3, metavar=("SEED", "SCEN", "KEY"), action="append",
                     help="re-train one failed run under a new exp_id, replacing it in the manifest; report + email at the end")
     a = ap.parse_args()
+    global SEEDS
+    SEEDS = [1] if SMOKE else CONFIG[a.version].get("seeds", SEEDS)   # v5.0.3: seed 1 only
     sfx = "_smoke" if SMOKE else ""
     V = {"version": a.version, "cfg": CONFIG[a.version], "log_dir": ROOT / "logs" / f"v{a.version}{sfx}",
          "out": ROOT / ("results" if SMOKE else "paper_contents") / (f"smoke_v{a.version}" if SMOKE else f"v{a.version}")}
     V["manifest"], V["report"] = V["log_dir"] / "manifest.json", V["out"] / "report.md"
     V["active_res"], V["gpu_node"] = {}, gpu_nodes()
+    V["lam_max"] = json.loads(V["manifest"].read_text()).get("lambda_max") if (a.rerun or a.report) and V["manifest"].exists() else None
     V["numa"] = os.environ.get("V5_NUMA", "0") == "1"      # off by default: no gain in check_v5 speed (0.99x)
     V["mps"] = os.environ.get("V5_MPS", "0") == "1" and any(v[1] == "graph" for v in V["cfg"]["variants"].values())
     V["log_dir"].mkdir(parents=True, exist_ok=True)
@@ -529,7 +675,7 @@ def main():
         exp_ids = json.loads(V["manifest"].read_text())["exp_ids"]
         runs = [(int(sd), s, k) for sd, s, k in a.rerun]
         for sd, s, k in runs:
-            assert sd in SEEDS and s in SCENARIOS and k in V["cfg"]["variants"], (sd, s, k)
+            assert sd in SEEDS and s in SCENARIOS and (k in V["cfg"]["variants"] or k.startswith("lam_sweep_")), (sd, s, k)
             print(f"=== v{a.version} rerun seed{sd} {s} {k} (was {exp_ids.get(str(sd), {}).get(s, {}).get(k)}) "
                   f"{time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
     else:
@@ -539,6 +685,8 @@ def main():
         runs = [(sd, s, k) for sd in SEEDS for k in V["cfg"]["variants"] for s in SCENARIOS]
         # v5.0.0: longest first (PPO, then DQN / DDQN) so that the slowest runs do not start last
         runs.sort(key=lambda r: V["cfg"]["variants"][r[2]][0].split("_")[-1] != "ppo")
+        if V["cfg"].get("lam_sweep"):               # v5.0.3: the lambda_max sweep first (the Lagrangian runs wait for it)
+            runs = [(sd, s, f"lam_sweep_{v:g}") for v in V["cfg"]["lam_sweep"]["values"] for sd in SEEDS for s in SCENARIOS] + runs
     env_par = int(os.environ.get("V5_PARALLEL", 0))
     stages = V["cfg"].get("stages") if not a.rerun else None
     if stages:                                      # v5.0.2: one stage after the other
@@ -546,7 +694,7 @@ def main():
         plan = [(st, [r for r in runs if learner(r) in st["learners"]]) for st in stages]
         assert sum(len(x) for _, x in plan) == len(runs), "every run must belong to a stage"
     else:
-        plan = [({"name": "all", "parallel": V["cfg"].get("parallel"), "mps": V["mps"]}, runs)]
+        plan = [({"name": "all", "parallel": V["cfg"].get("parallel"), "mps": V["cfg"].get("mps", V["mps"])}, runs)]
     failed = []
     for k_st, (st, st_runs) in enumerate(plan):
         if os.environ.get("V5_MPS") is None:        # a stage's own MPS setting unless V5_MPS is given explicitly

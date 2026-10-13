@@ -61,11 +61,13 @@ export const statusLabel = (s) => (STATUS[s] ?? [s])[0];
 export const statusClass = (s) => "badge--" + ((STATUS[s] ?? [s, "off"])[1]);
 
 // Repair-type algorithms never execute a violating placement; the stored
-// violation counts are repair triggers, which are not reported.
+// violation counts are repair triggers, which are not reported. Not so with
+// full_episode (v4.3.7+): at a dead end Repair executes the agent's own
+// infeasible choice, and those violations are real.
 export const isRepair = (a) => a === "ppo_opt" || /^repair_/.test(a ?? "");
 const VIOL_KEYS = /viol_(rate|total)/;
 export function zeroRepairViol(obj) {
-  if (obj && isRepair(obj.algo))
+  if (obj && isRepair(obj.algo) && !obj.full_episode)
     for (const k of Object.keys(obj)) if (VIOL_KEYS.test(k) && obj[k] != null) obj[k] = 0;
   return obj;
 }

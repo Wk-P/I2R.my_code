@@ -42,16 +42,16 @@ DQN_NET_ARCH = [128, 128]
 DQN_TORCH_THREADS = 2
 
 # ── Lagrangian dual ascent (Lagrange-PPO / -DQN / -DDQN) ───────────────────
-# Cost charged at the end of the episode: -lambda * (capacity + privacy violations).
-# Every LAMBDA_UPDATE_WINDOW episodes after LAMBDA_WARMUP_EPISODES:
-#   lambda <- clip(lambda + LAMBDA_LR * (mean violation rate - LAMBDA_TARGET), 0, LAMBDA_MAX)
-# violation rate of an episode = (capacity + privacy violations) / M.
+# v5.0.3: every step is charged -lambda * c_t, c_t = capacity + privacy violations of that placement;
+# lambda is fixed within an episode. Every LAMBDA_UPDATE_WINDOW episodes after LAMBDA_WARMUP_EPISODES:
+#   lambda <- clip(lambda + LAMBDA_LR * (J_C - LAMBDA_TARGET), 0, lambda_max)
+# J_C = mean number of violations per episode over the last LAMBDA_UPDATE_WINDOW episodes.
+# (v4.3.1.5-v5.0.2: cost charged once at the end, J_C = violations / M, LR 0.005, target 0, window 20, max 50.)
 LAMBDA_INIT = 0.1
-LAMBDA_LR = 0.005
-LAMBDA_TARGET = 0.0
-LAMBDA_MAX = 50.0                     # v4.3.1.5 (was 5.0): violating "stack everything on one ECU"
-                                      # earns M*AR_exec ~ 175 in LT, so lambda must be able to exceed ~6
-LAMBDA_UPDATE_WINDOW = 20
+LAMBDA_LR = 0.5
+LAMBDA_TARGET = 0.001                 # near zero: at most ~1 violation per 1000 episodes
+LAMBDA_MAX = 50.0                     # default of --lambda-max; v5.0.3 sets it per run (ar_pen: |r| <= 1)
+LAMBDA_UPDATE_WINDOW = 1000
 LAMBDA_WARMUP_EPISODES = 5000
 
 # ── succ_first reward (default since v4.3.1.9) ─────────────────────────────

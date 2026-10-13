@@ -219,6 +219,7 @@ def _row_from_run(scenario: str, algo: str, run_dir: Path) -> dict | None:
         "test_conflict_viol_total": algo_eval.get("conflict_viol_total"),
         "test_exit_rate":  _nan_to_none(algo_eval.get("exit_rate")),
         "net":             data.get("net") or "mlp",
+        "full_episode":    bool(data.get("full_episode")),   # v4.3.7+: Repair can violate at a dead end
         "device":          data.get("device") or "cpu",
         "obs":             data.get("obs"),
         "train_seconds":   training.get("train_seconds"),
@@ -1670,7 +1671,10 @@ def _batch_state(batch_name: str, live_exp_ids: set[str]) -> dict | None:
     # A manifest only lists runs launched so far; the planned total is the
     # product of its scenarios / algos / seeds / modes lists.
     total = 1
-    for k in ("scenarios", "algos", "seeds", "modes", "keys"):
+    # "keys" (v4.4.3+) already names every variant together with its algo; "algos" then only lists
+    # the algos those keys use, so multiplying both double-counts (v5.0.2: 900 planned instead of 90).
+    dims = ("scenarios", "seeds", "modes", "keys") if manifest.get("keys") else ("scenarios", "algos", "seeds", "modes")
+    for k in dims:
         if isinstance(manifest.get(k), (list, dict)) and manifest[k]:
             total *= len(manifest[k])
     total = max(total if manifest else 0, len(runs))
@@ -1837,8 +1841,8 @@ def get_batch_progress(batch_name: str):
             row = _row_from_run(r["scenario"], r["algo"], run_dir)
             if row:
                 for k in ("test_success_rate", "test_ar_mean", "ilp_ar",
-                          "test_cap_viol_rate", "test_conflict_viol_rate", "test_exit_rate", "device", "net"):
-                    r[k] = row[k]
+                          "test_cap_viol_rate", "test_conflict_viol_rate", "test_exit_rate", "device", "net", "full_episode"):
+                    r[k] = row.get(k)
         elif r["status"] == "running":
             r["progress_pct"] = _log_train_pct(LOGS_ROOT / batch_name, r["exp_id"])
 
@@ -1857,6 +1861,7 @@ def get_batch_progress(batch_name: str):
         row = {"scenario": scenario, "algo": algo, "variant": variant,
                "net": next((r.get("net") for r in done if r.get("net")), None),
                "device": "/".join(sorted({r["device"] for r in done if r.get("device")})) or None,
+               "full_episode": any(r.get("full_episode") for r in done),
                "n_done": len(done), "n_total": len(rs),
                "seeds": sorted(({"seed": r["seed"], "status": r["status"], "exp_id": r["exp_id"],
                                  "progress_pct": r["progress_pct"]} for r in rs),

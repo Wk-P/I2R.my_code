@@ -23,11 +23,12 @@ Mechanisms:
   mask      action_masks() = ECUs satisfying both constraints. If no ECU is
             feasible the mask is all-True and the executed placement is a
             violation (under `directional` the episode ends first, see below).
-  lagrange  action executed as chosen; the episode's constraint cost is
-            charged once at the end (v4.3.1.5): -lambda * sum_t c_t, c_t =
-            number of constraints placement t violates (v4.3.1.3-v4.3.1.4:
-            -lambda * c_t at every step). lambda is a dual variable updated by
-            the trainer and visible in the observation.
+  lagrange  action executed as chosen; every step is charged -lambda * c_t, c_t =
+            number of constraints placement t violates (capacity + privacy, 0-2)
+            (v5.0.3; v4.3.1.5-v5.0.2: -lambda * sum_t c_t once at the end). lambda is a
+            dual variable updated by the trainer, fixed within an episode (set_lambda
+            takes effect at the next reset, v5.0.3) and visible in the observation as
+            lambda / lam_max.
   repair    an infeasible action is replaced by the best-fit feasible ECU
             (argmax demand / capacity); if none exists the episode ends
             (dead end). Executed placements are therefore always feasible.
@@ -48,7 +49,7 @@ no ECU to repair to. In every reward mode the episode ends at once as a
 failure (no infeasible placement is executed); the penalty is
 -M(1 - valid/M), or -C under `directional`.
 
-Rewards (lagrange additionally gets -lambda * sum_t c_t at the end of the episode):
+Rewards (lagrange additionally gets -lambda * c_t at every step, v5.0.3):
   objective    (default in v4.3.1.4-v4.3.1.5) the objective only: r_t = 0 for t < M-1,
                terminal M * AR_exec, where AR_exec counts every executed
                placement, feasible or not -- no penalty for violations;
@@ -144,7 +145,8 @@ class PlacementEnv(gym.Env):
     def __init__(self, instances: list[dict], mechanism: str = "none",
                  reward_mode: str = "legacy", lam: float = 0.0, rng_seed: int | None = None,
                  obs_mode: str = "base", full_episode: bool = False, exit_action: bool = False,
-                 action_mode: str = "ecu", order: str = "desc", order_seed: int = 0):
+                 action_mode: str = "ecu", order: str = "desc", order_seed: int = 0,
+                 lam_max: float = C.LAMBDA_MAX):
         super().__init__()
         # v4.4.7: order in which the services are presented -- desc / asc (demand, stable) or
         # random: one fixed permutation per instance, from its content and order_seed, so an
@@ -171,7 +173,8 @@ class PlacementEnv(gym.Env):
         self.instances = instances
         self.mechanism = mechanism
         self.reward_mode = reward_mode
-        self.lam = float(lam)
+        self.lam = self._lam_next = float(lam)
+        self.lam_max = float(lam_max)                    # v5.0.3: per run; scales lambda in the observation
         self._rng = random.Random(rng_seed)
         self._fixed = None           # instance index forced by the next reset (evaluation)
         self.N = len(instances[0]["ECUs"])
@@ -186,12 +189,16 @@ class PlacementEnv(gym.Env):
 
     # ── setup ────────────────────────────────────────────────────────────────
     def set_lambda(self, lam: float) -> None:
-        self.lam = float(lam)
+        self._lam_next = float(lam)                      # v5.0.3: applied at the next reset
+
+    def reset(self, seed=None, options=None):
+        self.lam = self._lam_next
+        return self._reset(seed, options)
 
     def use_instance(self, idx: int) -> None:
         self._fixed = idx
 
-    def reset(self, seed=None, options=None):
+    def _reset(self, seed=None, options=None):
         super().reset(seed=seed)
         if seed is not None:
             self._rng.seed(seed)
@@ -281,7 +288,7 @@ class PlacementEnv(gym.Env):
                             if self.hosted[j] else 1.0 for j in range(n)], dtype=np.float32)
         conf = np.array([len(self.partners[k] & set(np.flatnonzero(un))) / m if un[k] else 0.0
                          for k in range(m)], dtype=np.float32)
-        lam_norm = min(self.lam / C.LAMBDA_MAX, 1.0) if self.mechanism == "lagrange" else 0.0
+        lam_norm = min(self.lam / self.lam_max, 1.0) if self.mechanism == "lagrange" else 0.0
         return np.concatenate([
             [self.ar, np.clip(self.remaining, 0, None).sum() / total_cap,
              self.req[un].sum() / total_cap, un.sum() / m],
@@ -313,7 +320,7 @@ class PlacementEnv(gym.Env):
             svc_valid[k] = self._feasible(k).mean()
         allowed = np.array([1.0 - len(set().union(*(self.partners[h] for h in self.hosted[j])) - self.hosted[j]) / m
                             if self.hosted[j] else 1.0 for j in range(n)], dtype=np.float32)
-        lam_norm = min(self.lam / C.LAMBDA_MAX, 1.0) if self.mechanism == "lagrange" else 0.0
+        lam_norm = min(self.lam / self.lam_max, 1.0) if self.mechanism == "lagrange" else 0.0
         return np.concatenate([
             [head[0], self.ar,
              np.clip(self.remaining, 0, None).sum() / total_cap,
@@ -345,10 +352,10 @@ class PlacementEnv(gym.Env):
     def _raw_obs(self) -> np.ndarray:
         """v4.4.3: raw state for the structure-aware policy (src/paper_rl/graph_net.decode_raw):
         capacities (N), demands in placement order (M), conflict graph (M x M), ECU of every
-        placed service + 1 (0 = not placed, M), current step t (1) [+ lambda / LAMBDA_MAX (1), Lagrange only, v4.5.4]."""
+        placed service + 1 (0 = not placed, M), current step t (1) [+ lambda / lam_max (1), Lagrange only, v4.5.4]."""
         # v5.0.0: the conflict graph is fixed within an episode (built in reset) and the assignment is kept up to date
         # in step(), instead of rebuilding both from partners / hosted on every call -- the same values
-        lam = [min(self.lam / C.LAMBDA_MAX, 1.0)] if self.raw_lam else []
+        lam = [min(self.lam / self.lam_max, 1.0)] if self.raw_lam else []
         return np.concatenate([self.cap, self.req, self._adj_flat, self._assign, [self.t], lam]).astype(np.float32)
 
     def _conflict_obs(self) -> np.ndarray:
@@ -383,7 +390,8 @@ class PlacementEnv(gym.Env):
                 "conflict_violations": self.conflict_violations, "repairs": self.repairs,
                 "cap_violated": cap_v, "conflict_violated": conf_v, "dead_end": self.dead_end, "exited": self.exited,
                 "ecus_used": len(self.legal_ecus), "inst_idx": self.inst_idx,
-                "viol_rate_ep": (self.cap_violations + self.conflict_violations) / self.M}
+                "viol_rate_ep": (self.cap_violations + self.conflict_violations) / self.M,
+                "cost_ep": self.cap_violations + self.conflict_violations}
 
     def _tel(self, r: float, done: bool, ar0: float) -> float:
         """v4.4.9 ar_tel: map the ar_pen reward of a step to the redistributed one (identity otherwise)."""
@@ -455,6 +463,6 @@ class PlacementEnv(gym.Env):
         else:
             r = (self._success_reward() if success else self._fail_reward()) if done else 0.0
             r = self._tel(r, done, ar0)
-        if self.mechanism == "lagrange" and done:          # terminal constraint cost (v4.3.1.5)
-            r -= self.lam * (self.cap_violations + self.conflict_violations)
+        if self.mechanism == "lagrange":                    # per-step constraint cost c_t (v5.0.3)
+            r -= self.lam * (int(cap_v) + int(conf_v))
         return self._obs(), float(r), done, False, self._info(cap_v, conf_v)

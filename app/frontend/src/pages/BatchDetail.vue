@@ -33,7 +33,9 @@ const rows = computed(() => {
     SCENARIOS.indexOf(a.scenario) - SCENARIOS.indexOf(b.scenario) ||
     algoIndex(a.algo) - algoIndex(b.algo) || a.variant.localeCompare(b.variant));
 });
-const hasVariant = computed(() => (data.value?.rows || []).some((r) => r.variant));
+// a variant equal to the row's network is already in the 网络 column
+const variantOf = (r) => (r.variant && r.variant !== r.net ? r.variant : "");
+const hasVariant = computed(() => (data.value?.rows || []).some((r) => variantOf(r)));
 const scenCount = (s) => (data.value?.rows || []).filter((r) => r.scenario === s).length;
 
 // first row of each scenario group gets a divider
@@ -183,7 +185,7 @@ const resultsLink = computed(() => `#/results?branch=${encodeURIComponent(data.v
             <td><span v-if="firstOfScen(i)" class="scen" :class="`scen--${r.scenario}`">{{ r.scenario.toUpperCase() }}</span></td>
             <td><b v-if="firstOfLearner(i)">{{ learnerLabel(r.algo) }}</b></td>
             <td :class="{ dim: mechLabel(r.algo) === '无约束' }">{{ mechLabel(r.algo) }}</td>
-            <td v-if="hasVariant"><span v-if="r.variant" class="tag">{{ variantLabel(r.variant) }}</span></td>
+            <td v-if="hasVariant"><span v-if="variantOf(r)" class="tag">{{ variantLabel(variantOf(r)) }}</span></td>
             <td v-if="hasNet">{{ netLabel(r.net) }}<span v-if="r.device" class="dim small"> · {{ r.device.toUpperCase() }}</span></td>
             <td>
               <span class="seeds">

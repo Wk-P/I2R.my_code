@@ -141,7 +141,7 @@ def scale_reward(env, scale: float):
 
 
 # ── training callback (logging + Lagrangian dual ascent) ────────────────────
-def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start: int = 0):
+def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start: int = 0, lam_max: float = C.LAMBDA_MAX):
     from stable_baselines3.common.callbacks import BaseCallback
     from shared.paths import write_progress
 
@@ -165,7 +165,7 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
                                   info["valid_placed"], int(info["capacity_violations"] > 0),
                                   int(info["conflict_violations"] > 0), self.lam, int(info["exited"])))
                 if mech == "lagrange":
-                    self._dual(info["viol_rate_ep"])
+                    self._dual(info["cost_ep"])
             if self.num_timesteps >= self._next:
                 el = max(time.time() - self._t0, 1e-6)
                 pct = min(100.0, 100.0 * self.num_timesteps / total_steps)
@@ -180,22 +180,23 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
                 self._next += C.PROGRESS_LOG_EVERY_STEPS
             return True
 
-        def _dual(self, viol_rate: float) -> None:
+        def _dual(self, cost: float) -> None:
+            """v5.0.3: J_C = mean violations per episode (was violations / M)."""
             self._n_ep += 1
-            self._viol.append(viol_rate)
+            self._viol.append(cost)
             if self._n_ep < C.LAMBDA_WARMUP_EPISODES:
                 return
             self._since += 1
             if len(self._viol) == C.LAMBDA_UPDATE_WINDOW and self._since >= C.LAMBDA_UPDATE_WINDOW:
                 self.lam = float(np.clip(self.lam + C.LAMBDA_LR * (np.mean(self._viol) - C.LAMBDA_TARGET),
-                                         0.0, C.LAMBDA_MAX))
+                                         0.0, lam_max))
                 self.training_env.env_method("set_lambda", self.lam)
                 self._since = 0
 
     return Cb()
 
 
-def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=None):
+def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=None, lam_max: float = C.LAMBDA_MAX):
     """v4.4.15: save the model the first time num_timesteps reaches each of `steps`.
     v4.5.4: with lam_fn (Lagrange), also record the dual variable at each checkpoint in ckpt_lambda.json,
     since the policy reads lambda from its observation and must be evaluated with the value it was trained at."""
@@ -214,6 +215,7 @@ def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=Non
                     path = run_dir / "ckpt_lambda.json"
                     lams = json.loads(path.read_text()) if path.exists() else {}
                     lams[str(step)] = round(float(lam_fn()), 6)
+                    lams["lambda_max"] = lam_max          # v5.0.3: the observation's lambda scale
                     path.write_text(json.dumps(lams, indent=2))
             return True
 
@@ -223,9 +225,9 @@ def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=Non
 # ── evaluation ──────────────────────────────────────────────────────────────
 def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base",
              full_episode: bool = False, exit_action: bool = False, action_mode: str = "ecu",
-             order: str = "desc", order_seed: int = 0) -> list[dict]:
+             order: str = "desc", order_seed: int = 0, lam_max: float = C.LAMBDA_MAX) -> list[dict]:
     env = PlacementEnv(test, mech, reward, lam=lam, obs_mode=obs_mode, full_episode=full_episode, order=order, order_seed=order_seed,
-                       exit_action=exit_action, action_mode=action_mode)
+                       exit_action=exit_action, action_mode=action_mode, lam_max=lam_max)
     out = []
     for k in range(len(test)):
         env.use_instance(k)
@@ -363,6 +365,8 @@ def main():
     ap.add_argument("--bc", action="store_true",                # v4.4.2: ILP-demonstration warm start (Mask PPO only)
                     default=os.environ.get("BC_WARMSTART", "0") == "1")
     ap.add_argument("--steps", type=int, default=5_000_000)
+    ap.add_argument("--lambda-max", type=float, default=C.LAMBDA_MAX,   # v5.0.3: upper bound of the Lagrange multiplier
+                    help="Lagrange: clip of lambda, also its scale in the observation (lambda / lambda_max)")
     ap.add_argument("--seed", type=int, default=int(os.environ.get("TRAIN_SEED", "1")))
     a = ap.parse_args()
 
@@ -394,7 +398,7 @@ def main():
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
     venv = DummyVecEnv([functools.partial(
-        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs,
+        lambda s: scale_reward(Monitor(PlacementEnv(train, mech, a.reward, lam=C.LAMBDA_INIT, rng_seed=s, obs_mode=a.obs, lam_max=a.lambda_max,
                                              full_episode=a.full_episode, exit_action=a.exit_action,
                                              action_mode=a.action, order=a.order, order_seed=a.order_seed)), scale),
         a.seed * 1000 + k) for k in range(n_envs)])
@@ -427,7 +431,7 @@ def main():
                         "bc_only_ilp_ar": round(float(np.mean([e["ar_star"] for e in ok_bc])), 6) if ok_bc else None})
         print(f"  [bc] {bc_info}", flush=True)
     start = resumed["at_step"] if resumed else 0
-    cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start)
+    cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start, a.lambda_max)
     extra = []
     if a.grad_diag:                                     # v4.4.8: actor / critic gradient conflict on the encoder
         assert a.net == "graph" and not a.separate_critic, "--grad-diag: shared graph encoder only"
@@ -435,7 +439,7 @@ def main():
         extra.append(GradDiagCallback(run_dir / "grad_cos.csv"))
     if a.checkpoints:                                   # v4.4.15: save the model at these step counts
         extra.append(checkpoint_callback(sorted(int(x) for x in a.checkpoints.split(",")), run_dir, exp_id,
-                                         (lambda: main_cb.lam) if mech == "lagrange" else None))
+                                         (lambda: main_cb.lam) if mech == "lagrange" else None, a.lambda_max))
     if extra:
         from stable_baselines3.common.callbacks import CallbackList
         cb = CallbackList([main_cb, *extra])
@@ -446,7 +450,8 @@ def main():
     lam = cb.lam if mech == "lagrange" else 0.0
     model.save(str(run_dir / f"model_{exp_id}_v{VERSION}-{a.reward}"))
 
-    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode, a.exit_action, a.action, a.order, a.order_seed)
+    ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode, a.exit_action, a.action, a.order, a.order_seed,
+                  a.lambda_max)
     sr = float(np.mean([e["success"] for e in ev]))
     ars = np.array([e["ar"] for e in ev])
     succ_ratio = [e["ar"] / e["ar_star"] for e in ev if e["success"] and e["ar_star"] > 0]
@@ -484,7 +489,8 @@ def main():
         },
         "training": {"total_steps": start + a.steps, "steps_this_run": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,
-                     **({"final_lambda": round(lam, 6)} if mech == "lagrange" else {})},
+                     **({"final_lambda": round(lam, 6), "lambda_max": a.lambda_max, "lambda_lr": C.LAMBDA_LR,
+                         "lambda_target": C.LAMBDA_TARGET, "lambda_window": C.LAMBDA_UPDATE_WINDOW} if mech == "lagrange" else {})},
     }
     (run_dir / "results.json").write_text(json.dumps(res, indent=2))
     with open(run_dir / "summary.csv", "w", newline="") as f:
