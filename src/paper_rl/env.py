@@ -174,7 +174,7 @@ class PlacementEnv(gym.Env):
         self.mechanism = mechanism
         self.reward_mode = reward_mode
         self.lam = self._lam_next = float(lam)
-        self.lam_max = float(lam_max)                    # v5.0.3: per run; scales lambda in the observation
+        self.lam_max = float(lam_max)                    # v5.0.3: per run; scales lambda in the observation (inf: no cap)
         self._rng = random.Random(rng_seed)
         self._fixed = None           # instance index forced by the next reset (evaluation)
         self.N = len(instances[0]["ECUs"])
@@ -288,7 +288,7 @@ class PlacementEnv(gym.Env):
                             if self.hosted[j] else 1.0 for j in range(n)], dtype=np.float32)
         conf = np.array([len(self.partners[k] & set(np.flatnonzero(un))) / m if un[k] else 0.0
                          for k in range(m)], dtype=np.float32)
-        lam_norm = min(self.lam / self.lam_max, 1.0) if self.mechanism == "lagrange" else 0.0
+        lam_norm = self._lam_obs() if self.mechanism == "lagrange" else 0.0
         return np.concatenate([
             [self.ar, np.clip(self.remaining, 0, None).sum() / total_cap,
              self.req[un].sum() / total_cap, un.sum() / m],
@@ -320,7 +320,7 @@ class PlacementEnv(gym.Env):
             svc_valid[k] = self._feasible(k).mean()
         allowed = np.array([1.0 - len(set().union(*(self.partners[h] for h in self.hosted[j])) - self.hosted[j]) / m
                             if self.hosted[j] else 1.0 for j in range(n)], dtype=np.float32)
-        lam_norm = min(self.lam / self.lam_max, 1.0) if self.mechanism == "lagrange" else 0.0
+        lam_norm = self._lam_obs() if self.mechanism == "lagrange" else 0.0
         return np.concatenate([
             [head[0], self.ar,
              np.clip(self.remaining, 0, None).sum() / total_cap,
@@ -349,13 +349,20 @@ class PlacementEnv(gym.Env):
             f[k] = self._feasible(k)
         return f.ravel()
 
+    def _lam_obs(self) -> float:
+        """lambda in the observation: lambda / lambda_max (clipped to 1); without a cap (lambda_max = inf, v5.0.3.2)
+        lambda / (1 + lambda), which stays in [0, 1) and keeps distinguishing large values."""
+        if np.isinf(self.lam_max):
+            return self.lam / (1.0 + self.lam)
+        return min(self.lam / self.lam_max, 1.0)
+
     def _raw_obs(self) -> np.ndarray:
         """v4.4.3: raw state for the structure-aware policy (src/paper_rl/graph_net.decode_raw):
         capacities (N), demands in placement order (M), conflict graph (M x M), ECU of every
         placed service + 1 (0 = not placed, M), current step t (1) [+ lambda / lam_max (1), Lagrange only, v4.5.4]."""
         # v5.0.0: the conflict graph is fixed within an episode (built in reset) and the assignment is kept up to date
         # in step(), instead of rebuilding both from partners / hosted on every call -- the same values
-        lam = [min(self.lam / self.lam_max, 1.0)] if self.raw_lam else []
+        lam = [self._lam_obs()] if self.raw_lam else []
         return np.concatenate([self.cap, self.req, self._adj_flat, self._assign, [self.t], lam]).astype(np.float32)
 
     def _conflict_obs(self) -> np.ndarray:

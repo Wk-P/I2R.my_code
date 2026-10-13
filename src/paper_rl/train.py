@@ -199,6 +199,16 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
     return Cb()
 
 
+def lam_max_arg(x: str) -> float:
+    """--lambda-max: a number, or 'none' for no cap (v5.0.3.2; kept as inf in memory)."""
+    return float("inf") if x.strip().lower() in ("none", "inf") else float(x)
+
+
+def lam_max_json(v: float):
+    """lambda_max as written to run.json / results.json / ckpt_lambda.json: "none" when there is no cap (JSON has no inf)."""
+    return "none" if v == float("inf") else v
+
+
 def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=None, lam_max: float = C.LAMBDA_MAX):
     """v4.4.15: save the model the first time num_timesteps reaches each of `steps`.
     v4.5.4: with lam_fn (Lagrange), also record the dual variable at each checkpoint in ckpt_lambda.json,
@@ -218,7 +228,7 @@ def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=Non
                     path = run_dir / "ckpt_lambda.json"
                     lams = json.loads(path.read_text()) if path.exists() else {}
                     lams[str(step)] = round(float(lam_fn()), 6)
-                    lams["lambda_max"] = lam_max          # v5.0.3: the observation's lambda scale
+                    lams["lambda_max"] = lam_max_json(lam_max)   # v5.0.3: the observation's lambda scale ("none": no cap)
                     path.write_text(json.dumps(lams, indent=2))
             return True
 
@@ -368,8 +378,9 @@ def main():
     ap.add_argument("--bc", action="store_true",                # v4.4.2: ILP-demonstration warm start (Mask PPO only)
                     default=os.environ.get("BC_WARMSTART", "0") == "1")
     ap.add_argument("--steps", type=int, default=5_000_000)
-    ap.add_argument("--lambda-max", type=float, default=C.LAMBDA_MAX,   # v5.0.3: upper bound of the Lagrange multiplier
-                    help="Lagrange: clip of lambda, also its scale in the observation (lambda / lambda_max)")
+    ap.add_argument("--lambda-max", type=lam_max_arg, default=C.LAMBDA_MAX,   # v5.0.3: upper bound of the Lagrange multiplier
+                    help="Lagrange: clip of lambda, also its scale in the observation (lambda / lambda_max); "
+                         "'none' = no cap (v5.0.3.2), the observation is then lambda / (1 + lambda)")
     ap.add_argument("--lambda-update", choices=["linear", "normalized"], default="linear",   # v5.0.3.1
                     help="Lagrange dual step: linear lr*(J_C - d), or normalized lr*(J_C - d)/max(J_C, d)")
     ap.add_argument("--lambda-lr", type=float, default=C.LAMBDA_LR, help="Lagrange dual step size eta (per update)")
@@ -404,7 +415,7 @@ def main():
         "role": os.environ.get("RUN_ROLE", "main"), "group": os.environ.get("RUN_GROUP") or None,
         "version": VERSION, "commit": git_commit(), "scenario": a.scen, "seed": a.seed, "algo": a.algo,
         "learner": learner, "mechanism": mech, "net": a.net, "steps": a.steps,
-        "params": {**({"lambda_max": a.lambda_max} if mech == "lagrange" else {}),
+        "params": {**({"lambda_max": lam_max_json(a.lambda_max)} if mech == "lagrange" else {}),
                    **json.loads(os.environ.get("RUN_PARAMS") or "{}")},
         "started_at": datetime.datetime.now().isoformat(timespec="seconds"), "argv": sys.argv[1:]}, indent=2))
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
@@ -504,7 +515,7 @@ def main():
         },
         "training": {"total_steps": start + a.steps, "steps_this_run": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,
-                     **({"final_lambda": round(lam, 6), "lambda_max": a.lambda_max, "lambda_lr": a.lambda_lr, "lambda_update": a.lambda_update,
+                     **({"final_lambda": round(lam, 6), "lambda_max": lam_max_json(a.lambda_max), "lambda_lr": a.lambda_lr, "lambda_update": a.lambda_update,
                          "lambda_target": C.LAMBDA_TARGET, "lambda_window": C.LAMBDA_UPDATE_WINDOW, "lambda_warmup": 0} if mech == "lagrange" else {})},
     }
     (run_dir / "results.json").write_text(json.dumps(res, indent=2))

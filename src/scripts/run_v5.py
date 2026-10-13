@@ -111,6 +111,16 @@ CONFIG = {
                 "title": ("λ 更新方式子实验：现行 λ + 0.5(J_C − d) vs 归一化 λ + 0.05(J_C − d)/max(J_C, d)，无预热、λ_max = 5（种子 1、1M、5 万实例）",
                           "λ update sub-experiment: linear λ + 0.5(J_C − d) vs normalized λ + 0.05(J_C − d)/max(J_C, d), no warm-up, λ_max = 5 (seed 1, 1M, 50k instances)"),
                 "seeds": [1], "steps": 1_000_000, "ckpts": [500_000], "parallel": 18, "mps": True},
+    # 5.0.3.2: the same two dual steps as 5.0.3.1 without a cap on lambda (lambda_max "none"; the observation is then
+    # lambda / (1 + lambda)), 20M with the default checkpoints, to see the curve lambda follows on its own
+    "5.0.3.2": {"variants": {f"{l}_lagrangian_{u}": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian · {zu}",
+                                                     f"{l.upper()} · lagrangian · {u}",
+                                                     {"lambda_max": "none", "lambda_update": u, "lambda_lr": lr})
+                             for l in ("ppo", "dqn", "ddqn")
+                             for u, zu, lr in (("linear", "现行（η = 0.5）", 0.5), ("normalized", "归一化（η = 0.05）", 0.05))},
+                "title": ("取消 λ_max：现行 λ + 0.5(J_C − d) vs 归一化 λ + 0.05(J_C − d)/max(J_C, d)，λ 不设上限、观测为 λ/(1+λ)，无预热（种子 1、20M、5 万实例）",
+                          "No λ_max: linear λ + 0.5(J_C − d) vs normalized λ + 0.05(J_C − d)/max(J_C, d), λ uncapped, observed as λ/(1+λ), no warm-up (seed 1, 20M, 50k instances)"),
+                "seeds": [1], "parallel": 18, "mps": True},
     "5.0.4": {"variants": {                         # every RL_algorithm x strategy (docs/data_spec.md), trained in this batch
                            "ppo_unconstraint": ("ppo", "graph", True, "PPO · unconstraint", "PPO · unconstraint"),
                            "ppo_lagrangian": ("lagrange_ppo", "graph", True, "PPO · lagrangian", "PPO · lagrangian"),
@@ -414,11 +424,12 @@ def lagrange_lambda(run, mech, pat="model_*", step=None):
     runs before v5.0.3 do not record lambda_max: 50."""
     if mech != "lagrange":
         return 0.0, 50.0
+    cap = lambda v: float("inf") if v == "none" else v     # v5.0.3.2: no cap ("none"); the env then observes lambda / (1 + lambda)
     if pat.startswith("ckpt_"):
         d = json.loads((run / "ckpt_lambda.json").read_text())
-        return d[str(step)], d.get("lambda_max", 50.0)
+        return d[str(step)], cap(d.get("lambda_max", 50.0))
     t = json.loads((run / "results.json").read_text())["training"]
-    return t["final_lambda"], t.get("lambda_max", 50.0)
+    return t["final_lambda"], cap(t.get("lambda_max", 50.0))
 
 
 def ckpt_eval(job):
@@ -652,6 +663,7 @@ def write_report(V, exp_ids, interim: bool = False):
         if not v[0].startswith("lagrange_"):
             continue
         cap = (v[5] if len(v) > 5 else {}).get("lambda_max") or V["lam_max"].get(v[0].split("_")[-1]) or 50.0
+        cap = float("inf") if cap == "none" else cap     # v5.0.3.2: no cap
         for sd in SEEDS:
             for s in SCENARIOS:
                 eid = exp_ids.get(str(sd), {}).get(s, {}).get(k)
@@ -696,7 +708,7 @@ def write_report(V, exp_ids, interim: bool = False):
                     if s2 != s:
                         continue
                     lz, le = vs[k][3:5]
-                    L.append(f"| {s.upper()} | {lz if zh else le} | {cap:g} | {dy['final']:.3f} | {dy['max']:.3f} | "
+                    L.append(f"| {s.upper()} | {lz if zh else le} | {T('无', 'none') if cap == float('inf') else f'{cap:g}'} | {dy['final']:.3f} | {dy['max']:.3f} | "
                              f"{dy['first_cap'] if dy['first_cap'] is not None else '—'} | {pc(dy['at_cap'])} | {dy['decreases']} | "
                              f"{dy['fall']:.3f} | {dy['jc_first']:.3f} | {dy['jc_last']:.4f} |")
             L.append("")

@@ -39,7 +39,7 @@ const tradeoff = (s) => {
     tooltip: { trigger: "item", formatter: (p) => `<b>${p.seriesName}</b><br>${t("违约", "violations")} ${p.value[0]?.toFixed(1)}% · gap ${p.value[1]?.toFixed(1)}%` },
     xAxis: { ...axisPct(t("违约率（容量或隐私）", "violation rate (capacity or privacy)")), nameLocation: "middle", nameGap: 28, min: 0 },
     yAxis: { ...axisPct(t("相对 gap", "relative gap")), scale: true },
-    series: [...series, { type: "line", data: [], markLine: { silent: true, symbol: "unconstraint", lineStyle: { type: "dashed", color: "#059669" },
+    series: [...series, { type: "line", data: [], markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: "#059669" },
       label: { formatter: t("目标 5%", "goal 5%"), position: "insideEndTop" }, data: [{ yAxis: 5 }] } }],
   };
 };
@@ -108,8 +108,8 @@ const lamOpt = (l) => {
       data: tr && tr.series.lambda ? tr.step.map((x, i) => [x, tr.series.lambda[i]]) : [] };
   });
   const cap = lamMax(l) ?? lagRuns(l)[0]?.params?.lambda_max;
-  if (cap != null && !Number.isNaN(cap))
-    series.push({ type: "line", data: [], markLine: { silent: true, symbol: "unconstraint", lineStyle: { type: "dashed", color: "#b91c1c" },
+  if (typeof cap === "number" && !Number.isNaN(cap))     // "none" (v5.0.3.2): no cap, no line
+    series.push({ type: "line", data: [], markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: "#b91c1c" },
       label: { formatter: `λ_max = ${cap}`, position: "insideEndTop" }, data: [{ yAxis: cap }] } });
   return { grid, legend: { top: 0, right: 0, itemWidth: 14, textStyle: { fontSize: 11 } }, tooltip: tip, xAxis: stepAxis(props.b.params?.steps), yAxis: { type: "value", name: "λ", min: 0 }, series };
 };
@@ -121,7 +121,7 @@ const jcOpt = (l) => {
     return { type: "line", name: s.toUpperCase(), color: SCEN_COLOR[s], showSymbol: false,
       data: tr ? tr.step.map((x, i) => [x, tr.series.cap_viol?.[i] == null ? null : +(tr.series.cap_viol[i] + (tr.series.priv_viol?.[i] ?? 0)).toFixed(5)]) : [] };
   });
-  series.push({ type: "line", data: [], markLine: { silent: true, symbol: "unconstraint", lineStyle: { type: "dashed", color: "#059669" },
+  series.push({ type: "line", data: [], markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: "#059669" },
     label: { formatter: "d = 0.001", position: "insideEndTop" }, data: [{ yAxis: 0.001 }] } });
   return { grid, legend: { top: 0, right: 0, itemWidth: 14, textStyle: { fontSize: 11 } }, tooltip: tip, xAxis: stepAxis(props.b.params?.steps),
     yAxis: { type: "log", name: "J_C", min: 1e-4, logBase: 10, axisLabel: { formatter: (v) => (v >= 0.01 ? v : v.toExponential(0)) } }, series };
@@ -145,7 +145,7 @@ const sweepOpt = (l) => {
   if (js) series.push({ type: "line", name: t("平均", "mean"), color: "#171c2b", lineStyle: { width: 3 }, symbolSize: 9, data: vals.map((v) => P(js.score[String(v)])) });
   const ch = lamMax(l);
   const idx = vals.indexOf(ch);
-  if (idx >= 0) series[0].markLine = { silent: true, symbol: "unconstraint", lineStyle: { color: "#4f46e5", type: "solid", width: 2, opacity: 0.35 },
+  if (idx >= 0) series[0].markLine = { silent: true, symbol: "none", lineStyle: { color: "#4f46e5", type: "solid", width: 2, opacity: 0.35 },
     label: { formatter: t("选定", "chosen"), position: "end" }, data: [{ xAxis: idx }] };
   return { grid: { ...grid, top: 34 }, legend: { top: 0, right: 0, itemWidth: 14, textStyle: { fontSize: 11 } }, tooltip: tip,
     xAxis: { type: "category", name: "λ_max", data: vals.map(String) }, yAxis: { ...axisPct(js ? t("有效 gap", "effective gap") : "gap"), scale: true }, series };
@@ -166,7 +166,7 @@ const sweepTraceOpt = (l, what) => {
       : S.cap_viol?.map((c, i) => (c == null ? null : +(c + (S.priv_viol?.[i] ?? 0)).toFixed(5)));
     return { type: "line", name: `λ_max ${v}`, color: VAL_COLOR[k % VAL_COLOR.length], showSymbol: false, data: tr ? tr.step.map((x, i) => [x, ys?.[i] ?? null]) : [] };
   });
-  if (what === "jc") series.push({ type: "line", data: [], markLine: { silent: true, symbol: "unconstraint", lineStyle: { type: "dashed", color: "#059669" },
+  if (what === "jc") series.push({ type: "line", data: [], markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: "#059669" },
     label: { formatter: "d = 0.001", position: "insideEndTop" }, data: [{ yAxis: 0.001 }] } });
   const maxStep = Math.max(0, ...sweepRuns.value.map((r) => r.params?.steps || 0)) || undefined;
   const y = what === "lambda" ? { type: "value", name: "λ", min: 0 } : what === "ar" ? { ...axisPct(""), scale: true }
