@@ -40,7 +40,7 @@ const groups = computed(() => {
     <div class="head">
       <div>
         <h1>{{ t("批次", "Batches") }}</h1>
-        <div class="head-sub">{{ t("一个批次 = 一次驱动脚本的运行（例如 v5.0.3）。点进去看结果矩阵、图表和报告。", "A batch is one run of a driver script (e.g. v5.0.3). Open one for its result matrix, charts and report.") }}</div>
+        <div class="head-sub">{{ t("一个批次 = 一次驱动脚本的运行（例如 v5.0.4）。点进去看结果矩阵、图表和报告。", "A batch is one run of a driver script (e.g. v5.0.4). Open one for its result matrix, charts and report.") }}</div>
       </div>
     </div>
     <div class="row">

@@ -15,6 +15,9 @@ PPO / DQN hyper-parameters from paper_rl/config.py, the same for both networks.
            lambda_max is chosen per learner by a short sweep (Lagrangian PPO / DQN / DDQN, 3M steps, {1, 2, 5}): the
            value with the lowest mean effective gap (violating instances count as AR = 0); a learner's Lagrangian runs
            start when its sweep is done.
+    5.0.4  same plan as 5.0.3 (36 runs + the per-learner lambda_max sweep), re-versioned before launch because the
+           code and the panel changed after the 5.0.3 tag (per-learner sweep, report_data.json and
+           lam_sweep_<learner>.json for the panel, panel v2 at / with the old one at /classic/).
 
 Speed-ups that leave training unchanged (v5.0.0, checked by src/scripts/check_v5.py: training is bit-identical to the
 v4.5 code on CPU and GPU): Mask DQN / DDQN build the state features once for Q-values and mask (1.20x total throughput
@@ -28,6 +31,8 @@ instances), the 20M models with violation rates and (Maskable only) the per-step
     nohup .venv/bin/python src/scripts/run_v5.py --version 5.0.1 > logs/run_v5.0.1_driver.log 2>&1 &
     .venv/bin/python src/scripts/run_v5.py --version 5.0.1 --report
     .venv/bin/python src/scripts/run_v5.py --version 5.0.1 --rerun 1 gt dqn_graph_1600
+    5.0.4  same plan as 5.0.3 (36 runs + per-learner lambda_max sweep); new version because the code and the panel
+           changed after the 5.0.3 tag (per-learner sweep, report_data.json / lam_sweep_<learner>.json, panel v2).
 """
 import argparse
 import json
@@ -113,6 +118,8 @@ CONFIG = {
               "lam_sweep": {"algos": {"ppo": "lagrange_ppo", "dqn": "lagrange_dqn", "ddqn": "lagrange_ddqn"},
                             "values": [1.0, 2.0, 5.0], "steps": 3_000_000, "ckpts": [1_000_000]}},
 }
+CONFIG["5.0.4"] = CONFIG["5.0.3"]                   # 5.0.4: the 5.0.3 plan, re-versioned before launch (5.0.3 code and panel
+                                                    # changed after its tag); 5.0.3 stays for its smoke batch / --report
 
 
 def references(version):
