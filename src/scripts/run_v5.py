@@ -200,6 +200,18 @@ CONFIG = {
               "seeds": [1], "parallel": 18, "mps": True, "time_bench": True,   # 18: Legacy MPS limit on the Pascal GPUs
               # lambda_max per RL_algorithm: chosen by the v5.0.3 sweep (its manifest's lambda_max); no sweep here
               "lam_max_from": "5.0.3"},
+    # 5.1.0: lagrangian 20M version -- v5.0.3.7 hyper-params lagrangian unchanged, extended to 20M (checkpoints 5M / 10M / 15M); seed 1
+    "5.1.0": {"variants": {f"{l}_lagrangian_20m_version": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian 20M version",
+                                                                 f"{l.upper()} · lagrangian 20M version",
+                                                                 {"lambda_max": "none", "lambda_update": "adam", "lambda_lr": 0.035,
+                                                                  "lambda_init": 0.001, "lambda_target": 0.0, "lambda_cost": "behavior",
+                                                                  **({"lambda_window": "rollout"} if l == "ppo" else {"eps_steps": 2_000_000})})
+                             for l in ("ppo", "dqn", "ddqn")},
+                "title": ("lagrangian 20M version：沿用 v5.0.3.7 配置（λ 初值 0.001、Adam lr 0.035、λ ≥ 0 不设上限、J_C 取行为策略、d = 0；PPO 每个 rollout 更新一次，DQN / DDQN 每 1000 局、ε 1.0→0 固定 2M 步），扩展到 20M（种子 1、20M、5 万实例）",
+                          "lagrangian 20M version: the v5.0.3.7 setting (λ init 0.001, Adam lr 0.035, λ ≥ 0 uncapped, J_C of the behaviour policy, d = 0; "
+                          "PPO updates once per rollout, DQN / DDQN every 1000 episodes, ε 1.0→0 over a fixed 2M steps), extended to 20M (seed 1, 20M, 50k instances)"),
+                "seeds": [1], "steps": 20_000_000, "ckpts": [5_000_000, 10_000_000, 15_000_000],
+                "parallel": 18, "mps": True},
 }
 
 def references(version):
@@ -767,9 +779,10 @@ def write_report(V, exp_ids, interim: bool = False):
                "1600-instance split itself); deterministic rollouts; mean ± sample std."),
              T(f"- manifest：`{V['manifest'].relative_to(ROOT)}`。", f"- Manifest: `{V['manifest'].relative_to(ROOT)}`."), ""]
         if lamdyn:
+            d = "/".join(sorted({f"{(vs[k][5] if len(vs[k]) > 5 else {}).get('lambda_target', 0.001):g}" for k, *_ in lamdyn}))   # 5.0.3.7: d from config
             L += [T("## λ 动态（训练过程，来自 training_curve.csv）", "## λ dynamics (during training, from training_curve.csv)"), "",
-                  T("J_C = 每局违约次数（容量 + 隐私）；目标 d = 0.001。「到上限」= 第一次 λ ≥ λ_max 的局；「降幅」= 最高点到训练结束的下降。",
-                    "J_C = violations per episode (capacity + privacy); target d = 0.001. 'First at cap' = first episode with λ ≥ λ_max; "
+                  T(f"J_C = 每局违约次数（容量 + 隐私）；目标 d = {d}。「到上限」= 第一次 λ ≥ λ_max 的局；「降幅」= 最高点到训练结束的下降。",
+                    f"J_C = violations per episode (capacity + privacy); target d = {d}. 'First at cap' = first episode with λ ≥ λ_max; "
                     "'fall' = from the peak to the end of training."), "",
                   T("| 场景 | 模型 | λ_max | 末 λ | 最高 λ | 到上限（局） | 上限占比 | 下降次数 | 降幅 | 前 1000 局 J_C | 末 1000 局 J_C |",
                     "| Scenario | Model | λ_max | Final λ | Max λ | First at cap (episode) | Share at cap | Decreases | Fall | J_C first 1000 | J_C last 1000 |"),
