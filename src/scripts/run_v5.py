@@ -144,6 +144,16 @@ CONFIG = {
                           "J_C of the greedy (ε = 0) policy (100 episodes per update) (seed 1, 5M, 50k instances)"),
                 "seeds": [1], "steps": 5_000_000, "ckpts": [1_000_000, 2_000_000, 3_000_000, 4_000_000],
                 "parallel": 18, "mps": True},
+    "5.0.3.5": {"variants": {f"{l}_lagrangian_dqn_series_20m": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian · DQN series 20M",
+                                                                f"{l.upper()} · lagrangian · DQN series 20M",
+                                                                {"lambda_max": 5.0, "lambda_update": "normalized", "lambda_lr": 0.025,
+                                                                 "lambda_cost": "greedy", "lambda_eval_episodes": 100, "eps_steps": 2_000_000})
+                             for l in ("dqn", "ddqn")},
+                "title": ("DQN series 20M：λ_max = 5、归一化更新 η = 0.025，ε 从 1.0 固定 2M 步降到 0、J_C 取 ε = 0 贪心策略（每次更新 100 局）（种子 1、20M、5 万实例）",
+                          "DQN series 20M: λ_max = 5, normalized update η = 0.025, ε from 1.0 to 0 over a fixed 2M steps, "
+                          "J_C of the greedy (ε = 0) policy (100 episodes per update) (seed 1, 20M, 50k instances)"),
+                "seeds": [1], "steps": 20_000_000, "ckpts": [5_000_000, 10_000_000, 15_000_000],
+                "parallel": 18, "mps": True},
     "5.0.4": {"variants": {                         # every RL_algorithm x strategy (docs/data_spec.md), trained in this batch
                            "ppo_unconstraint": ("ppo", "graph", True, "PPO · unconstraint", "PPO · unconstraint"),
                            "ppo_lagrangian": ("lagrange_ppo", "graph", True, "PPO · lagrangian", "PPO · lagrangian"),
