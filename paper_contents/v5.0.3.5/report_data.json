@@ -1,0 +1,522 @@
+{
+ "schema": 1,
+ "batch": "v5.0.3.5",
+ "version": "5.0.3.5",
+ "interim": false,
+ "generated_at": "2026-10-14T13:56:53",
+ "steps": [
+  5000000,
+  10000000,
+  15000000,
+  20000000
+ ],
+ "early_steps": 5,
+ "curves": [
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "683bd0fc",
+   "step": 5000000,
+   "test_gap": 0.24272129976280035,
+   "train_gap": 0.24091080055918798,
+   "test_fail": 0.07499999999999996,
+   "train_fail": 0.06687500000000002,
+   "cap_viol": 0.035,
+   "priv_viol": 0.0675,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "683bd0fc",
+   "step": 10000000,
+   "test_gap": 0.22823072683467285,
+   "train_gap": 0.2294040203895846,
+   "test_fail": 0.0675,
+   "train_fail": 0.0625,
+   "cap_viol": 0.0325,
+   "priv_viol": 0.0575,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "683bd0fc",
+   "step": 15000000,
+   "test_gap": 0.22804265588938813,
+   "train_gap": 0.22721980051890303,
+   "test_fail": 0.06000000000000005,
+   "train_fail": 0.057499999999999996,
+   "cap_viol": 0.04,
+   "priv_viol": 0.035,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "683bd0fc",
+   "step": 20000000,
+   "test_gap": 0.3143440525017357,
+   "train_gap": 0.3107140802381969,
+   "test_fail": 0.0675,
+   "train_fail": 0.06999999999999995,
+   "cap_viol": 0.05,
+   "priv_viol": 0.0275,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "630e7406",
+   "step": 5000000,
+   "test_gap": 0.13418738788533602,
+   "train_gap": 0.138016698042631,
+   "test_fail": 0.23750000000000004,
+   "train_fail": 0.203125,
+   "cap_viol": 0.0,
+   "priv_viol": 0.2375,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "630e7406",
+   "step": 10000000,
+   "test_gap": 0.09561634139568435,
+   "train_gap": 0.08516547570154204,
+   "test_fail": 0.0,
+   "train_fail": 0.00187499999999996,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "630e7406",
+   "step": 15000000,
+   "test_gap": 0.0819023816525947,
+   "train_gap": 0.07770565591715366,
+   "test_fail": 0.007499999999999951,
+   "train_fail": 0.008125000000000049,
+   "cap_viol": 0.0025,
+   "priv_viol": 0.0075,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "630e7406",
+   "step": 20000000,
+   "test_gap": 0.06191270333202705,
+   "train_gap": 0.061734744480295034,
+   "test_fail": 0.04249999999999998,
+   "train_fail": 0.03312499999999996,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0425,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "92c890ab",
+   "step": 5000000,
+   "test_gap": 0.16109379242931232,
+   "train_gap": 0.15705894098849588,
+   "test_fail": 0.03249999999999997,
+   "train_fail": 0.05500000000000005,
+   "cap_viol": 0.0225,
+   "priv_viol": 0.0325,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "92c890ab",
+   "step": 10000000,
+   "test_gap": 0.17026013643932655,
+   "train_gap": 0.16992373444320863,
+   "test_fail": 0.007499999999999951,
+   "train_fail": 0.013125000000000053,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0075,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "92c890ab",
+   "step": 15000000,
+   "test_gap": 0.09169169170364216,
+   "train_gap": 0.08788616359417263,
+   "test_fail": 0.0024999999999999467,
+   "train_fail": 0.003750000000000031,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0025,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 0,
+   "key": "dqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DQN · lagrangian · DQN series 20M",
+    "en": "DQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_dqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "92c890ab",
+   "step": 20000000,
+   "test_gap": 0.07065713052530573,
+   "train_gap": 0.06634567541278447,
+   "test_fail": 0.0,
+   "train_fail": 0.0,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "2506fb0d",
+   "step": 5000000,
+   "test_gap": 0.3064236708978425,
+   "train_gap": 0.30385771573253917,
+   "test_fail": 0.0625,
+   "train_fail": 0.06312499999999999,
+   "cap_viol": 0.0225,
+   "priv_viol": 0.055,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "2506fb0d",
+   "step": 10000000,
+   "test_gap": 0.2438879581050165,
+   "train_gap": 0.23784178748760718,
+   "test_fail": 0.0625,
+   "train_fail": 0.059374999999999956,
+   "cap_viol": 0.0325,
+   "priv_viol": 0.05,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "2506fb0d",
+   "step": 15000000,
+   "test_gap": 0.19861730132710062,
+   "train_gap": 0.1931556546380446,
+   "test_fail": 0.06999999999999995,
+   "train_fail": 0.06437499999999996,
+   "cap_viol": 0.025,
+   "priv_viol": 0.055,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "lt",
+   "seed": 1,
+   "exp_id": "2506fb0d",
+   "step": 20000000,
+   "test_gap": 0.18664557664537842,
+   "train_gap": 0.18125498494213044,
+   "test_fail": 0.06499999999999995,
+   "train_fail": 0.06125000000000003,
+   "cap_viol": 0.05,
+   "priv_viol": 0.0475,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "0854a099",
+   "step": 5000000,
+   "test_gap": 0.12186867138798162,
+   "train_gap": 0.12482313724668663,
+   "test_fail": 0.0050000000000000044,
+   "train_fail": 0.005624999999999991,
+   "cap_viol": 0.0025,
+   "priv_viol": 0.005,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "0854a099",
+   "step": 10000000,
+   "test_gap": 0.07209064398772404,
+   "train_gap": 0.07223283217047624,
+   "test_fail": 0.01749999999999996,
+   "train_fail": 0.018750000000000044,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0175,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "0854a099",
+   "step": 15000000,
+   "test_gap": 0.06702260593852678,
+   "train_gap": 0.06450441027892133,
+   "test_fail": 0.022499999999999964,
+   "train_fail": 0.016249999999999987,
+   "cap_viol": 0.005,
+   "priv_viol": 0.0225,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "eq",
+   "seed": 1,
+   "exp_id": "0854a099",
+   "step": 20000000,
+   "test_gap": 0.09695468965135437,
+   "train_gap": 0.09324818479774456,
+   "test_fail": 0.0,
+   "train_fail": 0.0012499999999999734,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "58b4b15c",
+   "step": 5000000,
+   "test_gap": 0.1613496871558663,
+   "train_gap": 0.16129687390871397,
+   "test_fail": 0.02749999999999997,
+   "train_fail": 0.024375000000000036,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0275,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "58b4b15c",
+   "step": 10000000,
+   "test_gap": 0.11191707505331336,
+   "train_gap": 0.10566427556843776,
+   "test_fail": 0.0,
+   "train_fail": 0.0006249999999999867,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "58b4b15c",
+   "step": 15000000,
+   "test_gap": 0.10165365433021627,
+   "train_gap": 0.10009311083523592,
+   "test_fail": 0.0,
+   "train_fail": 0.0,
+   "cap_viol": 0.0,
+   "priv_viol": 0.0,
+   "regret_early": null,
+   "opt_rate_early": null
+  },
+  {
+   "series": 1,
+   "key": "ddqn_lagrangian_dqn_series_20m",
+   "label": {
+    "zh": "DDQN · lagrangian · DQN series 20M",
+    "en": "DDQN · lagrangian · DQN series 20M"
+   },
+   "algo": "lagrange_ddqn",
+   "scenario": "gt",
+   "seed": 1,
+   "exp_id": "58b4b15c",
+   "step": 20000000,
+   "test_gap": 0.08070921181356373,
+   "train_gap": 0.07970588574731197,
+   "test_fail": 0.010000000000000009,
+   "train_fail": 0.009375000000000022,
+   "cap_viol": 0.0,
+   "priv_viol": 0.01,
+   "regret_early": null,
+   "opt_rate_early": null
+  }
+ ],
+ "timing": [],
+ "ilp_timing": {}
+}
