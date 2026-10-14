@@ -167,6 +167,20 @@ CONFIG = {
                           "(100 episodes per update); ε for DQN / DDQN from 1.0 to 0 over a fixed 2M steps (seed 1, 5M, 50k instances)"),
                 "seeds": [1], "steps": 5_000_000, "ckpts": [1_000_000, 2_000_000, 3_000_000, 4_000_000],
                 "parallel": 18, "mps": True},
+    # 5.0.3.7: hyper-params lagrangian -- the usual Safe RL setting (OmniSafe PPOLag): lambda_init 0.001, Adam on
+    # -lambda (J_C - d) with lr 0.035, lambda >= 0 without a cap, J_C of the behaviour policy, d = 0; PPO updates once per
+    # rollout, DQN / DDQN every 1000 episodes (epsilon 1 -> 0 over 2M steps); 5M, seed 1
+    "5.0.3.7": {"variants": {f"{l}_lagrangian_hyper_params": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian · hyper-params",
+                                                             f"{l.upper()} · lagrangian · hyper-params",
+                                                             {"lambda_max": "none", "lambda_update": "adam", "lambda_lr": 0.035,
+                                                              "lambda_init": 0.001, "lambda_target": 0.0, "lambda_cost": "behavior",
+                                                              **({"lambda_window": "rollout"} if l == "ppo" else {"eps_steps": 2_000_000})})
+                             for l in ("ppo", "dqn", "ddqn")},
+                "title": ("hyper-params lagrangian：常规 Safe RL 设置（OmniSafe PPOLag）——λ 初值 0.001、Adam（lr 0.035）更新 λ、λ ≥ 0 不设上限、J_C 取行为策略、d = 0；PPO 每个 rollout 更新一次，DQN / DDQN 每 1000 局更新一次（ε 1.0→0 固定 2M 步）（种子 1、5M、5 万实例）",
+                          "hyper-params lagrangian: the usual Safe RL setting (OmniSafe PPOLag) -- λ init 0.001, Adam (lr 0.035) on λ, λ ≥ 0 uncapped, "
+                          "J_C of the behaviour policy, d = 0; PPO updates once per rollout, DQN / DDQN every 1000 episodes (ε 1.0→0 over a fixed 2M steps) (seed 1, 5M, 50k instances)"),
+                "seeds": [1], "steps": 5_000_000, "ckpts": [1_000_000, 2_000_000, 3_000_000, 4_000_000],
+                "parallel": 18, "mps": True},
     "5.0.4": {"variants": {                         # every RL_algorithm x strategy (docs/data_spec.md), trained in this batch
                            "ppo_unconstraint": ("ppo", "graph", True, "PPO · unconstraint", "PPO · unconstraint"),
                            "ppo_lagrangian": ("lagrange_ppo", "graph", True, "PPO · lagrangian", "PPO · lagrangian"),
@@ -317,7 +331,8 @@ def spec(V, key):
     learner = lagrange_learner(V, key)
     extra = ["--lambda-max", f"{V['lam_max'][learner]:g}"] if learner else []
     flag = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr",
-            "lambda_cost": "--lambda-cost", "lambda_eval_episodes": "--lambda-eval-episodes", "eps_steps": "--eps-steps"}   # 5.0.3.3
+            "lambda_cost": "--lambda-cost", "lambda_eval_episodes": "--lambda-eval-episodes", "eps_steps": "--eps-steps",   # 5.0.3.3
+            "lambda_init": "--lambda-init", "lambda_target": "--lambda-target", "lambda_window": "--lambda-window"}   # 5.0.3.7
     for k, v in own.items():
         extra += [flag[k], f"{v:g}" if isinstance(v, float) else str(v)]
     return algo, net, pool, STEPS, CKPTS, extra

@@ -144,7 +144,8 @@ def scale_reward(env, scale: float):
 # ── training callback (logging + Lagrangian dual ascent) ────────────────────
 def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start: int = 0, lam_max: float = C.LAMBDA_MAX,
                   lam_update: str = "linear", lam_lr: float = C.LAMBDA_LR, lam_cost: str = "behavior",
-                  greedy_env=None, n_greedy: int = 100):
+                  greedy_env=None, n_greedy: int = 100, lam_init: float = C.LAMBDA_INIT, lam_target: float = C.LAMBDA_TARGET,
+                  lam_window: str = "episodes"):
     from stable_baselines3.common.callbacks import BaseCallback
     from shared.paths import write_progress
 
@@ -152,13 +153,30 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
         def __init__(self):
             super().__init__()
             self.rows = []          # (timestep, reward, ar, success, valid, cap>0, conf>0, lambda, exited (v5.0.0))
-            self.lam = C.LAMBDA_INIT
+            self.lam = lam_init
+            self._adam = None
+            if lam_update == "adam":    # v5.0.3.7: OmniSafe PPOLag style, lambda a parameter, loss -lambda (J_C - d), Adam, lambda >= 0
+                import torch
+                self._lam_t = torch.nn.Parameter(torch.tensor(float(lam_init)))
+                self._adam = torch.optim.Adam([self._lam_t], lr=lam_lr)
+            self._roll = []         # v5.0.3.7: episode costs since the last update (lam_window "rollout")
             self._viol = deque(maxlen=C.LAMBDA_UPDATE_WINDOW)
             self._n_ep = 0
             self._since = 0
             self._next = start + C.PROGRESS_LOG_EVERY_STEPS   # v4.4.16: a resumed run starts at `start`
             self._t0 = time.time()
             self.dual_rows = []     # one per lambda update: (episode, timestep, J_C behaviour, J_C used, lambda after) (v5.0.3.3)
+
+        def _on_training_start(self) -> None:
+            if mech == "lagrange":
+                self.training_env.env_method("set_lambda", self.lam)
+
+        def _on_rollout_end(self) -> None:
+            """v5.0.3.7 (lam_window "rollout"): one update per PPO rollout from its episodes' mean cost."""
+            if mech == "lagrange" and lam_window == "rollout" and self._roll:
+                j = float(np.mean(self._roll))
+                self._step_lambda(j, j)
+                self._roll = []
 
         def _on_step(self) -> bool:
             for info in self.locals.get("infos", []):
@@ -188,18 +206,33 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             """J_C = mean violations per episode (v5.0.3; was violations / M); lambda is updated every
             LAMBDA_UPDATE_WINDOW episodes from the first episode on (no warm-up since 2026-10-13)."""
             self._n_ep += 1
+            if lam_window == "rollout":
+                self._roll.append(cost)
+                return
             self._viol.append(cost)
             self._since += 1
             if len(self._viol) == C.LAMBDA_UPDATE_WINDOW and self._since >= C.LAMBDA_UPDATE_WINDOW:
-                j_beh, d = float(np.mean(self._viol)), C.LAMBDA_TARGET
+                j_beh = float(np.mean(self._viol))
                 j = self._greedy_jc() if lam_cost == "greedy" else j_beh
+                self._step_lambda(j_beh, j)
+                self._since = 0
+
+        def _step_lambda(self, j_beh: float, j: float) -> None:
+            d = lam_target
+            if self._adam is not None:
+                self._adam.zero_grad()
+                (-self._lam_t * (j - d)).backward()
+                self._adam.step()
+                with __import__("torch").no_grad():
+                    self._lam_t.clamp_(0.0, lam_max)
+                self.lam = float(self._lam_t.item())
+            else:
                 # linear: e = J_C - d (v5.0.3); normalized (v5.0.3.1): e = (J_C - d) / max(J_C, d) in (-1, 1), so a step
                 # up and a step down have the same size lam_lr (with d ~ 0 the linear error can rise ~1000x faster than it falls)
-                e = j - d if lam_update == "linear" else (j - d) / max(j, d)
+                e = j - d if lam_update == "linear" else (j - d) / max(j, d, 1e-12)
                 self.lam = float(np.clip(self.lam + lam_lr * e, 0.0, lam_max))
-                self.training_env.env_method("set_lambda", self.lam)
-                self._since = 0
-                self.dual_rows.append((self._n_ep, self.num_timesteps, j_beh, j, self.lam))
+            self.training_env.env_method("set_lambda", self.lam)
+            self.dual_rows.append((self._n_ep, self.num_timesteps, j_beh, j, self.lam))
 
         def _greedy_jc(self) -> float:
             """v5.0.3.3: J_C of the greedy (epsilon = 0) policy that is deployed and tested, not of the epsilon-greedy
@@ -401,7 +434,11 @@ def main():
     ap.add_argument("--lambda-max", type=lam_max_arg, default=C.LAMBDA_MAX,   # v5.0.3: upper bound of the Lagrange multiplier
                     help="Lagrange: clip of lambda, also its scale in the observation (lambda / lambda_max); "
                          "'none' = no cap (v5.0.3.2), the observation is then lambda / (1 + lambda)")
-    ap.add_argument("--lambda-update", choices=["linear", "normalized"], default="linear",   # v5.0.3.1
+    ap.add_argument("--lambda-init", type=float, default=C.LAMBDA_INIT, help="v5.0.3.7: initial lambda")
+    ap.add_argument("--lambda-target", type=float, default=C.LAMBDA_TARGET, help="v5.0.3.7: cost limit d")
+    ap.add_argument("--lambda-window", choices=["episodes", "rollout"], default="episodes",
+                    help="v5.0.3.7: update lambda every LAMBDA_UPDATE_WINDOW episodes, or once per PPO rollout")
+    ap.add_argument("--lambda-update", choices=["linear", "normalized", "adam"], default="linear",   # v5.0.3.1
                     help="Lagrange dual step: linear lr*(J_C - d), or normalized lr*(J_C - d)/max(J_C, d)")
     ap.add_argument("--lambda-cost", choices=["behavior", "greedy"], default="behavior",   # v5.0.3.3
                     help="Lagrange: J_C from the training episodes (behaviour policy, with epsilon for DQN) or from extra "
@@ -490,7 +527,8 @@ def main():
                                   lam_max=a.lambda_max, full_episode=a.full_episode, exit_action=a.exit_action,
                                   action_mode=a.action, order=a.order, order_seed=a.order_seed)
     cb = main_cb = make_callback(mech, start + a.steps, outdir, exp_id, start, a.lambda_max, a.lambda_update, a.lambda_lr,
-                                 a.lambda_cost, greedy_env, a.lambda_eval_episodes)
+                                 a.lambda_cost, greedy_env, a.lambda_eval_episodes,
+                                 a.lambda_init, a.lambda_target, a.lambda_window)
     extra = []
     if a.grad_diag:                                     # v4.4.8: actor / critic gradient conflict on the encoder
         assert a.net == "graph" and not a.separate_critic, "--grad-diag: shared graph encoder only"
@@ -549,7 +587,8 @@ def main():
         "training": {"total_steps": start + a.steps, "steps_this_run": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,
                      **({"final_lambda": round(lam, 6), "lambda_max": lam_max_json(a.lambda_max), "lambda_lr": a.lambda_lr, "lambda_update": a.lambda_update,
-                         "lambda_target": C.LAMBDA_TARGET, "lambda_window": C.LAMBDA_UPDATE_WINDOW, "lambda_warmup": 0,
+                         "lambda_init": a.lambda_init, "lambda_target": a.lambda_target,
+                         "lambda_window": "rollout" if a.lambda_window == "rollout" else C.LAMBDA_UPDATE_WINDOW, "lambda_warmup": 0,
                          "lambda_cost": a.lambda_cost, **({"lambda_eval_episodes": a.lambda_eval_episodes} if a.lambda_cost == "greedy" else {})}
                         if mech == "lagrange" else {}),
                      **({"eps_steps": a.eps_steps} if a.eps_steps is not None else {})},
