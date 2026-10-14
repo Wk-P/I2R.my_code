@@ -154,6 +154,19 @@ CONFIG = {
                           "J_C of the greedy (ε = 0) policy (100 episodes per update) (seed 1, 20M, 50k instances)"),
                 "seeds": [1], "steps": 20_000_000, "ckpts": [5_000_000, 10_000_000, 15_000_000],
                 "parallel": 18, "mps": True},
+    # 5.0.3.6: option (ii) -- PPO moves to the same dual step as DQN / DDQN (normalized, eta 0.025, lambda_max 5,
+    # greedy J_C over 100 episodes); epsilon schedule (2M) for DQN / DDQN only; 5M, seed 1
+    "5.0.3.6": {"variants": {f"{l}_lagrangian_normalized_eta": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian · 归一化 η = 0.025",
+                                                               f"{l.upper()} · lagrangian · normalized η = 0.025",
+                                                               {"lambda_max": 5.0, "lambda_update": "normalized", "lambda_lr": 0.025,
+                                                                "lambda_cost": "greedy", "lambda_eval_episodes": 100,
+                                                                **({} if l == "ppo" else {"eps_steps": 2_000_000})})
+                             for l in ("ppo", "dqn", "ddqn")},
+                "title": ("PPO / DQN / DDQN lagrangian 统一 λ 更新：λ_max = 5、归一化更新 η = 0.025、J_C 取贪心策略（每次更新 100 局）；DQN / DDQN 的 ε 从 1.0 固定 2M 步降到 0（种子 1、5M、5 万实例）",
+                          "PPO / DQN / DDQN lagrangian with one λ update: λ_max = 5, normalized update η = 0.025, J_C of the greedy policy "
+                          "(100 episodes per update); ε for DQN / DDQN from 1.0 to 0 over a fixed 2M steps (seed 1, 5M, 50k instances)"),
+                "seeds": [1], "steps": 5_000_000, "ckpts": [1_000_000, 2_000_000, 3_000_000, 4_000_000],
+                "parallel": 18, "mps": True},
     "5.0.4": {"variants": {                         # every RL_algorithm x strategy (docs/data_spec.md), trained in this batch
                            "ppo_unconstraint": ("ppo", "graph", True, "PPO · unconstraint", "PPO · unconstraint"),
                            "ppo_lagrangian": ("lagrange_ppo", "graph", True, "PPO · lagrangian", "PPO · lagrangian"),
