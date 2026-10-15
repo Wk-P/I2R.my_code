@@ -212,6 +212,16 @@ CONFIG = {
                           "PPO updates once per rollout, DQN / DDQN every 1000 episodes, ε 1.0→0 over a fixed 2M steps), extended to 20M (seed 1, 20M, 50k instances)"),
                 "seeds": [1], "steps": 20_000_000, "ckpts": [5_000_000, 10_000_000, 15_000_000],
                 "parallel": 18, "mps": True},
+    # 5.3.1 / 5.3.2: BFT Repair / unconstraint -- two batches with the same training data (50k pool, seed 1) and the same
+    # setting as 5.1.0: 20M (checkpoints 5M / 10M / 15M); DQN / DDQN ε 1.0→0 over a fixed 2M steps
+    **{v: {"variants": {f"{l}_{key}": (algo(l), "graph", True, f"{l.upper()} · {lab}", f"{l.upper()} · {lab}",
+                                       {} if l == "ppo" else {"eps_steps": 2_000_000}) for l in ("ppo", "dqn", "ddqn")},
+           "title": (f"{lab}：PPO / DQN / DDQN，DQN / DDQN 的 ε 1.0→0 固定 2M 步（种子 1、20M、5 万实例）",
+                     f"{lab}: PPO / DQN / DDQN, DQN / DDQN ε 1.0→0 over a fixed 2M steps (seed 1, 20M, 50k instances)"),
+           "seeds": [1], "steps": 20_000_000, "ckpts": [5_000_000, 10_000_000, 15_000_000],
+           "parallel": 18, "mps": True}
+       for v, key, lab, algo in (("5.3.1", "bft_repair", "BFT Repair", lambda l: f"repair_{l}"),
+                                 ("5.3.2", "unconstraint", "unconstraint", lambda l: l))},
 }
 
 def references(version):
