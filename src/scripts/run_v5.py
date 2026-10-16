@@ -222,6 +222,23 @@ CONFIG = {
            "parallel": 18, "mps": True}
        for v, key, lab, algo in (("5.3.1", "bft_repair", "BFT Repair", lambda l: f"repair_{l}"),
                                  ("5.3.2", "unconstraint", "unconstraint", lambda l: l))},
+    # 5.4.0: verication un/lag -- objective reward (terminal M·AR of the executed placement, violations ignored):
+    # unconstraint (no mechanism) and Lagrangian (objective − λc_t, the 5.1.0 λ setting); else as 5.3.x
+    "5.4.0": {"variants": {
+        **{f"{l}_unconstraint_objective": (l, "graph", True, f"{l.upper()} · unconstraint · objective", f"{l.upper()} · unconstraint · objective",
+                                           {"reward": "objective", **({} if l == "ppo" else {"eps_steps": 2_000_000})})
+           for l in ("ppo", "dqn", "ddqn")},
+        **{f"{l}_lagrangian_objective": (f"lagrange_{l}", "graph", True, f"{l.upper()} · lagrangian · objective", f"{l.upper()} · lagrangian · objective",
+                                         {"reward": "objective", "lambda_max": "none", "lambda_update": "adam", "lambda_lr": 0.035,
+                                          "lambda_init": 0.001, "lambda_target": 0.0, "lambda_cost": "behavior",
+                                          **({"lambda_window": "rollout"} if l == "ppo" else {"eps_steps": 2_000_000})})
+           for l in ("ppo", "dqn", "ddqn")}},
+              "title": ("verication un/lag：objective 奖励（终局 M·AR，不管违约）下的 unconstraint 与 Lagrangian（objective − λc_t，λ 设置同 v5.1.0）；"
+                        "DQN / DDQN 的 ε 1.0→0 固定 2M 步（种子 1、20M、5 万实例）",
+                        "verication un/lag: unconstraint and Lagrangian (objective − λc_t, λ setting of v5.1.0) under the objective reward "
+                        "(terminal M·AR, violations ignored); DQN / DDQN ε 1.0→0 over a fixed 2M steps (seed 1, 20M, 50k instances)"),
+              "seeds": [1], "steps": 20_000_000, "ckpts": [5_000_000, 10_000_000, 15_000_000],
+              "parallel": 18, "mps": True},
 }
 
 def references(version):
@@ -354,7 +371,8 @@ def spec(V, key):
     extra = ["--lambda-max", f"{V['lam_max'][learner]:g}"] if learner else []
     flag = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr",
             "lambda_cost": "--lambda-cost", "lambda_eval_episodes": "--lambda-eval-episodes", "eps_steps": "--eps-steps",   # 5.0.3.3
-            "lambda_init": "--lambda-init", "lambda_target": "--lambda-target", "lambda_window": "--lambda-window"}   # 5.0.3.7
+            "lambda_init": "--lambda-init", "lambda_target": "--lambda-target", "lambda_window": "--lambda-window",   # 5.0.3.7
+            "reward": "--reward"}   # 5.4.0: overrides the default ar_pen (argparse keeps the last --reward)
     for k, v in own.items():
         extra += [flag[k], f"{v:g}" if isinstance(v, float) else str(v)]
     return algo, net, pool, STEPS, CKPTS, extra
