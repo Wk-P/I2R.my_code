@@ -59,3 +59,7 @@ deploy/ref-src/
 *.zip
 
 chat/
+
+
+# program runing log
+nohup.out
