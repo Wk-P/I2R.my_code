@@ -83,8 +83,8 @@ const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" :
   <div class="stack">
     <template v-if="isMatrix">
       <div class="legend-row small dim">
-        {{ t("每格一个模型：大字为测试集相对 gap =（ILP AR − AR）/ ILP AR，只在无违约的测试实例上计算；下方为有容量 / 隐私违约的测试实例比例。点击已完成的格子查看该 run。",
-             "One model per cell: the large number is the test relative gap = (ILP AR − AR) / ILP AR over the violation-free test instances; below, the share of test instances with a capacity / privacy violation. Click a finished cell to open its run.") }}
+        {{ t("每格一个模型：大字为测试集相对 gap =（ILP AR − AR）/ ILP AR，只在无违约的测试实例上计算；下方为有容量 / 隐私违约的测试实例比例。unconstraint（v6.0.1 起）不罚违约，其 AR 为全部测试实例上的目标 AR（违约放置也计入，ECU 利用率截断到 1）。点击已完成的格子查看该 run。",
+             "One model per cell: the large number is the test relative gap = (ILP AR − AR) / ILP AR over the violation-free test instances; below, the share of test instances with a capacity / privacy violation. Unconstraint (from v6.0.1) is not penalised for violations; its AR is the objective AR over all test instances (violating placements included, ECU utilisation clipped at 1). Click a finished cell to open its run.") }}
       </div>
       <div class="mx-grid">
         <div v-for="s in scens" :key="s" class="card">

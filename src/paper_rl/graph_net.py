@@ -191,8 +191,15 @@ class PlanEncoder(nn.Module):
 
 class GraphPolicyNet(nn.Module):
     def __init__(self, d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, pair_head: bool = False,
-                 plan: bool = False, plan_decay: bool = False, glob3: bool = False, lam_in: bool = False):
+                 plan: bool = False, plan_decay: bool = False, glob3: bool = False, lam_in: bool = False,
+                 feas_in: bool = True):
         super().__init__()
+        # v6.0.1: feas_in=False (unconstrained) -- every constraint-derived input is zeroed: ECU "feasible for the
+        # current service", svc "feasible ECUs / N" and "conflicts with other unplaced / M", and the relations
+        # svc-svc conflict, svc conflicts with an ECU, svc fits an ECU; utilisation and the global AR are clipped at 1,
+        # so no violation can be read from the state. Shapes unchanged. Violations are still counted by the env.
+        self.feas_in = feas_in
+        assert feas_in or not (glob3 or glob_std), "feas_in=False: default global token only"
         self.lam_in = lam_in                            # v4.5.4: Lagrange -- lambda / LAMBDA_MAX joins the global token
         assert not (glob3 and glob_std), "glob3 already contains sigma_util"
         self.glob3 = glob3
@@ -220,6 +227,16 @@ class GraphPolicyNet(nn.Module):
         """-> unmasked scores [B,N+1] (ECUs + EXIT; used as Q-values by graph DQN, v4.5.2), value [B], mask, ar.
         lam [B] (lambda / LAMBDA_MAX) is required iff the network was built with lam_in (v4.5.4)."""
         feats, rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std, self.glob3)
+        if not self.feas_in:
+            glob, ecu, svc = feats
+            # no violation leaks either: utilisation clipped to 1 (free is already clamped at 0), AR from the clipped one
+            util = ecu[..., 5].clamp(max=1.0)
+            act = ecu[..., 2]
+            glob = torch.cat([((util * act).sum(1) / act.sum(1).clamp(min=1)).unsqueeze(1), glob[:, 1:]], 1)
+            ecu = torch.cat([ecu[..., :3], torch.zeros_like(ecu[..., 3:4]), ecu[..., 4:5], util.unsqueeze(-1)], -1)
+            svc = torch.cat([svc[..., :3], torch.zeros_like(svc[..., 3:])], -1)
+            feats = (glob, ecu, svc)
+            rel = torch.stack([torch.zeros_like(rel[:, 0]), rel[:, 1], torch.zeros_like(rel[:, 2]), torch.zeros_like(rel[:, 3])], 1)
         if self.lam_in:
             assert lam is not None, "lam_in network needs lambda (Lagrange raw observation)"
             feats = (torch.cat([feats[0], lam.float().unsqueeze(1)], 1), *feats[1:])

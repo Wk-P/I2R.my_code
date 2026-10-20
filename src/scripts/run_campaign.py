@@ -95,6 +95,7 @@ class Cfg:
         self.log_dir = ROOT / "logs" / self.batch
         self.inject = dict(SMOKE_INJECT) if a.smoke else {}
         self.mps = not a.no_mps
+        self.label = a.label
 
 
 # ── plan ─────────────────────────────────────────────────────────────────────
@@ -144,8 +145,11 @@ def write_manifest(C, L):
     strategies = [s for s in ("unconstraint", "lagrangian", "maskable", "repair") if any(x["strategy"] == s for x in runs)]
     man = {"schema": 3, "batch": C.batch, "version": C.version, "purpose": "smoke" if C.smoke else "main", "commit": commit(),
            "results_space": C.space, "driver_pid": os.getpid(), "created_at": L.state.get("created_at"),
-           "title": {"zh": "4 strategies × 3 场景 × PPO / DQN / DDQN，ar_pen 奖励（终局：全部合法给 AR，否则 M_v/M−1，不乘 M；Lagrangian 再减 λ·c_t），EXIT 仅 Maskable，组间串行",
-                     "en": "4 strategies x 3 scenarios x PPO / DQN / DDQN, ar_pen reward (terminal AR if all legal, else M_v/M-1, no factor M; Lagrangian -λc_t), EXIT for Maskable only, groups in series"},
+           "title": {"zh": (f"{C.label}：" if C.label else "") + "4 strategies × 3 场景 × PPO / DQN / DDQN，ar_pen 奖励（终局：全部合法给 AR，否则 M_v/M−1，不乘 M；Lagrangian 再减 λ·c_t），EXIT 仅 Maskable；"
+                           "unconstraint（v6.0.1 起）不罚分，终局给目标 AR（违约放置也计入，ECU 利用率截断到 1），违约照记，观测中无约束 / 违约信息；组间串行",
+                     "en": (f"{C.label}: " if C.label else "") + "4 strategies x 3 scenarios x PPO / DQN / DDQN, ar_pen reward (terminal AR if all legal, else M_v/M-1, no factor M; Lagrangian -λc_t), EXIT for Maskable only; "
+                           "unconstraint (from v6.0.1) is not penalised: terminal objective AR (violating placements included, ECU utilisation clipped at 1), violations recorded, no constraint / violation information in its observation; groups in series"},
+           "label": C.label,
            "RL_algorithm": ["PPO", "DQN", "DDQN"], "strategies": strategies,
            "seeds": sorted({x["seed"] for x in runs}), "scenarios": list(SCENARIOS),
            "groups": {g: {"strategy": C.groups_def[g][0], "seed": C.groups_def[g][1]} for g in C.groups},
@@ -552,6 +556,7 @@ def main():
     ap.add_argument("--version", default=None, help="PAPER_VERSION written into every run (default: the batch name)")
     ap.add_argument("--groups", default=None, help="comma-separated, run in this order, e.g. G1,G2")
     ap.add_argument("--per-gpu", type=int, default=3)
+    ap.add_argument("--label", default=None, help="short batch label, prefixed to the manifest title")
     ap.add_argument("--resume", action="store_true", help="keep runs that already passed the checks")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--no-mps", action="store_true")

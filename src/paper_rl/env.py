@@ -271,6 +271,15 @@ class PlacementEnv(gym.Env):
         return self.exec_ru / len(self.exec_ecus) if self.exec_ecus else 0.0
 
     @property
+    def ar_obj(self) -> float:
+        """v6.0.1: AR of the unconstrained objective -- every executed placement, infeasible ones included,
+        each ECU's utilisation load_j / c_j clipped to 1 (overloading an ECU cannot push AR above 1)."""
+        if not self.exec_ecus:
+            return 0.0
+        e = np.fromiter(self.exec_ecus, dtype=int)
+        return float(np.minimum((self.cap[e] - self.remaining[e]) / self.cap[e], 1.0).mean())
+
+    @property
     def ar(self) -> float:
         return self.legal_ru / len(self.legal_ecus) if self.legal_ecus else 0.0
 
@@ -392,7 +401,7 @@ class PlacementEnv(gym.Env):
         return self.M * (2.0 * self.ar - 1.0)
 
     def _info(self, cap_v=False, conf_v=False) -> dict:
-        return {"ar": self.ar, "ar_star": self.ar_star, "valid_placed": self.valid_placed,
+        return {"ar": self.ar, "ar_obj": self.ar_obj, "ar_star": self.ar_star, "valid_placed": self.valid_placed,
                 "services_placed": self.t, "capacity_violations": self.cap_violations,
                 "conflict_violations": self.conflict_violations, "repairs": self.repairs,
                 "cap_violated": cap_v, "conflict_violated": conf_v, "dead_end": self.dead_end, "exited": self.exited,
@@ -465,6 +474,8 @@ class PlacementEnv(gym.Env):
             r = objective_reward(self.ar - ar0)
             if success:
                 r += C.DIR_B * self.M
+        elif self.mechanism == "none" and self.reward_mode == "ar_pen":
+            r = self.ar_obj if done else 0.0                # v6.0.1: unconstrained -- the objective AR only, no penalty
         elif self.reward_mode == "objective":
             r = self.M * self.ar_exec if done else 0.0
         else:

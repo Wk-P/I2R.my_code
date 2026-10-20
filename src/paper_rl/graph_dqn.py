@@ -46,8 +46,8 @@ class GraphQNet(nn.Module):
 
 class GraphDQNPolicy(DQNPolicy):
     def __init__(self, observation_space, action_space, lr_schedule, n_ecu: int = 0, n_svc: int = 0,
-                 d: int = 128, heads: int = 4, layers: int = 3, lam_in: bool = False, **kwargs):
-        self.n_ecu, self.n_svc, self.gkw = n_ecu, n_svc, dict(d=d, heads=heads, layers=layers, lam_in=lam_in)
+                 d: int = 128, heads: int = 4, layers: int = 3, lam_in: bool = False, feas_in: bool = True, **kwargs):
+        self.n_ecu, self.n_svc, self.gkw = n_ecu, n_svc, dict(d=d, heads=heads, layers=layers, lam_in=lam_in, feas_in=feas_in)
         kwargs.pop("net_arch", None)
         super().__init__(observation_space, action_space, lr_schedule, **kwargs)
 

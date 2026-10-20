@@ -88,7 +88,8 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
             assert action_mode == "ecu", "--net graph: ECU action only"
             from paper_rl.graph_policy import GraphMaskablePolicy
             kw.update(policy=GraphMaskablePolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, glob_std=glob_std, separate=separate, pair_head=pair_head, plan=plan, plan_decay=plan_decay, glob3=glob3,
-                                                                  lam_in=mech == "lagrange", mask_logits=mech == "mask"))
+                                                                  lam_in=mech == "lagrange", mask_logits=mech == "mask",
+                                                                  feas_in=mech != "none"))
         if mech == "mask" and group_k:                 # v4.4.11: same-instance groups, instance-wise baseline
             from paper_rl.group_ppo import GroupMaskablePPO
             return GroupMaskablePPO(group_k=group_k, group_seed=seed, **kw)
@@ -110,7 +111,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
     if net == "graph":                                  # v4.5.2: structure-aware Q-network, same DQN settings
         assert action_mode == "ecu", "--net graph with DQN / DDQN: ECU action only"
         from paper_rl.graph_dqn import GraphDQNPolicy
-        kw.update(policy=GraphDQNPolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, lam_in=mech == "lagrange"))
+        kw.update(policy=GraphDQNPolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, lam_in=mech == "lagrange", feas_in=mech != "none"))
         if mech == "mask":
             cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
             return cls(mask_start=None, raw_dims=(n, m), exit_action=exit_action, **kw)
@@ -305,7 +306,7 @@ def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_
             else:
                 a, _ = model.predict(obs, deterministic=True)
             obs, _, done, _, info = env.step(int(a))
-        out.append({"ar": info["ar"], "ar_star": info["ar_star"], "success": info["valid_placed"] == env.M,
+        out.append({"ar": info["ar"], "ar_obj": info["ar_obj"], "ar_star": info["ar_star"], "success": info["valid_placed"] == env.M,
                     "valid_placed": info["valid_placed"], "cap_v": info["capacity_violations"],
                     "conf_v": info["conflict_violations"], "dead_end": info["dead_end"], "exited": info["exited"],
                     "ecus_used": info["ecus_used"]})
@@ -562,6 +563,10 @@ def main():
           f"AR gap={ilp_ok - ar_ok:.4f} | cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | "
           f"EXIT={np.mean([e['exited'] for e in ev]):.4f} | "
           f"train {train_s / 60:.1f} min", flush=True)
+    ar_obj = float(np.mean([e["ar_obj"] for e in ev]))
+    if mech == "none":                                  # v6.0.1: the unconstrained objective over all test instances
+        print(f"  eval (unconstrained objective, all instances): AR_obj={ar_obj:.4f} ILP AR={ilp_ar:.4f} "
+              f"| any violation={1 - sr:.4f}", flush=True)
 
     res = {
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
@@ -577,6 +582,7 @@ def main():
         a.algo: {
             "success_rate": round(sr, 6),
             "ar_mean": round(float(ars.mean()), 6), "ar_std": round(float(ars.std()), 6),
+            "ar_obj_mean": round(ar_obj, 6),
             "ar_ratio_successful": round(float(np.mean(succ_ratio)), 6) if succ_ratio else None,
             "cap_viol_rate": round(cap_rate, 6), "conflict_viol_rate": round(conf_rate, 6),
             "cap_viol_total": int(sum(e["cap_v"] for e in ev)),

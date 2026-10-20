@@ -22,10 +22,10 @@ class GraphMaskablePolicy(MaskableActorCriticPolicy):
     def __init__(self, observation_space, action_space, lr_schedule, n_ecu: int = 0, n_svc: int = 0,
                  d: int = 128, heads: int = 4, layers: int = 3, glob_std: bool = False, separate: bool = False,
                  pair_head: bool = False, plan: bool = False, plan_decay: bool = False, glob3: bool = False,
-                 lam_in: bool = False, mask_logits: bool = True, **kwargs):
+                 lam_in: bool = False, mask_logits: bool = True, feas_in: bool = True, **kwargs):
         self.n_ecu, self.n_svc = n_ecu, n_svc
         self.gkw = dict(d=d, heads=heads, layers=layers, glob_std=glob_std, pair_head=pair_head, plan=plan, plan_decay=plan_decay, glob3=glob3,
-                        lam_in=lam_in)
+                        lam_in=lam_in, feas_in=feas_in)
         self.separate, self.mask_logits = separate, mask_logits
         assert not kwargs.pop("use_sde", False), "state-dependent exploration is for continuous actions"   # plain PPO passes it (v4.5.4)
         super().__init__(observation_space, action_space, lr_schedule, **kwargs)

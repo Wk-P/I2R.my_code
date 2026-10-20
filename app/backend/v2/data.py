@@ -133,8 +133,14 @@ def metrics(data: dict | None, algo: str) -> dict | None:
     ev = data.get(key) or {}
     tr = data.get("training") or {}
     ar, ilp = clean(ev.get("ar_mean")), clean((data.get("ilp") or {}).get("ar"))
+    # v6.0.1: an unconstrained run is scored by its objective AR (every placement, violating ones included,
+    # utilisation clipped at 1) over all test instances
+    ar_obj = clean(ev.get("ar_obj_mean")) if data.get("mechanism") == "none" else None
+    if ar_obj is not None:
+        ar = ar_obj
     gap = (ilp - ar) / ilp if ar is not None and ilp else None
-    return {"ar": ar, "ar_std": clean(ev.get("ar_std")), "ilp_ar": ilp, "rel_gap": gap,
+    return {"ar": ar, "ar_std": None if ar_obj is not None else clean(ev.get("ar_std")), "ilp_ar": ilp, "rel_gap": gap,
+            "ar_kind": "objective" if ar_obj is not None else "legal",
             "success": clean(ev.get("success_rate")), "cap_viol": clean(ev.get("cap_viol_rate")),
             "priv_viol": clean(ev.get("conflict_viol_rate")), "exit": clean(ev.get("exit_rate")),
             "dead_end": clean(ev.get("dead_end_rate")),
