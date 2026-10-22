@@ -62,7 +62,7 @@ LAGRANGE = {"lambda_max": "none", "lambda_update": "adam", "lambda_lr": 0.035, "
             "lambda_target": 0.0, "lambda_cost": "behavior"}
 FLAG = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr",
         "lambda_cost": "--lambda-cost", "lambda_init": "--lambda-init", "lambda_target": "--lambda-target",
-        "lambda_window": "--lambda-window", "eps_steps": "--eps-steps"}
+        "lambda_window": "--lambda-window", "eps_steps": "--eps-steps", "n_epochs": "--n-epochs", "target_kl": "--target-kl"}
 EPS_STEPS = 2_000_000
 GPU_LIMIT = 97.0
 MAX_RETRY = 2
@@ -96,6 +96,8 @@ class Cfg:
         self.inject = dict(SMOKE_INJECT) if a.smoke else {}
         self.mps = not a.no_mps
         self.label = a.label
+        self.learners = tuple(a.learners.split(","))      # v6.0.0.1: PPO-only batches
+        self.ppo_params = {k: (float(v) if "." in v else int(v)) for k, v in (x.split("=") for x in a.ppo_params.split(",") if x)}
 
 
 # ── plan ─────────────────────────────────────────────────────────────────────
@@ -103,8 +105,8 @@ def key_of(l, strategy):
     return f"{l}_{strategy}"
 
 
-def own_params(l, strategy):
-    p = {} if l == "ppo" else {"eps_steps": EPS_STEPS}
+def own_params(C, l, strategy):
+    p = dict(C.ppo_params) if l == "ppo" else {"eps_steps": EPS_STEPS}
     if strategy == "lagrangian":
         p.update(LAGRANGE, **({"lambda_window": "rollout"} if l == "ppo" else {}))
     return p
@@ -113,8 +115,8 @@ def own_params(l, strategy):
 def plan_runs(C, gid):
     strategy, seed = C.groups_def[gid]
     return [{"label": f"seed{seed} {s} {key_of(l, strategy)}", "group": gid, "seed": seed, "scenario": s, "learner": l,
-             "strategy": strategy, "key": key_of(l, strategy), "algo": ALGO[strategy].format(l=l), "params": own_params(l, strategy)}
-            for s in SCENARIOS for l in LEARNERS]
+             "strategy": strategy, "key": key_of(l, strategy), "algo": ALGO[strategy].format(l=l), "params": own_params(C, l, strategy)}
+            for s in SCENARIOS for l in C.learners]
 
 
 def train_cmd(C, r):
@@ -150,12 +152,12 @@ def write_manifest(C, L):
                      "en": (f"{C.label}: " if C.label else "") + "4 strategies x 3 scenarios x PPO / DQN / DDQN, ar_pen reward (terminal AR if all legal, else M_v/M-1, no factor M; Lagrangian -λc_t), EXIT for Maskable only; "
                            "unconstraint (from v6.0.1) is not penalised: terminal objective AR (violating placements included, ECU utilisation clipped at 1), violations recorded, no constraint / violation information in its observation; groups in series"},
            "label": C.label,
-           "RL_algorithm": ["PPO", "DQN", "DDQN"], "strategies": strategies,
+           "RL_algorithm": [l.upper() for l in C.learners], "strategies": strategies,
            "seeds": sorted({x["seed"] for x in runs}), "scenarios": list(SCENARIOS),
            "groups": {g: {"strategy": C.groups_def[g][0], "seed": C.groups_def[g][1]} for g in C.groups},
            "params": {"steps": C.steps, "checkpoints": C.ckpts, "net": "graph", "reward": "ar_pen", "gamma": 1.0,
                       "full_episode": True, "exit_action": "maskable only", "train_pool": POOL, "data": DATA, "eps_steps_dqn": EPS_STEPS,
-                      "lagrangian": LAGRANGE, "per_gpu": C.per_gpu, "gpu_limit_pct": GPU_LIMIT, "gpu_of": GPU_OF},
+                      "lagrangian": LAGRANGE, "ppo_params": C.ppo_params, "per_gpu": C.per_gpu, "gpu_limit_pct": GPU_LIMIT, "gpu_of": GPU_OF},
            "runs": runs, "references": []}
     tmp = C.log_dir / "manifest.json.tmp"
     tmp.write_text(json.dumps(man, indent=2, ensure_ascii=False))
@@ -409,6 +411,8 @@ def check_run(C, r, exp_id, log: Path):
                 ok = got == v
             if not ok:
                 probs.append(f"Lagrangian 参数 {k}={got!r}（应为 {v!r}）")
+    probs += [f"results.json {k}={res.get(k)!r}（应为 {v!r}）" for k, v in r["params"].items()
+              if r["learner"] == "ppo" and k in C.ppo_params and res.get(k) != v]
     if r["learner"] != "ppo" and tr.get("eps_steps") != EPS_STEPS:
         probs.append(f"eps_steps={tr.get('eps_steps')}（应为 {EPS_STEPS}）")
     if not list(d.glob("model_*")):
@@ -558,6 +562,8 @@ def main():
     ap.add_argument("--per-gpu", type=int, default=3)
     ap.add_argument("--label", default=None, help="short batch label, prefixed to the manifest title")
     ap.add_argument("--resume", action="store_true", help="keep runs that already passed the checks")
+    ap.add_argument("--learners", default=",".join(LEARNERS), help="v6.0.0.1: comma-separated subset of ppo,dqn,ddqn")
+    ap.add_argument("--ppo-params", default="", help="v6.0.0.1: extra PPO flags, e.g. target_kl=0.02 or n_epochs=4")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--no-mps", action="store_true")
     ap.add_argument("--allow-busy", action="store_true", help="start although other paper_rl.train processes exist")

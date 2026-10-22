@@ -77,10 +77,11 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
                 exit_action: bool = False, m: int = 0, action_mode: str = "ecu", net: str = "mlp", device: str = "cpu",
                 gae_lambda: float | None = None, lr: float | None = None, ent_coef: float | None = None,
                 glob_std: bool = False, separate: bool = False, pair_head: bool = False, group_k: int = 0,
-                plan: bool = False, plan_decay: bool = False, glob3: bool = False, eps_frac: float | None = None):
+                plan: bool = False, plan_decay: bool = False, glob3: bool = False, eps_frac: float | None = None,
+                n_epochs: int | None = None, target_kl: float | None = None):
     if learner == "ppo":
         kw = dict(policy="MlpPolicy", env=env, learning_rate=C.PPO_LR if lr is None else lr, n_steps=C.PPO_N_STEPS,
-                  batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS, gamma=C.PPO_GAMMA if gamma is None else gamma,
+                  batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS if n_epochs is None else n_epochs, target_kl=target_kl, gamma=C.PPO_GAMMA if gamma is None else gamma,
                   gae_lambda=C.PPO_GAE_LAMBDA if gae_lambda is None else gae_lambda, clip_range=C.PPO_CLIP_RANGE, ent_coef=C.PPO_ENT_COEF if ent_coef is None else ent_coef,
                   policy_kwargs=dict(net_arch=C.PPO_NET_ARCH), device=device, verbose=0, seed=seed)
         if net == "graph":                              # v4.4.3: structure-aware policy, PPO settings unchanged
@@ -403,6 +404,8 @@ def main():
                     help="GAE lambda for PPO (1 = Monte-Carlo return minus V(s))")
     ap.add_argument("--lr", type=float, default=None, help="v4.4.5: PPO learning rate (default PPO_LR in config)")
     ap.add_argument("--ent-coef", type=float, default=None, help="v4.4.5: PPO entropy coefficient (default PPO_ENT_COEF)")
+    ap.add_argument("--n-epochs", type=int, default=None, help="v6.0.0.2: PPO epochs per update (default PPO_N_EPOCHS)")
+    ap.add_argument("--target-kl", type=float, default=None, help="v6.0.0.1: PPO early stop of an update once approx KL > 1.5 x this (default none)")
     ap.add_argument("--order", default="desc", choices=["desc", "asc", "random"],
                     help="v4.4.7: service placement order (random = one fixed permutation per instance)")
     ap.add_argument("--order-seed", type=int, default=0, help="v4.4.7: seed of the random order")
@@ -483,7 +486,7 @@ def main():
                    **json.loads(os.environ.get("RUN_PARAMS") or "{}")},
         "started_at": datetime.datetime.now().isoformat(timespec="seconds"), "argv": sys.argv[1:]}, indent=2))
     print(f"=== {a.scen.upper()} N={n} M={m} | {algo_label(a.algo)} | reward={a.reward} | "
-          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | glob_std={a.glob_std} | separate_critic={a.separate_critic} | pair_head={a.pair_head} | group_k={a.group_k} | train={len(train)} | plan={a.plan} | plan_decay={a.plan_decay} | glob3={a.glob3} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
+          f"reward_norm={a.reward_norm} | obs={a.obs} | gamma={a.gamma} | gae_lambda={a.gae_lambda} | lr={a.lr} | ent_coef={a.ent_coef} | n_epochs={a.n_epochs} | target_kl={a.target_kl} | glob_std={a.glob_std} | separate_critic={a.separate_critic} | pair_head={a.pair_head} | group_k={a.group_k} | train={len(train)} | plan={a.plan} | plan_decay={a.plan_decay} | glob3={a.glob3} | order={a.order} | full_episode={a.full_episode} | steps={a.steps:,} | seed={a.seed} | exp_id={exp_id} ===", flush=True)
 
     n_envs = C.PPO_N_ENVS if learner == "ppo" else C.DQN_N_ENVS
     scale = 1.0 / m if a.reward_norm == "m" else 1.0
@@ -501,7 +504,7 @@ def main():
         print(f"  [resume] {resumed['from']} at step {resumed['at_step']:,}; +{a.steps:,} steps", flush=True)
     else:
         model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay, a.glob3,
-                            None if a.eps_steps is None else min(1.0, a.eps_steps / a.steps))
+                            None if a.eps_steps is None else min(1.0, a.eps_steps / a.steps), a.n_epochs, a.target_kl)
     bc_info = None
     if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
         assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
@@ -575,7 +578,8 @@ def main():
         "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "checkpoints": a.checkpoints, "resumed": resumed, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
         **({"gae_lambda": C.PPO_GAE_LAMBDA if a.gae_lambda is None else a.gae_lambda,
             "lr": C.PPO_LR if a.lr is None else a.lr,
-            "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef} if learner == "ppo" else {}),
+            "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef,
+            "n_epochs": C.PPO_N_EPOCHS if a.n_epochs is None else a.n_epochs, "target_kl": a.target_kl} if learner == "ppo" else {}),
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},
