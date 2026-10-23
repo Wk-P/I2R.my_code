@@ -313,11 +313,13 @@ def val_callback(every: int, path: Path, eval_fn):
 
 
 def val_summary(ev: list[dict]) -> dict:
-    """v6.1.0: relative AR gap over the violation-free instances, violation rate (capacity or privacy), EXIT rate."""
+    """v6.1.0: relative AR gap over the violation-free instances, violation rate (capacity or privacy), EXIT rate,
+    fail = 1 - violation-free rate (violation or EXIT)."""
     ok = [e for e in ev if e["success"]]
     rel = float(np.mean([(e["ar_star"] - e["ar"]) / e["ar_star"] for e in ok])) if ok else 1.0
     return {"rel_gap": round(rel, 6), "viol": round(float(np.mean([e["cap_v"] > 0 or e["conf_v"] > 0 for e in ev])), 6),
-            "exit": round(float(np.mean([e["exited"] for e in ev])), 6)}
+            "exit": round(float(np.mean([e["exited"] for e in ev])), 6),
+            "fail": round(1 - len(ok) / len(ev), 6)}
 
 
 # ── evaluation ──────────────────────────────────────────────────────────────
