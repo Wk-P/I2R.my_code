@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LOGS = ROOT / "logs"
-PURPOSES = ("eval", "diag", "data")
+PURPOSES = ("eval", "diag", "data", "tune")   # v6.1.0: tune = Optuna search (runs live in results/tune)
 
 
 def _now() -> str:
@@ -53,14 +53,15 @@ def write(batch: str, /, **fields) -> Path:
 
 
 def plan(batch: str, purpose: str, script: str, title: dict, depends_on=(), report_dir: str | None = None,
-         outputs=(), logs=None, inputs=(), version: str | None = None) -> dict:
+         outputs=(), logs=None, inputs=(), version: str | None = None, links=()) -> dict:
     """The fixed fields of a non-training manifest (docs/data_spec.md §6)."""
     assert purpose in PURPOSES, purpose
     script = str(Path(script).resolve().relative_to(ROOT))
     commit, dirty = _commit(script)
     man = {"schema": 3, "batch": batch, "version": version or batch, "purpose": purpose, "script": script,
            "commit": commit, "script_uncommitted": dirty, "title": title, "depends_on": list(depends_on),
-           "inputs": list(inputs), "report_dir": report_dir, "outputs": list(outputs), "runs": [], "references": []}
+           "inputs": list(inputs), "report_dir": report_dir, "outputs": list(outputs), "runs": [], "references": [],
+           "links": list(links)}   # v6.1.0: [{"zh", "en", "url"}] shown on the batch page
     if logs is not None:
         man["logs"] = list(logs)
     return man

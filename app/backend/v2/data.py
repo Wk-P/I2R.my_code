@@ -20,7 +20,7 @@ PAPER = ROOT / "paper_contents"
 SCENARIOS = ["lt", "eq", "gt"]
 RL_ALGORITHMS = ["PPO", "DQN", "DDQN"]                                   # docs/data_spec.md §1
 STRATEGIES = ["unconstraint", "lagrangian", "maskable", "repair"]
-NON_TRAINING = ("eval", "diag", "data")       # docs/data_spec.md §6: batches that train nothing (no runs, a report / data)
+NON_TRAINING = ("eval", "diag", "data", "tune")       # docs/data_spec.md §6: batches that train nothing (no runs, a report / data)
 _PREFIX = {"unconstraint": "", "lagrangian": "lagrange_", "maskable": "mask_", "repair": "repair_"}
 _FROM_MECH = {"none": "unconstraint", "lagrange": "lagrangian", "mask": "maskable", "repair": "repair"}
 

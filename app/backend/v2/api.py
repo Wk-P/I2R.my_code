@@ -133,7 +133,7 @@ def build_batch(name: str, detail: bool = False) -> dict | None:
            "report": L.report_stage(name) if status != "running" else None,
            "has_report": bool(rdir and any(rdir.glob("*.md"))),
            "RL_algorithm": man.get("RL_algorithm", []), "strategies": man.get("strategies", []), "seeds": man.get("seeds", []),
-           "scenarios": man.get("scenarios", []), "params": man.get("params", {})}
+           "scenarios": man.get("scenarios", []), "params": man.get("params", {}), "links": man.get("links") or []}
     if not detail:
         return out
     for r in runs:

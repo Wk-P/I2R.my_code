@@ -167,9 +167,22 @@ def main():
                 print(f"    best {study.best_value:.4f}: {study.best_params}", flush=True)
 
 
+TITLE = {"zh": "v6.1.0：Optuna 调参，12 个 study（PPO / DQN / DDQN × 4 strategies），三场景共用一套超参，每个 study 20 次试验 × 2M 步，"
+                "目标 = 三场景验证集（data/valset_v6.1.0）相对 gap + 失败率的平均",
+         "en": "v6.1.0: Optuna search, 12 studies (PPO / DQN / DDQN x 4 strategies), one setting shared by the three scenarios, "
+               "20 trials x 2M steps per study, objective = mean over scenarios of relative gap + fail rate on data/valset_v6.1.0"}
+LINKS = [{"zh": "Optuna 调参看板", "en": "Optuna dashboard", "url": "/optuna/dashboard/"}]
+
+
 if __name__ == "__main__":
+    from shared.batch_manifest import nontrain_batch      # docs/data_spec.md §6 (purpose tune, v6.1.0)
+    smoke = "--smoke" in sys.argv
     try:
-        main()
+        with nontrain_batch(VERSION + ("-smoke" if smoke else ""), "tune", __file__, TITLE, depends_on=["v6.1.0-valset"],
+                            report_dir=None, version=VERSION, inputs=["results/sup_diag/{scen}.json", VAL_SET],
+                            outputs=["results/tune/" + VERSION + ("-smoke" if smoke else "") + ".db"],
+                            logs=["logs/" + VERSION + ("-smoke" if smoke else "") + "/driver.log"], links=LINKS):
+            main()
     except Exception:
         traceback.print_exc()
         sys.exit(1)
