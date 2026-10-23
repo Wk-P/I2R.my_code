@@ -20,6 +20,7 @@ PAPER = ROOT / "paper_contents"
 SCENARIOS = ["lt", "eq", "gt"]
 RL_ALGORITHMS = ["PPO", "DQN", "DDQN"]                                   # docs/data_spec.md §1
 STRATEGIES = ["unconstraint", "lagrangian", "maskable", "repair"]
+NON_TRAINING = ("eval", "diag", "data")       # docs/data_spec.md §6: batches that train nothing (no runs, a report / data)
 _PREFIX = {"unconstraint": "", "lagrangian": "lagrange_", "maskable": "mask_", "repair": "repair_"}
 _FROM_MECH = {"none": "unconstraint", "lagrange": "lagrangian", "mask": "maskable", "repair": "repair"}
 
@@ -230,14 +231,26 @@ def batch_names() -> list[str]:
 
 
 def report_dir(batch: str, man: dict) -> Path | None:
-    """Where the batch's report lives: logs/<batch>/report/ (smoke) or paper_contents/v<version>/."""
+    """Where the batch's report lives: the manifest's report_dir (non-training batches), logs/<batch>/report/
+    (smoke) or paper_contents/v<version>/."""
+    if man.get("report_dir"):
+        d = (ROOT / man["report_dir"]).resolve()
+        return d if d.is_dir() and d.is_relative_to(ROOT) else None
     d = LOGS / batch / "report"
     if d.is_dir():
         return d
-    v = man.get("version")
-    if v and man.get("purpose") == "main" and (PAPER / f"v{v}").is_dir():
+    v = str(man.get("version") or "").removeprefix("v")
+    if v and man.get("purpose") in ("main", *NON_TRAINING) and (PAPER / f"v{v}").is_dir():
         return PAPER / f"v{v}"
     return None
+
+
+def batch_logs(batch: str, man: dict) -> list[Path]:
+    """Logs of a non-training batch: the manifest's "logs" (paths under logs/), else logs/<batch>/*.log."""
+    if man.get("logs"):
+        ps = [(ROOT / x).resolve() for x in man["logs"]]
+        return [p for p in ps if p.is_file() and p.is_relative_to(LOGS)]
+    return sorted((LOGS / batch).glob("*.log"))
 
 
 def report_files(rdir: Path | None) -> list[dict]:

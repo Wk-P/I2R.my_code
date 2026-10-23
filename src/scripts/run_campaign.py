@@ -96,6 +96,7 @@ class Cfg:
         self.inject = dict(SMOKE_INJECT) if a.smoke else {}
         self.mps = not a.no_mps
         self.label = a.label
+        self.test_set = a.test_set                        # v6.0.4: fixed test set (None: the seed's 400-instance split)
         self.learners = tuple(a.learners.split(","))      # v6.0.0.1: PPO-only batches
         self.ppo_params = {k: (float(v) if "." in v else int(v)) for k, v in (x.split("=") for x in a.ppo_params.split(",") if x)}
 
@@ -124,6 +125,8 @@ def train_cmd(C, r):
            "--reward", "ar_pen", "--reward-norm", "none", "--obs", "base", "--gamma", "1.0", "--full-episode",
            "--steps", str(C.steps), "--checkpoints", ",".join(map(str, C.ckpts)), "--seed", str(r["seed"]),
            "--device", "cuda", "--train-pool", POOL]
+    if C.test_set:
+        cmd += ["--test-set", C.test_set]
     if r["strategy"] == "maskable":                     # EXIT is Mask's own mechanism (as v5.4.0)
         cmd.append("--exit-action")
     for k, v in r["params"].items():
@@ -133,6 +136,32 @@ def train_cmd(C, r):
 
 def commit():
     return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+
+
+def title(C, strategies, runs):
+    """Manifest title from what the batch actually runs (strategies, learners, seeds, PPO flags, test set)."""
+    seeds = sorted({x["seed"] for x in runs})
+    word = "strategy" if len(strategies) == 1 else "strategies"
+    flags = ", ".join(f"{k}={v}" for k, v in C.ppo_params.items())
+    zh = [f"{len(strategies)} {word}（{' / '.join(strategies)}）× 3 场景 × {' / '.join(l.upper() for l in C.learners)}，种子 {', '.join(map(str, seeds))}"]
+    en = [f"{len(strategies)} {word} ({' / '.join(strategies)}) x 3 scenarios x {' / '.join(l.upper() for l in C.learners)}, seeds {', '.join(map(str, seeds))}"]
+    if flags:
+        zh.append(f"PPO {flags}（其余同 v6.0.0）")
+        en.append(f"PPO {flags} (otherwise as v6.0.0)")
+    if C.test_set:
+        zh.append(f"测试集 {C.test_set}")
+        en.append(f"test set {C.test_set}")
+    zh.append("ar_pen 奖励（终局：全部合法给 AR，否则 M_v/M−1，不乘 M" + ("；Lagrangian 再减 λ·c_t" if "lagrangian" in strategies else "") + "）")
+    en.append("ar_pen reward (terminal AR if all legal, else M_v/M-1, no factor M" + ("; Lagrangian -λc_t" if "lagrangian" in strategies else "") + ")")
+    if "maskable" in strategies:
+        zh.append("EXIT 仅 Maskable")
+        en.append("EXIT for Maskable only")
+    if "unconstraint" in strategies:
+        zh.append("unconstraint（v6.0.1 起）不罚分，终局给目标 AR（违约放置也计入，ECU 利用率截断到 1），违约照记，观测中无约束 / 违约信息")
+        en.append("unconstraint (from v6.0.1) is not penalised: terminal objective AR (violating placements included, ECU utilisation clipped at 1), violations recorded, no constraint / violation information in its observation")
+    zh.append("组间串行")
+    en.append("groups in series")
+    return {"zh": (f"{C.label}：" if C.label else "") + "；".join(zh), "en": (f"{C.label}: " if C.label else "") + "; ".join(en)}
 
 
 def write_manifest(C, L):
@@ -147,16 +176,13 @@ def write_manifest(C, L):
     strategies = [s for s in ("unconstraint", "lagrangian", "maskable", "repair") if any(x["strategy"] == s for x in runs)]
     man = {"schema": 3, "batch": C.batch, "version": C.version, "purpose": "smoke" if C.smoke else "main", "commit": commit(),
            "results_space": C.space, "driver_pid": os.getpid(), "created_at": L.state.get("created_at"),
-           "title": {"zh": (f"{C.label}：" if C.label else "") + "4 strategies × 3 场景 × PPO / DQN / DDQN，ar_pen 奖励（终局：全部合法给 AR，否则 M_v/M−1，不乘 M；Lagrangian 再减 λ·c_t），EXIT 仅 Maskable；"
-                           "unconstraint（v6.0.1 起）不罚分，终局给目标 AR（违约放置也计入，ECU 利用率截断到 1），违约照记，观测中无约束 / 违约信息；组间串行",
-                     "en": (f"{C.label}: " if C.label else "") + "4 strategies x 3 scenarios x PPO / DQN / DDQN, ar_pen reward (terminal AR if all legal, else M_v/M-1, no factor M; Lagrangian -λc_t), EXIT for Maskable only; "
-                           "unconstraint (from v6.0.1) is not penalised: terminal objective AR (violating placements included, ECU utilisation clipped at 1), violations recorded, no constraint / violation information in its observation; groups in series"},
+           "title": title(C, strategies, runs),
            "label": C.label,
            "RL_algorithm": [l.upper() for l in C.learners], "strategies": strategies,
            "seeds": sorted({x["seed"] for x in runs}), "scenarios": list(SCENARIOS),
            "groups": {g: {"strategy": C.groups_def[g][0], "seed": C.groups_def[g][1]} for g in C.groups},
            "params": {"steps": C.steps, "checkpoints": C.ckpts, "net": "graph", "reward": "ar_pen", "gamma": 1.0,
-                      "full_episode": True, "exit_action": "maskable only", "train_pool": POOL, "data": DATA, "eps_steps_dqn": EPS_STEPS,
+                      "full_episode": True, "exit_action": "maskable only", "train_pool": POOL, "test_set": C.test_set, "data": DATA, "eps_steps_dqn": EPS_STEPS,
                       "lagrangian": LAGRANGE, "ppo_params": C.ppo_params, "per_gpu": C.per_gpu, "gpu_limit_pct": GPU_LIMIT, "gpu_of": GPU_OF},
            "runs": runs, "references": []}
     tmp = C.log_dir / "manifest.json.tmp"
@@ -397,7 +423,8 @@ def check_run(C, r, exp_id, log: Path):
     except (OSError, json.JSONDecodeError) as e:
         return [f"results.json 缺失或损坏（{e.__class__.__name__}）"], None
     want = {"reward_mode": "ar_pen", "exit_action": r["strategy"] == "maskable", "full_episode": True, "seed": r["seed"], "algo": r["algo"],
-            "scenario": r["scenario"], "net": "graph", "train_pool": POOL, "gamma": 1.0}
+            "scenario": r["scenario"], "net": "graph", "train_pool": POOL, "gamma": 1.0,
+            "test_set": C.test_set}
     probs += [f"results.json {k}={res.get(k)!r}（应为 {v!r}）" for k, v in want.items() if res.get(k) != v]
     tr = res.get("training") or {}
     if tr.get("total_steps", 0) < C.steps:
@@ -443,7 +470,8 @@ def check_run(C, r, exp_id, log: Path):
 
 def reload_check(C, r, d, res, ev):
     """Reload the saved model on CPU, evaluate it with the run's own settings and compare with the logged eval."""
-    cmd = [PY_GPU, "-c", RELOAD_SNIPPET, str(d), r["scenario"], str(r["seed"]), r["algo"], json.dumps(res.get("exit_action"))]
+    cmd = [PY_GPU, "-c", RELOAD_SNIPPET, str(d), r["scenario"], str(r["seed"]), r["algo"], json.dumps(res.get("exit_action")),
+           C.test_set or ""]
     p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, env={**os.environ, "CUDA_VISIBLE_DEVICES": ""}, timeout=3600)
     if p.returncode != 0:
         return [f"重载评估失败：{(p.stderr or p.stdout).strip().splitlines()[-1] if (p.stderr or p.stdout).strip() else p.returncode}"]
@@ -476,7 +504,7 @@ lam = tr.get("final_lambda", 0.0) if mech == "lagrange" else 0.0
 lm = tr.get("lambda_max", 50.0)
 lm = float("inf") if lm == "none" else float(lm)
 model = model_class(learner, mech).load(str(next(d.glob("model_*"))), device="cpu")
-test = split_instances(scen, seed)[2]
+test = json.loads(Path(sys.argv[6].format(scen=scen)).read_text()) if sys.argv[6] else split_instances(scen, seed)[2]
 ev = evaluate(model, test, mech, res["reward_mode"], lam, learner, "raw", True, exit_action, lam_max=lm)
 ok = [e for e in ev if e["success"]]
 ar = float(np.mean([e["ar"] for e in ok])) if ok else float("nan")
@@ -562,6 +590,7 @@ def main():
     ap.add_argument("--per-gpu", type=int, default=3)
     ap.add_argument("--label", default=None, help="short batch label, prefixed to the manifest title")
     ap.add_argument("--resume", action="store_true", help="keep runs that already passed the checks")
+    ap.add_argument("--test-set", default=None, help="v6.0.4: fixed test set, e.g. data/testset_v6.0.4/{scen}.json")
     ap.add_argument("--learners", default=",".join(LEARNERS), help="v6.0.0.1: comma-separated subset of ppo,dqn,ddqn")
     ap.add_argument("--ppo-params", default="", help="v6.0.0.1: extra PPO flags, e.g. target_kl=0.02 or n_epochs=4")
     ap.add_argument("--smoke", action="store_true")

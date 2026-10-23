@@ -92,8 +92,11 @@ def build_batch(name: str, detail: bool = False) -> dict | None:
         if r["status"] == "queued" and any(g in open_groups for g in r["depends_on"]):
             r["status"] = "waiting"
     n = lambda st: sum(1 for r in runs if r["status"] == st)
+    training = man.get("purpose") not in D.NON_TRAINING
     if (log_dir / ".cancelled").is_file():
         status = "cancelled"
+    elif not training:                                # no runs: the script's own status (docs/data_spec.md §6)
+        status = "running" if L.script_alive(raw) else {"failed": "stopped"}.get(man.get("status"), "finished")
     elif n("running") or (n("done") < len(runs) and L.driver_alive(raw)):
         status = "running"
     elif n("done") == len(runs):
@@ -110,23 +113,27 @@ def build_batch(name: str, detail: bool = False) -> dict | None:
         r["live"] = L.run_live(name, r["exp_id"]) if r["status"] == "running" else None
         r["progress"] = r["live"]["pct"] if r["live"] else None
         frac += (r["progress"] or 0) / 100
-    eta = _batch_eta(runs, man["params"].get("steps")) if status == "running" else None
+    eta = _batch_eta(runs, man.get("params", {}).get("steps")) if status == "running" else None
     logs = list(log_dir.glob("*.log"))
     updated = max([f.stat().st_mtime for f in logs] + [log_dir.stat().st_mtime])
     started = _epoch(man.get("created_at")) or log_dir.stat().st_mtime
+    if not training and _epoch(man.get("finished_at")):
+        updated = _epoch(man["finished_at"])
     rdir = D.report_dir(name, man)
     total = len(runs)
-    out = {"name": name, "version": man.get("version"), "purpose": man.get("purpose") or "main",
+    version = str(man["version"]).removeprefix("v") if man.get("version") else None    # v6 manifests write "v6.0.0.2"
+    out = {"name": name, "version": version, "purpose": man.get("purpose") or "main",
            "title": man.get("title"), "commit": man.get("commit"), "status": status, "space": space,
            "total": total, "counts": counts,
-           "pct": round(100 * frac / total, 1) if total else 0.0, "eta": eta,
+           "pct": round(100 * frac / total, 1) if total else (100.0 if status == "finished" else 0.0), "eta": eta,
+           "training": training, "script": man.get("script"), "depends_on": man.get("depends_on") or [],
            "steps_per_sec": sum((r["live"] or {}).get("steps_per_sec") or 0 for r in runs) or None,
            "started_at": started, "updated_at": updated,
            "elapsed": (time.time() if status == "running" else updated) - started,
            "report": L.report_stage(name) if status != "running" else None,
-           "has_report": bool(rdir and (rdir / "report.md").is_file()),
-           "RL_algorithm": man["RL_algorithm"], "strategies": man["strategies"], "seeds": man["seeds"],
-           "scenarios": man["scenarios"], "params": man["params"]}
+           "has_report": bool(rdir and any(rdir.glob("*.md"))),
+           "RL_algorithm": man.get("RL_algorithm", []), "strategies": man.get("strategies", []), "seeds": man.get("seeds", []),
+           "scenarios": man.get("scenarios", []), "params": man.get("params", {})}
     if not detail:
         return out
     for r in runs:
@@ -144,6 +151,8 @@ def build_batch(name: str, detail: bool = False) -> dict | None:
     out["runs"] = runs
     out["references"] = refs
     out["reports"] = D.report_files(rdir)
+    if not training:                                  # the script's log, shown next to its report
+        out["reports"] += [{"file": p.name, "title": p.name, "has_en": False, "log": True} for p in D.batch_logs(name, man)]
     out["config"] = {k: v for k, v in man.items() if k not in ("runs", "references")}
     return out
 
@@ -187,7 +196,7 @@ def batches(tests: bool = False):
     """Every schema-2 batch; smoke / test batches only with tests=true (a running one always)."""
     bs = _all_batches()
     if not tests:
-        bs = [b for b in bs if b["purpose"] == "main" or b["status"] == "running"]
+        bs = [b for b in bs if b["purpose"] in ("main", *D.NON_TRAINING) or b["status"] == "running"]
     return {"batches": bs}
 
 
@@ -244,6 +253,12 @@ def batch(name: str):
 @router.get("/batches/{name}/report")
 def report(name: str, file: str = "report.md", lang: str = "zh"):
     man = D.manifest(name) or {}
+    if "/" not in file and file.endswith(".log"):     # a non-training batch's log
+        p = next((x for x in D.batch_logs(name, man) if x.name == file), None)
+        if p is None:
+            raise HTTPException(404)
+        return {"file": p.name, "dir": str(p.parent.relative_to(D.ROOT)), "text": p.read_text(errors="replace"),
+                "updated_at": p.stat().st_mtime, "log": True}
     rdir = D.report_dir(name, man)
     if rdir is None or "/" in file or not file.endswith(".md"):
         raise HTTPException(404)

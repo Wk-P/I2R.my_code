@@ -86,7 +86,7 @@ const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" :
         {{ t("每格一个模型：大字为测试集相对 gap =（ILP AR − AR）/ ILP AR，只在无违约的测试实例上计算；下方为有容量 / 隐私违约的测试实例比例。unconstraint（v6.0.1 起）不罚违约，其 AR 为全部测试实例上的目标 AR（违约放置也计入，ECU 利用率截断到 1）。点击已完成的格子查看该 run。",
              "One model per cell: the large number is the test relative gap = (ILP AR − AR) / ILP AR over the violation-free test instances; below, the share of test instances with a capacity / privacy violation. Unconstraint (from v6.0.1) is not penalised for violations; its AR is the objective AR over all test instances (violating placements included, ECU utilisation clipped at 1). Click a finished cell to open its run.") }}
       </div>
-      <div class="mx-grid">
+      <div class="mx-grid" :style="{ gridTemplateColumns: `repeat(auto-fit, minmax(min(${80 + 150 * mechs.length}px, 100%), 1fr))` }">
         <div v-for="s in scens" :key="s" class="card">
           <div class="card-h"><h2>{{ scenName(s) }}</h2></div>
           <div class="card-b table-wrap">
@@ -102,14 +102,19 @@ const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" :
                         <template v-if="c.status === 'done'">
                           <div class="mx-gap" :class="gapTone(c.gap)">{{ pct(c.gap) }}</div>
                           <div class="mx-sub">{{ t("容量", "cap") }} {{ pct(c.cap) }} · {{ t("隐私", "priv") }} {{ pct(c.priv) }}</div>
-                          <div v-if="c.exit" class="mx-sub">EXIT {{ pct(c.exit) }}</div>
+                          <div v-if="m === 'maskable'" class="mx-sub">EXIT {{ pct(c.exit) }}</div>
                           <div v-if="m === 'lagrangian'" class="mx-sub lam">λ_max {{ c.lamMax ?? "?" }} · {{ t("末 λ", "final λ") }} {{ num(c.lam, 2) }}</div>
                           <div v-if="c.ref" class="mx-sub faint">{{ t("参照 · 非本批次训练", "reference · not trained here") }}</div>
                         </template>
                         <template v-else>
+                          <template v-if="c.done.length">
+                            <div class="mx-gap" :class="gapTone(c.gap)">{{ pct(c.gap) }}</div>
+                            <div class="mx-sub">{{ t("容量", "cap") }} {{ pct(c.cap) }} · {{ t("隐私", "priv") }} {{ pct(c.priv) }}<template v-if="m === 'maskable'"> · EXIT {{ pct(c.exit) }}</template></div>
+                            <div class="mx-sub faint">{{ t("已完成种子", "seeds done") }} {{ c.done.length }}/{{ c.runs.length }}</div>
+                          </template>
                           <span class="badge" :class="STATUS_TONE[c.status]">{{ statusName(c.status) }}<template v-if="c.progress != null"> · {{ c.progress.toFixed(0) }}%</template></span>
                           <div v-if="c.live" class="mx-sub mono">{{ steps(c.live.step) }} / {{ steps(c.live.total) }} · {{ c.live.steps_per_sec ?? "—" }} {{ t("步/秒", "/s") }}</div>
-                          <div v-if="c.live?.lambda != null" class="mx-sub lam">{{ t("当前 λ", "λ now") }} {{ num(c.live.lambda, 3) }}</div>
+                          <div v-if="m === 'lagrangian' && c.live?.lambda != null" class="mx-sub lam">{{ t("当前 λ", "λ now") }} {{ num(c.live.lambda, 3) }}</div>
                           <div v-if="c.status === 'waiting'" class="mx-sub faint">{{ t("等 λ_max 扫描", "for the λ_max sweep") }}</div>
                           <div v-if="m === 'lagrangian' && c.lamMax != null" class="mx-sub lam">λ_max {{ c.lamMax }}</div>
                         </template>
@@ -137,9 +142,14 @@ const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" :
                 <div v-else-if="c.status === 'done'" :class="{ click: c.done.length }" @click="open(c.done[0])" style="cursor: pointer">
                   <b :class="['gapv', gapTone(c.gap)]">{{ pct(c.gap) }}</b>
                   <span class="faint small"> · {{ t("容量", "cap") }} {{ pct(c.cap) }} · {{ t("隐私", "priv") }} {{ pct(c.priv) }}</span>
+                  <span class="faint small" v-if="v.strategy === 'maskable'"> · EXIT {{ pct(c.exit) }}</span>
                   <span class="faint small" v-if="c.runs.length > 1"> · {{ c.done.length }} {{ t("种子", "seeds") }}</span>
                 </div>
-                <span v-else class="badge" :class="STATUS_TONE[c.status]">{{ statusName(c.status) }}<template v-if="c.progress != null"> · {{ c.progress.toFixed(0) }}%</template></span>
+                <div v-else>
+                  <span v-if="c.done.length" :class="{ click: true }" @click="open(c.done[0])" style="cursor: pointer"><b :class="['gapv', gapTone(c.gap)]">{{ pct(c.gap) }}</b>
+                    <span class="faint small"> · {{ t("容量", "cap") }} {{ pct(c.cap) }} · {{ t("隐私", "priv") }} {{ pct(c.priv) }}<template v-if="v.strategy === 'maskable'"> · EXIT {{ pct(c.exit) }}</template> · {{ t("已完成种子", "seeds done") }} {{ c.done.length }}/{{ c.runs.length }}</span><br /></span>
+                  <span class="badge" :class="STATUS_TONE[c.status]">{{ statusName(c.status) }}<template v-if="c.progress != null"> · {{ c.progress.toFixed(0) }}%</template></span>
+                </div>
               </template></div>
           </div>
         </div>
@@ -156,9 +166,14 @@ const gapTone = (g) => (g == null ? "" : g <= 0.05 ? "good" : g <= 0.1 ? "mid" :
                   <div v-else-if="c.status === 'done'" :class="{ click: c.done.length }" @click="open(c.done[0])" style="cursor: pointer">
                     <b :class="['gapv', gapTone(c.gap)]">{{ pct(c.gap) }}</b>
                     <span class="faint small"> · {{ t("容量", "cap") }} {{ pct(c.cap) }} · {{ t("隐私", "priv") }} {{ pct(c.priv) }}</span>
+                    <span class="faint small" v-if="v.strategy === 'maskable'"> · EXIT {{ pct(c.exit) }}</span>
                     <span class="faint small" v-if="c.runs.length > 1"> · {{ c.done.length }} {{ t("种子", "seeds") }}</span>
                   </div>
-                  <span v-else class="badge" :class="STATUS_TONE[c.status]">{{ statusName(c.status) }}<template v-if="c.progress != null"> · {{ c.progress.toFixed(0) }}%</template></span>
+                  <div v-else>
+                  <span v-if="c.done.length" :class="{ click: true }" @click="open(c.done[0])" style="cursor: pointer"><b :class="['gapv', gapTone(c.gap)]">{{ pct(c.gap) }}</b>
+                    <span class="faint small"> · {{ t("容量", "cap") }} {{ pct(c.cap) }} · {{ t("隐私", "priv") }} {{ pct(c.priv) }}<template v-if="v.strategy === 'maskable'"> · EXIT {{ pct(c.exit) }}</template> · {{ t("已完成种子", "seeds done") }} {{ c.done.length }}/{{ c.runs.length }}</span><br /></span>
+                  <span class="badge" :class="STATUS_TONE[c.status]">{{ statusName(c.status) }}<template v-if="c.progress != null"> · {{ c.progress.toFixed(0) }}%</template></span>
+                </div>
                 </template>
               </td>
             </tr>

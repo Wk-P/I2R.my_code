@@ -79,9 +79,15 @@ const groups = computed(() => {
                               </td>
               <td class="dim small hide-sm" style="max-width: 520px">{{ tl(b.title) || "—" }}</td>
               <td><Status :s="b.status" /></td>
-              <td class="small mono hide-sm">{{ steps(b.params?.steps) }}</td>
-              <td><div class="row" style="flex-wrap: nowrap"><div style="flex: 1"><Progress :b="b" /></div><span class="small num" style="width: 64px">{{ b.counts.done }}/{{ b.total }}</span></div></td>
-              <td class="small hide-sm">{{ b.counts.running }} / {{ b.counts.queued + b.counts.waiting }} / {{ b.counts.stopped }}</td>
+              <template v-if="b.training !== false">
+                <td class="small mono hide-sm">{{ steps(b.params?.steps) }}</td>
+                <td><div class="row" style="flex-wrap: nowrap"><div style="flex: 1"><Progress :b="b" /></div><span class="small num" style="width: 64px">{{ b.counts.done }}/{{ b.total }}</span></div></td>
+                <td class="small hide-sm">{{ b.counts.running }} / {{ b.counts.queued + b.counts.waiting }} / {{ b.counts.stopped }}</td>
+              </template>
+              <template v-else>
+                <td class="small mono hide-sm faint">{{ t("不训练", "no training") }}</td>
+                <td class="small dim" colspan="2"><span class="mono">{{ b.script || "—" }}</span><template v-if="b.depends_on?.length"> · {{ t("输入", "input") }} {{ b.depends_on.join(", ") }}</template></td>
+              </template>
               <td class="small dim hide-sm">{{ when(b.started_at) }}</td>
               <td class="small dim hide-sm">{{ b.elapsed != null ? dur(b.elapsed) : "—" }}</td>
             </tr>

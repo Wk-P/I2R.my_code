@@ -25,7 +25,9 @@ export const statusName = (s) => ({
   waiting: t("等待", "Waiting"), skipped: t("未运行", "Not run"),
 }[s] ?? s);
 export const STATUS_TONE = { running: "run", finished: "ok", done: "ok", stopped: "warn", cancelled: "off", queued: "off", waiting: "off", skipped: "off" };
-export const purposeName = (p) => ({ main: t("正式", "Main"), smoke: "smoke", test: t("测试", "Test") }[p] ?? p);
+// eval / diag / data: batches that train nothing (docs/data_spec.md §6)
+export const purposeName = (p) => ({ main: t("正式", "Main"), smoke: "smoke", test: t("测试", "Test"), eval: t("评估", "Evaluation"),
+  diag: t("诊断", "Diagnosis"), data: t("数据", "Data") }[p] ?? p);
 export const roleName = (r) => ({ main: t("正式", "Main"), sweep: t("参数扫描", "Sweep"), reference: t("参照", "Reference") }[r] ?? r);
 export const groupName = (g) => {
   const m = /^lambda_max_sweep_(\w+)$/.exec(g ?? "");

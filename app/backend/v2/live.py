@@ -99,6 +99,15 @@ def driver_alive(man: dict | None) -> bool:
         return False
 
 
+def script_alive(man: dict | None) -> bool:
+    """A non-training batch (docs/data_spec.md §6): its driver_pid still runs the manifest's script."""
+    pid, script = (man or {}).get("driver_pid"), (man or {}).get("script")
+    try:
+        return bool(pid and script) and script in Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+    except (OSError, ValueError):
+        return False
+
+
 _TRAIN = re.compile(r"\[train\] step=([\d,]+)/([\d,]+) \(\s*([\d.]+)%\)(.*)")
 _FIELD = re.compile(r"([\w/]+(?:\(\w+\))?)=([-\d.,]+)")
 

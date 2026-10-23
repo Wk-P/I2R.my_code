@@ -12,6 +12,7 @@ import { useSort } from "../sort.js";
 const props = defineProps({ runs: { type: Array, default: () => [] }, batch: { type: Boolean, default: false }, params: { type: Object, default: () => ({}) },
   collapse: { type: Number, default: 0 } });
 const expanded = ref(false);
+const hasLag = computed(() => props.runs.some((r) => r.strategy === "lagrangian"));
 const SCEN = { lt: 0, eq: 1, gt: 2 }, RLI = { PPO: 0, DQN: 1, DDQN: 2 };
 const sort = useSort(computed(() => props.runs), {
   batch: (r) => r.batch, scen: (r) => SCEN[r.scenario], rl: (r) => RLI[r.RL_algorithm], st: (r) => r.strategy, params: (r) => paramText(r.params),
@@ -58,7 +59,7 @@ const stale = (r) => r.live?.updated && Date.now() / 1000 - r.live.updated > 600
       </div>
       <div class="lr-s">
         <span><i>{{ t("步/秒", "steps/s") }}</i>{{ r.live?.steps_per_sec ?? "—" }}</span>
-        <span v-if="r.live?.lambda != null"><i>λ</i>{{ num(r.live.lambda, 3) }}</span>
+        <span v-if="r.strategy === 'lagrangian' && r.live?.lambda != null"><i>λ</i>{{ num(r.live.lambda, 3) }}</span>
         <span><i>{{ t("近500局", "last 500") }}</i>{{ pct(r.live?.success_last500) }}</span>
         <span><i>{{ t("剩余", "ETA") }}</i>{{ r.live?.eta_seconds != null ? dur(r.live.eta_seconds) : "—" }}</span>
       </div>
@@ -76,7 +77,7 @@ const stale = (r) => r.live?.updated && Date.now() / 1000 - r.live.updated > 600
           <Th :s="sort" k="scen">{{ t("场景", "Scen.") }}</Th><Th :s="sort" k="rl">RL_algorithm</Th><Th :s="sort" k="st">strategy</Th><Th :s="sort" k="params">params</Th><Th :s="sort" k="seed">seed</Th>
           <Th :s="sort" k="steps" style="min-width: 220px">{{ t("步数", "Steps") }}</Th>
           <Th :s="sort" k="sps" num>{{ t("步/秒", "Steps/s") }}</Th>
-          <Th :s="sort" k="lam" num :title="t('训练日志里当前的 λ（lagrangian）', 'Current λ in the training log (lagrangian)')">λ</Th>
+          <Th v-if="hasLag" :s="sort" k="lam" num :title="t('训练日志里当前的 λ（lagrangian）', 'Current λ in the training log (lagrangian)')">λ</Th>
           <Th :s="sort" k="succ" num :title="t('最近 500 局无违约完成的比例（训练策略）', 'Share of the last 500 training episodes completed without violation')">{{ t("近 500 局完成率", "Success (last 500)") }}</Th>
           <Th :s="sort" k="eps" num>{{ t("局数", "Episodes") }}</Th>
           <Th :s="sort" k="eta" num>{{ t("预计剩余", "ETA") }}</Th>
@@ -96,7 +97,7 @@ const stale = (r) => r.live?.updated && Date.now() / 1000 - r.live.updated > 600
             <div v-if="stale(r)" class="small" style="color: var(--warn)">{{ t("日志超过 10 分钟没更新", "log not updated for 10+ min") }}</div>
           </td>
           <td class="num mono">{{ r.live?.steps_per_sec ?? "—" }}</td>
-          <td class="num mono">{{ r.live?.lambda != null ? num(r.live.lambda, 3) : "" }}</td>
+          <td v-if="hasLag" class="num mono">{{ r.strategy === "lagrangian" && r.live?.lambda != null ? num(r.live.lambda, 3) : "" }}</td>
           <td class="num">{{ pct(r.live?.success_last500) }}</td>
           <td class="num small">{{ r.live?.episodes != null ? Math.round(r.live.episodes).toLocaleString() : "—" }}</td>
           <td class="num small">{{ r.live?.eta_seconds != null ? dur(r.live.eta_seconds) : "—" }}</td>

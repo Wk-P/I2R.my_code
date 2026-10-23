@@ -20,9 +20,11 @@ const router = useRouter();
 const b = ref(null);
 const err = ref(false);
 const data = ref({ report: null, sweeps: [] });
-const tab = computed(() => route.query.tab || "results");
-const TABS = computed(() => [["results", t("结果", "Results")], ["charts", t("图表", "Charts")], ["runs", t("全部 run", "All runs")],
-  ["report", t("报告", "Report")], ["config", t("配置", "Config")]]);
+// a batch that trains nothing (eval / diag / data, docs/data_spec.md §6): its report, log and config only
+const training = computed(() => b.value?.training !== false);
+const tab = computed(() => route.query.tab || (training.value ? "results" : "report"));
+const TABS = computed(() => [...(training.value ? [["results", t("结果", "Results")], ["charts", t("图表", "Charts")], ["runs", t("全部 run", "All runs")]] : []),
+  ["report", training.value ? t("报告", "Report") : t("报告 / 日志", "Report / log")], ["config", t("配置", "Config")]]);
 let timer;
 async function load() {
   const x = await getBatch(props.name);
@@ -44,10 +46,12 @@ const STATI = { running: 0, stopped: 1, waiting: 2, queued: 3, done: 4, skipped:
 const runSort = useSort(runs, {
   scen: (r) => SCEN[r.scenario], rl: (r) => RLI[r.RL_algorithm], st: (r) => STI[r.strategy], role: (r) => r.group || r.role,
   params: (r) => paramText(r.params), seed: (r) => r.seed, status: (r) => STATI[r.status], gap: (r) => r.metrics?.rel_gap,
-  cap: (r) => r.metrics?.cap_viol, priv: (r) => r.metrics?.priv_viol, steps: (r) => r.live?.step ?? r.metrics?.total_steps,
-  sps: (r) => r.live?.steps_per_sec, lam: (r) => r.live?.lambda ?? r.metrics?.final_lambda,
+  cap: (r) => r.metrics?.cap_viol, priv: (r) => r.metrics?.priv_viol, exit: (r) => (r.strategy === "maskable" ? r.metrics?.exit : null), steps: (r) => r.live?.step ?? r.metrics?.total_steps,
+  sps: (r) => r.live?.steps_per_sec, lam: (r) => (r.strategy === "lagrangian" ? r.live?.lambda ?? r.metrics?.final_lambda : null),
   time: (r) => r.live?.eta_seconds ?? r.metrics?.train_seconds, id: (r) => r.exp_id,
 });
+const hasMask = computed(() => (b.value?.runs || []).some((r) => r.strategy === "maskable"));
+const hasLag = computed(() => (b.value?.runs || []).some((r) => r.strategy === "lagrangian"));
 const roles = computed(() => [...new Set((b.value?.runs || []).map((r) => r.role))]);
 const statuses = computed(() => [...new Set((b.value?.runs || []).map((r) => r.status))]);
 // a run's params that differ from the batch's (docs/data_spec.md §1)
@@ -64,11 +68,12 @@ async function loadReport() {
   report.value = await getReport(props.name, reportFile.value, lang.value);
 }
 watch([tab, reportFile, lang, () => b.value?.reports?.length], loadReport);
-const reportHtml = computed(() => (report.value ? renderMarkdown(report.value.text) : ""));
+const reportHtml = computed(() => (report.value && !report.value.log ? renderMarkdown(report.value.text) : ""));
 const reportName = (f) => {
   const m = /^lam_sweep_(\w+)\.md$/.exec(f.file);
   if (m) return t(`λ_max 扫描（${m[1].toUpperCase()}）`, `λ_max sweep (${m[1].toUpperCase()})`);
   if (f.file === "report.md") return t("主报告", "Main report");
+  if (f.log) return `${t("日志", "log")} · ${f.file}`;
   return f.file.replace(/\.md$/, "");
 };
 const cfgRows = computed(() => Object.entries(b.value?.config || {}).filter(([k]) => !["title"].includes(k)));
@@ -102,6 +107,8 @@ const runSteps = computed(() => {
             <router-link v-if="b.lambda_max_from" class="tag accent" :to="`/batches/${b.lambda_max_from}`">
               λ_max {{ t("来自", "from") }} {{ b.lambda_max_from }}<template v-if="b.params?.lambda_max">：{{ Object.entries(b.params?.lambda_max).map(([l, v]) => `${l.toUpperCase()} ${v}`).join(" · ") }}</template>
             </router-link>
+            <span v-if="b.script" class="tag mono">{{ b.script }}</span>
+            <router-link v-for="d in b.depends_on" :key="d" class="tag accent" :to="`/batches/${d}`">{{ t("输入", "input") }} {{ d }}</router-link>
             <span v-if="b.commit" class="tag mono">{{ b.commit }}</span>
             <span class="tag">{{ t("开始", "started") }} {{ when(b.started_at) }}</span>
             <span class="tag">{{ b.status === "running" ? t("已运行", "elapsed") : t("用时", "took") }} {{ dur(b.elapsed) }}</span>
@@ -109,7 +116,7 @@ const runSteps = computed(() => {
         </div>
       </div>
 
-      <div class="card"><div class="card-b">
+      <div v-if="training" class="card"><div class="card-b">
         <div class="row" style="gap: 16px">
           <div style="flex: 1; min-width: 260px"><Progress :b="b" legend /></div>
           <div class="kpi-v">{{ b.pct.toFixed(1) }}%</div>
@@ -150,8 +157,8 @@ const runSteps = computed(() => {
           <table class="tbl pin">
             <thead><tr>
               <Th :s="runSort" k="scen">{{ t("场景", "Scen.") }}</Th><Th :s="runSort" k="rl">RL_algorithm</Th><Th :s="runSort" k="st">strategy</Th><Th :s="runSort" k="role">{{ t("类别", "Role") }}</Th><Th :s="runSort" k="params">params</Th>
-              <Th :s="runSort" k="seed">seed</Th><Th :s="runSort" k="status">{{ t("状态", "Status") }}</Th><Th :s="runSort" k="gap" num>gap</Th><Th :s="runSort" k="cap" num>{{ t("容量违约", "Cap. viol.") }}</Th><Th :s="runSort" k="priv" num>{{ t("隐私违约", "Priv. viol.") }}</Th>
-              <Th :s="runSort" k="steps" num>{{ t("步数", "Steps") }}</Th><Th :s="runSort" k="sps" num>{{ t("步/秒", "Steps/s") }}</Th><Th :s="runSort" k="lam" num>{{ t("λ（实时 / 末）", "λ (live / final)") }}</Th><Th :s="runSort" k="time" num>{{ t("剩余 / 用时", "ETA / took") }}</Th><Th :s="runSort" k="id">exp_id</Th>
+              <Th :s="runSort" k="seed">seed</Th><Th :s="runSort" k="status">{{ t("状态", "Status") }}</Th><Th :s="runSort" k="gap" num>gap</Th><Th :s="runSort" k="cap" num>{{ t("容量违约", "Cap. viol.") }}</Th><Th :s="runSort" k="priv" num>{{ t("隐私违约", "Priv. viol.") }}</Th><Th v-if="hasMask" :s="runSort" k="exit" num :title="t('只有 maskable 有 EXIT', 'EXIT exists for maskable only')">EXIT</Th>
+              <Th :s="runSort" k="steps" num>{{ t("步数", "Steps") }}</Th><Th :s="runSort" k="sps" num>{{ t("步/秒", "Steps/s") }}</Th><Th v-if="hasLag" :s="runSort" k="lam" num>{{ t("λ（实时 / 末）", "λ (live / final)") }}</Th><Th :s="runSort" k="time" num>{{ t("剩余 / 用时", "ETA / took") }}</Th><Th :s="runSort" k="id">exp_id</Th>
             </tr></thead>
             <tbody>
               <tr v-for="r in runSort.sorted.value" :key="(r.exp_id || '') + r.key + r.scenario + r.seed" :class="{ link: r.exp_id && r.space }" @click="openRun(r)">
@@ -160,10 +167,10 @@ const runSteps = computed(() => {
                 <td class="small">{{ paramText(r.params) || "—" }}</td>
                 <td>{{ r.seed ?? "—" }}</td>
                 <td><Status :s="r.status" :pct="r.progress" /></td>
-                <td class="num">{{ pct(r.metrics?.rel_gap) }}</td><td class="num">{{ pct(r.metrics?.cap_viol) }}</td><td class="num">{{ pct(r.metrics?.priv_viol) }}</td>
+                <td class="num">{{ pct(r.metrics?.rel_gap) }}</td><td class="num">{{ pct(r.metrics?.cap_viol) }}</td><td class="num">{{ pct(r.metrics?.priv_viol) }}</td><td v-if="hasMask" class="num">{{ r.strategy === "maskable" ? pct(r.metrics?.exit) : "" }}</td>
                 <td class="num small mono" style="white-space: nowrap">{{ r.live ? `${steps(r.live.step)} / ${steps(r.live.total)}` : r.metrics ? steps(r.metrics.total_steps) : "" }}</td>
                 <td class="num mono">{{ r.live?.steps_per_sec ?? "" }}</td>
-                <td class="num mono">{{ r.strategy === "lagrangian" ? (r.live ? num(r.live.lambda, 3) : num(r.metrics?.final_lambda, 3)) : "" }}</td>
+                <td v-if="hasLag" class="num mono">{{ r.strategy === "lagrangian" ? (r.live ? num(r.live.lambda, 3) : num(r.metrics?.final_lambda, 3)) : "" }}</td>
                 <td class="num small">{{ r.live?.eta_seconds != null ? dur(r.live.eta_seconds) : r.metrics?.train_seconds != null ? dur(r.metrics.train_seconds) : "" }}</td>
                 <td class="mono faint">{{ r.exp_id || "—" }}</td>
               </tr>
@@ -173,13 +180,14 @@ const runSteps = computed(() => {
       </div>
 
       <div v-else-if="tab === 'report'" class="card">
-        <div v-if="!b.reports?.length" class="empty">{{ t("还没有报告（训练全部结束后生成）。", "No report yet (written once training is over).") }}</div>
+        <div v-if="!b.reports?.length" class="empty">{{ training ? t("还没有报告（训练全部结束后生成）。", "No report yet (written once training is over).") : t("这个批次没有报告或日志。", "This batch has no report or log.") }}</div>
         <template v-else>
           <div class="card-h">
             <div class="seg"><button v-for="f in b.reports" :key="f.file" :class="{ on: reportFile === f.file }" @click="reportFile = f.file">{{ reportName(f) }}</button></div>
             <span class="spacer" /><span v-if="report" class="faint small mono">{{ report.dir }}/{{ report.file }}</span>
           </div>
-          <div class="card-b md" v-html="reportHtml" />
+          <div v-if="report?.log" class="card-b"><pre class="log">{{ report.text }}</pre></div>
+          <div v-else class="card-b md" v-html="reportHtml" />
         </template>
       </div>
 

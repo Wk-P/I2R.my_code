@@ -78,12 +78,13 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
                 gae_lambda: float | None = None, lr: float | None = None, ent_coef: float | None = None,
                 glob_std: bool = False, separate: bool = False, pair_head: bool = False, group_k: int = 0,
                 plan: bool = False, plan_decay: bool = False, glob3: bool = False, eps_frac: float | None = None,
-                n_epochs: int | None = None, target_kl: float | None = None):
+                n_epochs: int | None = None, target_kl: float | None = None, hp: dict | None = None):
     if learner == "ppo":
         kw = dict(policy="MlpPolicy", env=env, learning_rate=C.PPO_LR if lr is None else lr, n_steps=C.PPO_N_STEPS,
                   batch_size=C.PPO_BATCH_SIZE, n_epochs=C.PPO_N_EPOCHS if n_epochs is None else n_epochs, target_kl=target_kl, gamma=C.PPO_GAMMA if gamma is None else gamma,
                   gae_lambda=C.PPO_GAE_LAMBDA if gae_lambda is None else gae_lambda, clip_range=C.PPO_CLIP_RANGE, ent_coef=C.PPO_ENT_COEF if ent_coef is None else ent_coef,
                   policy_kwargs=dict(net_arch=C.PPO_NET_ARCH), device=device, verbose=0, seed=seed)
+        kw.update(hp or {})                             # v6.1.0: --hp overrides any PPO constructor argument
         if net == "graph":                              # v4.4.3: structure-aware policy, PPO settings unchanged
             # v4.5.4: every mechanism; mask keeps the masked logits, the others use the unmasked scores
             assert action_mode == "ecu", "--net graph: ECU action only"
@@ -109,6 +110,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
               exploration_fraction=C.DQN_EXPLORATION_FRACTION if eps_frac is None else eps_frac,   # v5.0.3.3: --eps-steps
               exploration_final_eps=C.DQN_EXPLORATION_FINAL_EPS,
               policy_kwargs=dict(net_arch=C.DQN_NET_ARCH), device=device, verbose=0, seed=seed)
+    kw.update(hp or {})                                 # v6.1.0: --hp overrides any DQN / DDQN constructor argument
     if net == "graph":                                  # v4.5.2: structure-aware Q-network, same DQN settings
         assert action_mode == "ecu", "--net graph with DQN / DDQN: ECU action only"
         from paper_rl.graph_dqn import GraphDQNPolicy
@@ -290,6 +292,34 @@ def checkpoint_callback(steps: list[int], run_dir: Path, exp_id: str, lam_fn=Non
     return Ckpt()
 
 
+def val_callback(every: int, path: Path, eval_fn):
+    """v6.1.0: every `every` steps evaluate on the test set (the tuner passes its validation set) and append
+    {step, rel_gap, viol, exit} to `path` (JSON lines), which the Optuna driver reads for pruning."""
+    from stable_baselines3.common.callbacks import BaseCallback
+
+    class Val(BaseCallback):
+        def __init__(self):
+            super().__init__()
+            self.next = every
+
+        def _on_step(self) -> bool:
+            if self.num_timesteps >= self.next:
+                self.next += every
+                with open(path, "a") as f:
+                    f.write(json.dumps({"step": int(self.num_timesteps), **val_summary(eval_fn(self.model))}) + "\n")
+            return True
+
+    return Val()
+
+
+def val_summary(ev: list[dict]) -> dict:
+    """v6.1.0: relative AR gap over the violation-free instances, violation rate (capacity or privacy), EXIT rate."""
+    ok = [e for e in ev if e["success"]]
+    rel = float(np.mean([(e["ar_star"] - e["ar"]) / e["ar_star"] for e in ok])) if ok else 1.0
+    return {"rel_gap": round(rel, 6), "viol": round(float(np.mean([e["cap_v"] > 0 or e["conf_v"] > 0 for e in ev])), 6),
+            "exit": round(float(np.mean([e["exited"] for e in ev])), 6)}
+
+
 # ── evaluation ──────────────────────────────────────────────────────────────
 def evaluate(model, test, mech: str, reward: str, lam: float, learner: str, obs_mode: str = "base",
              full_episode: bool = False, exit_action: bool = False, action_mode: str = "ecu",
@@ -406,6 +436,8 @@ def main():
     ap.add_argument("--ent-coef", type=float, default=None, help="v4.4.5: PPO entropy coefficient (default PPO_ENT_COEF)")
     ap.add_argument("--n-epochs", type=int, default=None, help="v6.0.0.2: PPO epochs per update (default PPO_N_EPOCHS)")
     ap.add_argument("--target-kl", type=float, default=None, help="v6.0.0.1: PPO early stop of an update once approx KL > 1.5 x this (default none)")
+    ap.add_argument("--hp", default=None, help="v6.1.0: JSON dict of constructor arguments (overrides config and the flags above)")
+    ap.add_argument("--val-every", type=int, default=0, help="v6.1.0: evaluate on the test set every this many steps -> val_curve.jsonl")
     ap.add_argument("--order", default="desc", choices=["desc", "asc", "random"],
                     help="v4.4.7: service placement order (random = one fixed permutation per instance)")
     ap.add_argument("--order-seed", type=int, default=0, help="v4.4.7: seed of the random order")
@@ -424,6 +456,9 @@ def main():
     ap.add_argument("--train-pool", default=None,
                     help="v4.4.14: train on this ILP-verified instance pool (JSON list, e.g. results/sup_diag/<scen>.json, "
                          "{scen} is substituted) instead of the 1600-instance split; the test split is unchanged")
+    ap.add_argument("--test-set", default=None,
+                    help="v6.0.4: evaluate on this fixed ILP-verified test set (JSON list, e.g. data/testset_v6.0.4/{scen}.json, "
+                         "{scen} is substituted) instead of the seed's 400-instance split")
     ap.add_argument("--glob3", action="store_true",
                     help="v4.4.13: --net graph only; global token input = exactly [M_rem / M, AR_t, sigma_util,t]")
     ap.add_argument("--plan-decay", action="store_true",
@@ -471,6 +506,9 @@ def main():
         pool = json.loads((ROOT / a.train_pool.format(scen=a.scen)).read_text())
         assert all(x.get("ar_star", 0) > 0 for x in pool), "every training instance must have an ILP optimum"
         train = pool
+    if a.test_set:                                      # v6.0.4: one fixed test set for every seed
+        test = json.loads((ROOT / a.test_set.format(scen=a.scen)).read_text())
+        assert all(x.get("ar_star", 0) > 0 for x in test), "every test instance must have an ILP optimum"
     n, m = data["N"], data["M"]
     outdir = results_dir(a.scen, a.algo)
     exp_id = resolve_exp_id(outdir)
@@ -504,7 +542,8 @@ def main():
         print(f"  [resume] {resumed['from']} at step {resumed['at_step']:,}; +{a.steps:,} steps", flush=True)
     else:
         model = build_model(learner, mech, venv, a.seed, n, gamma, a.exit_action, m, a.action, a.net, a.device, a.gae_lambda, a.lr, a.ent_coef, a.glob_std, a.separate_critic, a.pair_head, a.group_k, a.plan, a.plan_decay, a.glob3,
-                            None if a.eps_steps is None else min(1.0, a.eps_steps / a.steps), a.n_epochs, a.target_kl)
+                            None if a.eps_steps is None else min(1.0, a.eps_steps / a.steps), a.n_epochs, a.target_kl,
+                            json.loads(a.hp) if a.hp else None)
     bc_info = None
     if a.bc:                                            # v4.4.2: behaviour cloning on ILP optima, then PPO
         assert learner == "ppo" and mech == "mask" and a.action == "ecu", "--bc: Mask PPO, ECU action only"
@@ -541,6 +580,10 @@ def main():
     if a.checkpoints:                                   # v4.4.15: save the model at these step counts
         extra.append(checkpoint_callback(sorted(int(x) for x in a.checkpoints.split(",")), run_dir, exp_id,
                                          (lambda: main_cb.lam) if mech == "lagrange" else None, a.lambda_max))
+    if a.val_every:                                     # v6.1.0: intermediate validation for the tuner
+        extra.append(val_callback(a.val_every, run_dir / "val_curve.jsonl", lambda mdl: evaluate(
+            mdl, test, mech, a.reward, main_cb.lam if mech == "lagrange" else 0.0, learner, a.obs, a.full_episode,
+            a.exit_action, a.action, a.order, a.order_seed, a.lambda_max)))
     if extra:
         from stable_baselines3.common.callbacks import CallbackList
         cb = CallbackList([main_cb, *extra])
@@ -575,11 +618,12 @@ def main():
         "created_at": datetime.datetime.now().isoformat(), "exp_id": exp_id, "version": VERSION,
         "commit": git_commit(), "scenario": a.scen, "N": n, "M": m, "algo": a.algo,
         "mechanism": mech, "learner": learner, "reward_mode": a.reward, "reward_norm": a.reward_norm, "obs": a.obs, "gamma": gamma, "full_episode": a.full_episode, "exit_action": a.exit_action, "action_mode": a.action, "seed": a.seed,
-        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "checkpoints": a.checkpoints, "resumed": resumed, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
+        "net": a.net, "device": a.device, "bc": bc_info, "glob_std": a.glob_std, "separate_critic": a.separate_critic, "pair_head": a.pair_head, "group_k": a.group_k, "train_pool": a.train_pool, "test_set": a.test_set, "checkpoints": a.checkpoints, "resumed": resumed, "plan": a.plan, "plan_decay": a.plan_decay, "glob3": a.glob3, "order": a.order, "order_seed": a.order_seed,
         **({"gae_lambda": C.PPO_GAE_LAMBDA if a.gae_lambda is None else a.gae_lambda,
             "lr": C.PPO_LR if a.lr is None else a.lr,
             "ent_coef": C.PPO_ENT_COEF if a.ent_coef is None else a.ent_coef,
             "n_epochs": C.PPO_N_EPOCHS if a.n_epochs is None else a.n_epochs, "target_kl": a.target_kl} if learner == "ppo" else {}),
+        "hp": json.loads(a.hp) if a.hp else None, "val": val_summary(ev),
         "train_count": len(train), "test_count": len(test),
         "data": {"conflict_pair_prob": data["conflict_pair_prob"], "k_sets": data["k_sets"]},
         "ilp": {"ar": round(ilp_ar, 6)},

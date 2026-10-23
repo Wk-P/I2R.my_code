@@ -131,7 +131,18 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 /* form controls */
 select, input[type="search"], input[type="text"] {
   font: inherit; font-size: 13px; border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px; background: var(--panel); color: var(--text);
+  transition: border-color .15s, box-shadow .15s;
 }
+/* select after @tailwindcss/forms (MIT): native control without OS chrome, chevron icon, focus ring */
+select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 32px; line-height: 1.4;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 8px center; background-repeat: no-repeat; background-size: 16px 16px;
+}
+select:hover, input[type="search"]:hover, input[type="text"]:hover { border-color: var(--accent); }
+select:focus, input[type="search"]:focus, input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+select option { color: var(--text); background: var(--panel); }
+::selection { background: var(--accent-soft); color: var(--accent); }
 label.check { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 13px; cursor: pointer; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 12px; background: var(--panel); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
@@ -201,3 +212,5 @@ label.check { display: inline-flex; align-items: center; gap: 6px; color: var(--
   .mobile-bar .btn { padding: 5px 10px; }
   .side-mask.open { display: block; position: fixed; inset: 0; background: rgba(15, 18, 26, .35); z-index: 25; }
 }
+/* a non-training batch's script log (Batch.vue, report tab) */
+pre.log { margin: 0; max-height: 70vh; overflow: auto; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; color: var(--dim); }

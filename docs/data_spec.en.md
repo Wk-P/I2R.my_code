@@ -114,6 +114,8 @@ Rules:
 - Pages use only this spec's names: RL_algorithm (PPO / DQN / DDQN), strategy (unconstraint / lagrangian / maskable / repair), seed, params.
 - A batch's result matrix: one per scenario, rows = RL_algorithm, columns = strategy; a cell shows the relative gap and the capacity / privacy violation rates, or the run's status.
 - Run status: `done` / `running` / `waiting` / `queued` / `stopped` (interrupted) / `skipped` (never ran).
+- **EXIT belongs to maskable only**: the result matrix, the variant table, All runs and the run page show EXIT only when strategy = maskable (also when it is 0); never for another strategy.
+- **λ belongs to lagrangian only**: the λ curve, current / final λ and checkpoint λ are shown only when strategy = lagrangian; a batch without lagrangian hides the λ column altogether.
 
 ## 5. Converting schema 2 (v5.0.3 and its smoke only)
 
@@ -125,3 +127,22 @@ Rules:
 | `steps` (per run) | `params.steps` |
 | top-level `lam_sweep`, `lambda_max` (keyed by lower-case algorithm) | `params.lambda_max_sweep`, `params.lambda_max` (keyed by RL_algorithm) |
 | group `lam_sweep_<learner>` | `lambda_max_sweep_<RL_algorithm>` |
+
+## 6. Batches that train nothing (evaluation / diagnosis / data)
+
+A script that launches no training run and only writes a report or data (e.g. v6.0.2 EXIT attribution, v6.0.3 checkpoint evaluation, v6.0.3.1 PPO update diagnosis, v6.0.4-testset test-set build) must also write `logs/<batch>/manifest.json`, or the panel cannot see it. Wrap `main()` in `nontrain_batch(...)` from `src/shared/batch_manifest.py`: it writes `status: running` and `driver_pid` at the start, `finished` at the end (`failed` plus `error` on an exception).
+
+| Field | Meaning |
+|---|---|
+| `schema` | 3 |
+| `purpose` | `eval` (evaluates existing models) / `diag` (diagnosis) / `data` (builds data) |
+| `script` | script path, e.g. `src/scripts/eval_ckpt_v6.py`; with `driver_pid` the panel tells whether it still runs |
+| `depends_on` | input batch names (linked on the panel), e.g. `["v6.0.0", "v6.0.1"]` |
+| `inputs` / `outputs` | non-batch input / output files (`{scen}` placeholder allowed) |
+| `report_dir` | report directory, e.g. `paper_contents/v6.0.3`; `null` without a report |
+| `logs` | optional; script log paths (under `logs/`). Default: `logs/<batch>/*.log` |
+| `status` / `created_at` / `finished_at` / `minutes` | run status and times |
+| `commit` / `script_uncommitted` | HEAD when it ran, and whether the script had uncommitted changes |
+| `runs` | empty list |
+
+Panel: the batch list shows these by default (tagged Evaluation / Diagnosis / Data; the progress columns give the script and the input batches); the detail page has only the Report / log and Config tabs, logs shown verbatim.
