@@ -44,6 +44,8 @@ app = FastAPI(title="my-code experiment dashboard")
 (APP_DIR / "static_v2" / "assets").mkdir(parents=True, exist_ok=True)
 app.mount("/classic/assets", StaticFiles(directory=APP_DIR / "static" / "assets"), name="classic-assets")
 app.mount("/assets", StaticFiles(directory=APP_DIR / "static_v2" / "assets"), name="assets")
+from app.backend.optuna_proxy import router as optuna_router   # v6.1.0: optuna-dashboard at /optuna/
+app.include_router(optuna_router)
 
 
 # ── Git branch awareness ────────────────────────────────────────────────────
