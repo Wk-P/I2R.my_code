@@ -76,6 +76,7 @@ const groups = computed(() => {
                 <router-link :to="`/batches/${b.name}`"><b>{{ b.name }}</b></router-link>
                 <div class="show-sm faint small">{{ tl(b.title) }}</div>
                 <span v-if="b.purpose !== 'main'" class="tag" style="margin-left: 6px">{{ purposeName(b.purpose) }}</span>
+                <span v-if="b.label" class="tag accent" style="margin-left: 6px">{{ tl(b.label) }}</span>
                               </td>
               <td class="dim small hide-sm" style="max-width: 520px">{{ tl(b.title) || "—" }}</td>
               <td><Status :s="b.status" /></td>

@@ -123,7 +123,7 @@ def build_batch(name: str, detail: bool = False) -> dict | None:
     total = len(runs)
     version = str(man["version"]).removeprefix("v") if man.get("version") else None    # v6 manifests write "v6.0.0.2"
     out = {"name": name, "version": version, "purpose": man.get("purpose") or "main",
-           "title": man.get("title"), "commit": man.get("commit"), "status": status, "space": space,
+           "title": man.get("title"), "label": man.get("label"), "description": man.get("description"), "commit": man.get("commit"), "status": status, "space": space,
            "total": total, "counts": counts,
            "pct": round(100 * frac / total, 1) if total else (100.0 if status == "finished" else 0.0), "eta": eta,
            "training": training, "script": man.get("script"), "depends_on": man.get("depends_on") or [],

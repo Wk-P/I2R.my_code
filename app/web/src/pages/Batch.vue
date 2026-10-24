@@ -98,7 +98,8 @@ const runSteps = computed(() => {
     <template v-else>
       <div class="head">
         <div style="min-width: 0">
-          <div class="row"><h1>{{ name }}</h1><Status :s="b.status" /><span v-if="b.purpose !== 'main'" class="tag">{{ purposeName(b.purpose) }}</span></div>
+          <div class="row"><h1>{{ name }}</h1><Status :s="b.status" /><span v-if="b.purpose !== 'main'" class="tag">{{ purposeName(b.purpose) }}</span><span v-if="b.label" class="tag accent">{{ tl(b.label) }}</span></div>
+          <div v-if="b.description" class="head-sub"><b>{{ tl(b.description) }}</b></div>
           <div class="head-sub">{{ tl(b.title) }}</div>
           <div v-if="b.links?.length" class="row"><a v-for="l in b.links" :key="l.url" :href="l.url" target="_blank" rel="noopener">↗ {{ tl(l) }}</a></div>
           <div class="row" style="margin-top: 8px">
