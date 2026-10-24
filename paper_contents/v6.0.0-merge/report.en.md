@@ -4,11 +4,10 @@ Every cell comes from the batch that fixed it; reward function and parameters fo
 
 | Row | Models | Test set | Seeds | Notes |
 |---|---|---|---|---|
-| Mask / Repair / Lagrangian | v6.0.0 (20M steps) | v6.0.4 fixed test set, 5000 ILP-optimal instances per scenario (v6.0.4-test-50k) | Mask / Repair 1–3, Lagrangian 2–3 | ar_pen; Lagrangian −λ·c_t per step; EXIT for Mask only |
+| Mask / Repair / Lagrangian / Unconstraint | v6.0.0 (20M steps) | v6.0.4 fixed test set, 5000 ILP-optimal instances per scenario (v6.0.4-test-50k) | Mask / Repair 1–3, Lagrangian / Unconstraint 2–3 | ar_pen (Unconstraint: the same full ar_pen, no constraint mechanism); Lagrangian −λ·c_t per step; EXIT for Mask only |
 | Mask PPO (n_epochs=4) | v6.0.0.2 (20M steps) | each seed's own 400 instances | 1–3 | fixes the oversized PPO updates (v6.0.3.1); **not yet evaluated on the 5000-instance test set** |
-| Unconstraint | v6.0.1 (20M steps) | each seed's own 400 instances | 2–3 | no penalty, terminal AR_obj, no constraint info in the state; **not yet evaluated on the 5000-instance test set** |
 
-Not used: v6.0.0 Unconstraint (old definition: penalty and constraint info in the state), v6.0.0.1 (target_kl=0.02, worse). Gaps: Lagrangian / Unconstraint lack seed 1; v6.0.0.2 and v6.0.1 not yet evaluated on the fixed test set.
+Not used: v6.0.1 Unconstraint (no-penalty variant), v6.0.0.1 (target_kl=0.02, worse). Gaps: Lagrangian / Unconstraint lack seed 1; v6.0.0.2 not yet evaluated on the fixed test set.
 
 - **gap** = 1 − mean(AR) / mean(ILP AR) over all test instances, AR over legal placements.
 - **Violation-free relative gap** = (ILP AR − AR) / ILP AR over the instances completed without violation.
@@ -29,9 +28,9 @@ Not used: v6.0.0 Unconstraint (old definition: penalty and constraint info in th
 | Lagrangian | PPO | v6.0.0 | 5000 | 2,3 | 6.355% ± 0.658% | 98.150% ± 0.580% | 6.325% ± 0.598% | 1.410% ± 0.665% | 0.520% ± 0.000% | — |
 | Lagrangian | DQN | v6.0.0 | 5000 | 2,3 | 23.776% ± 2.420% | 93.540% ± 0.707% | 24.515% ± 2.694% | 1.700% ± 0.849% | 5.430% ± 1.202% | — |
 | Lagrangian | Double DQN | v6.0.0 | 5000 | 2,3 | 24.131% ± 0.093% | 92.070% ± 2.079% | 24.950% ± 0.079% | 3.290% ± 0.269% | 5.680% ± 1.895% | — |
-| Unconstraint | PPO | v6.0.1 | 400 | 2,3 | 17.379% ± 1.621% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
-| Unconstraint | DQN | v6.0.1 | 400 | 2,3 | 42.258% ± 3.527% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
-| Unconstraint | Double DQN | v6.0.1 | 400 | 2,3 | 65.915% ± 40.161% | 0.000% ± 0.000% | — | 99.750% ± 0.354% | 100.000% ± 0.000% | — |
+| Unconstraint | PPO | v6.0.0 | 5000 | 2,3 | 7.358% ± 0.512% | 97.750% ± 0.240% | 7.317% ± 0.484% | 1.160% ± 0.255% | 1.940% ± 0.113% | — |
+| Unconstraint | DQN | v6.0.0 | 5000 | 2,3 | 30.917% ± 2.604% | 26.610% ± 32.909% | 29.100% ± 0.782% | 10.230% ± 4.059% | 72.960% ± 32.725% | — |
+| Unconstraint | Double DQN | v6.0.0 | 5000 | 2,3 | 25.519% ± 3.371% | 26.700% ± 14.312% | 25.021% ± 2.639% | 17.140% ± 14.368% | 72.190% ± 15.231% | — |
 
 ## EQ
 
@@ -47,9 +46,9 @@ Not used: v6.0.0 Unconstraint (old definition: penalty and constraint info in th
 | Lagrangian | PPO | v6.0.0 | 5000 | 2,3 | 6.223% ± 0.596% | 99.900% ± 0.028% | 6.219% ± 0.595% | 0.100% ± 0.028% | 0.030% ± 0.014% | — |
 | Lagrangian | DQN | v6.0.0 | 5000 | 2,3 | 11.888% ± 5.224% | 99.990% ± 0.014% | 11.888% ± 5.224% | 0.010% ± 0.014% | 0.000% ± 0.000% | — |
 | Lagrangian | Double DQN | v6.0.0 | 5000 | 2,3 | 12.515% ± 2.970% | 99.980% ± 0.000% | 12.515% ± 2.971% | 0.020% ± 0.000% | 0.010% ± 0.014% | — |
-| Unconstraint | PPO | v6.0.1 | 400 | 2,3 | 14.801% ± 1.288% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
-| Unconstraint | DQN | v6.0.1 | 400 | 2,3 | 61.523% ± 31.617% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
-| Unconstraint | Double DQN | v6.0.1 | 400 | 2,3 | 54.453% ± 48.991% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
+| Unconstraint | PPO | v6.0.0 | 5000 | 2,3 | 6.010% ± 0.429% | 99.950% ± 0.042% | 6.007% ± 0.436% | 0.040% ± 0.028% | 0.010% ± 0.014% | — |
+| Unconstraint | DQN | v6.0.0 | 5000 | 2,3 | 28.494% ± 16.878% | 90.050% ± 13.817% | 28.748% ± 16.568% | 0.030% ± 0.014% | 9.940% ± 13.803% | — |
+| Unconstraint | Double DQN | v6.0.0 | 5000 | 2,3 | 17.355% ± 0.582% | 87.450% ± 17.635% | 17.966% ± 1.446% | 1.630% ± 2.305% | 12.230% ± 17.183% | — |
 
 ## GT
 
@@ -65,6 +64,6 @@ Not used: v6.0.0 Unconstraint (old definition: penalty and constraint info in th
 | Lagrangian | PPO | v6.0.0 | 5000 | 2,3 | 5.481% ± 0.386% | 99.920% ± 0.000% | 5.479% ± 0.389% | 0.070% ± 0.014% | 0.030% ± 0.014% | — |
 | Lagrangian | DQN | v6.0.0 | 5000 | 2,3 | 7.060% ± 2.030% | 100.000% ± 0.000% | 7.060% ± 2.030% | 0.000% ± 0.000% | 0.000% ± 0.000% | — |
 | Lagrangian | Double DQN | v6.0.0 | 5000 | 2,3 | 4.102% ± 0.931% | 99.990% ± 0.014% | 4.102% ± 0.930% | 0.000% ± 0.000% | 0.010% ± 0.014% | — |
-| Unconstraint | PPO | v6.0.1 | 400 | 2,3 | 19.338% ± 0.043% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
-| Unconstraint | DQN | v6.0.1 | 400 | 2,3 | 65.214% ± 43.252% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
-| Unconstraint | Double DQN | v6.0.1 | 400 | 2,3 | 74.167% ± 33.614% | 0.000% ± 0.000% | — | 100.000% ± 0.000% | 100.000% ± 0.000% | — |
+| Unconstraint | PPO | v6.0.0 | 5000 | 2,3 | 4.659% ± 0.112% | 99.960% ± 0.000% | 4.663% ± 0.114% | 0.040% ± 0.000% | 0.020% ± 0.028% | — |
+| Unconstraint | DQN | v6.0.0 | 5000 | 2,3 | 13.724% ± 2.711% | 98.980% ± 1.442% | 13.786% ± 2.623% | 0.190% ± 0.269% | 1.000% ± 1.414% | — |
+| Unconstraint | Double DQN | v6.0.0 | 5000 | 2,3 | 20.812% ± 3.734% | 94.120% ± 8.287% | 21.057% ± 4.083% | 0.020% ± 0.000% | 5.870% ± 8.301% | — |

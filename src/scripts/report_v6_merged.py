@@ -1,9 +1,9 @@
 """v6 merged report (zh + en): one table set that takes every cell from the batch that fixed it.
 
   Mask / Repair / Lagrangian  v6.0.0 models, evaluated on the v6.0.4 fixed test set (v6.0.4-test-50k, 5000 / scenario)
-  Unconstraint                v6.0.1 models (no penalty, AR_obj reward, no constraint info), own 400-instance eval
+  Unconstraint                v6.0.0 models (full ar_pen reward), same fixed test set
   Mask PPO, n_epochs=4        v6.0.0.2 models, own 400-instance eval (supplement row, PPO update-size fix)
-Not used: v6.0.0 Penalty (old Unconstraint definition), v6.0.0.1 (target_kl, worse).
+Not used: v6.0.1 Unconstraint (no-penalty variant), v6.0.0.1 (target_kl, worse).
 Writes paper_contents/v6.0.0-merge/report.md + report.en.md (report of the v6.0.0-merge batch).
 """
 import glob
@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "paper_contents/v6.0.0-merge"
 SCENS, LEARNERS = ["lt", "eq", "gt"], ["ppo", "dqn", "ddqn"]
 LEARN = {"ppo": "PPO", "dqn": "DQN", "ddqn": "Double DQN"}
-ROWS = [("mask", "v6.0.0"), ("mask", "v6.0.0.2"), ("repair", "v6.0.0"), ("lagrange", "v6.0.0"), ("none", "v6.0.1")]
+ROWS = [("mask", "v6.0.0"), ("mask", "v6.0.0.2"), ("repair", "v6.0.0"), ("lagrange", "v6.0.0"), ("none", "v6.0.0")]
 MECH = {"zh": {"mask": "Mask", "repair": "Repair", "lagrange": "Lagrangian", "none": "Unconstraint"},
         "en": {"mask": "Mask", "repair": "Repair", "lagrange": "Lagrangian", "none": "Unconstraint"}}
 LINE = re.compile(r"violation-free instances: AR=([\d.]+) ILP AR=([\d.]+)")
@@ -26,8 +26,6 @@ LINE = re.compile(r"violation-free instances: AR=([\d.]+) ILP AR=([\d.]+)")
 def from_test50k():
     out = defaultdict(list)
     for r in json.loads((ROOT / "paper_contents/v6.0.4-test-50k/test_eval.json").read_text()):
-        if r["mech"] == "none":                                  # v6.0.0 Penalty: old definition, not used
-            continue
         n = r["new"]
         out[(r["mech"], "v6.0.0", r["scen"], r["learner"])].append(dict(
             seed=r["seed"], n=n["n"], gap=n["gap"], vf=n["vf"], vf_rel=n["vf_rel"], cap=n["cap"], conf=n["conf"],
@@ -69,12 +67,11 @@ def write(lang, data):
         L += ["每一格取自修正了该问题的批次，奖励函数与参数均为定稿口径：",
               "",
               "| 行 | 模型来源 | 测试集 | 种子 | 说明 |", "|---|---|---|---|---|",
-              "| Mask / Repair / Lagrangian | v6.0.0（20M 步） | v6.0.4 固定测试集，每场景 5000 个 ILP 最优实例（v6.0.4-test-50k） | Mask / Repair 1–3，Lagrangian 2–3 | ar_pen；Lagrangian 每步再减 λ·c_t；EXIT 只给 Mask |",
+              "| Mask / Repair / Lagrangian / Unconstraint | v6.0.0（20M 步） | v6.0.4 固定测试集，每场景 5000 个 ILP 最优实例（v6.0.4-test-50k） | Mask / Repair 1–3，Lagrangian / Unconstraint 2–3 | ar_pen（Unconstraint 同为完整 ar_pen，无额外约束机制）；Lagrangian 每步再减 λ·c_t；EXIT 只给 Mask |",
               "| Mask PPO（n_epochs=4） | v6.0.0.2（20M 步） | 各种子自己的 400 个实例 | 1–3 | 修正 PPO 更新幅度过大（v6.0.3.1 诊断）；**尚未在 5000 固定测试集上评估** |",
-              "| Unconstraint | v6.0.1（20M 步） | 各种子自己的 400 个实例 | 2–3 | 不罚分，终局给 AR_obj，观测无约束信息；**尚未在 5000 固定测试集上评估** |",
               "",
-              "未使用：v6.0.0 的 Unconstraint（旧定义，罚分且观测含约束信息）、v6.0.0.1（target_kl=0.02，结果更差）。"
-              "缺口：Lagrangian / Unconstraint 缺种子 1；v6.0.0.2 与 v6.0.1 尚未在固定测试集上评估。",
+              "未使用：v6.0.1 的 Unconstraint（不罚分版本）、v6.0.0.1（target_kl=0.02，结果更差）。"
+              "缺口：Lagrangian / Unconstraint 缺种子 1；v6.0.0.2 尚未在固定测试集上评估。",
               "",
               "- **gap** = 1 − mean(AR) / mean(ILP AR)，全部测试实例，AR 只计合法放置。",
               "- **无违约实例相对 gap** = (ILP AR − AR) / ILP AR，只在无违约完成的实例上计算。",
@@ -84,12 +81,11 @@ def write(lang, data):
         L += ["Every cell comes from the batch that fixed it; reward function and parameters follow the final definition:",
               "",
               "| Row | Models | Test set | Seeds | Notes |", "|---|---|---|---|---|",
-              "| Mask / Repair / Lagrangian | v6.0.0 (20M steps) | v6.0.4 fixed test set, 5000 ILP-optimal instances per scenario (v6.0.4-test-50k) | Mask / Repair 1–3, Lagrangian 2–3 | ar_pen; Lagrangian −λ·c_t per step; EXIT for Mask only |",
+              "| Mask / Repair / Lagrangian / Unconstraint | v6.0.0 (20M steps) | v6.0.4 fixed test set, 5000 ILP-optimal instances per scenario (v6.0.4-test-50k) | Mask / Repair 1–3, Lagrangian / Unconstraint 2–3 | ar_pen (Unconstraint: the same full ar_pen, no constraint mechanism); Lagrangian −λ·c_t per step; EXIT for Mask only |",
               "| Mask PPO (n_epochs=4) | v6.0.0.2 (20M steps) | each seed's own 400 instances | 1–3 | fixes the oversized PPO updates (v6.0.3.1); **not yet evaluated on the 5000-instance test set** |",
-              "| Unconstraint | v6.0.1 (20M steps) | each seed's own 400 instances | 2–3 | no penalty, terminal AR_obj, no constraint info in the state; **not yet evaluated on the 5000-instance test set** |",
               "",
-              "Not used: v6.0.0 Unconstraint (old definition: penalty and constraint info in the state), v6.0.0.1 (target_kl=0.02, worse). "
-              "Gaps: Lagrangian / Unconstraint lack seed 1; v6.0.0.2 and v6.0.1 not yet evaluated on the fixed test set.",
+              "Not used: v6.0.1 Unconstraint (no-penalty variant), v6.0.0.1 (target_kl=0.02, worse). "
+              "Gaps: Lagrangian / Unconstraint lack seed 1; v6.0.0.2 not yet evaluated on the fixed test set.",
               "",
               "- **gap** = 1 − mean(AR) / mean(ILP AR) over all test instances, AR over legal placements.",
               "- **Violation-free relative gap** = (ILP AR − AR) / ILP AR over the instances completed without violation.",
@@ -115,7 +111,6 @@ def write(lang, data):
 
 def main():
     data = from_test50k()
-    data.update(from_runs("v6.0.1", "none"))
     data.update(from_runs("v6.0.0.2", "mask"))
     OUT.mkdir(parents=True, exist_ok=True)
     for lang in ("zh", "en"):

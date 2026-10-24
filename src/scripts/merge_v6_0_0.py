@@ -1,7 +1,7 @@
 """v6.0.0-merge: one panel batch that collects, without retraining, the v6 runs that follow the final definition.
 
-  maskable / repair / lagrangian  v6.0.0 runs              (role main)
-  unconstraint                    v6.0.1 runs              (role main; v6.0.0's Penalty runs are the old definition)
+  maskable / repair / lagrangian / unconstraint  v6.0.0 runs  (role main; unconstraint uses the full ar_pen reward, as
+                                                 decided 2026-10-24 -- v6.0.1's no-penalty runs are not used)
   maskable PPO, n_epochs=4        v6.0.0.2 runs            (role reference; PPO update-size fix)
 Every run is checked against the final reward / parameter definition before the manifest is written; any mismatch
 aborts. Report: paper_contents/v6.0.0-merge/report.md (+ .en.md) from report_v6_merged.py.
@@ -9,7 +9,6 @@ aborts. Report: paper_contents/v6.0.0-merge/report.md (+ .en.md) from report_v6_
 """
 import glob
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -21,14 +20,13 @@ BATCH = "v6.0.0-merge"
 REPORT = ROOT / "paper_contents" / BATCH
 STRAT = {"mask": "maskable", "repair": "repair", "lagrange": "lagrangian", "none": "unconstraint"}
 ALGO = {"ppo": "PPO", "dqn": "DQN", "ddqn": "DDQN"}
-SOURCES = [("v6.0.0", ("mask", "repair", "lagrange"), "main"),
-           ("v6.0.1", ("none",), "main"),
+SOURCES = [("v6.0.0", ("mask", "repair", "lagrange", "none"), "main"),
            ("v6.0.0.2", ("mask",), "reference")]
 # final definition (memory: reward-formula / full-episode-violation); value or callable(results) -> bool
 COMMON = {"reward_mode": "ar_pen", "reward_norm": "none", "full_episode": True, "gamma": 1.0, "net": "graph",
           "obs": "raw", "order": "desc", "action_mode": "ecu", "bc": None, "train_pool": "results/sup_diag/{scen}.json",
           "data": {"conflict_pair_prob": 0.6, "k_sets": 10}, "test_count": 400}
-CODE = {"v6.0.0": "4445cf9", "v6.0.1": "14cce61", "v6.0.0.2": "c8f195b"}   # 14cce61 adds only the unconstraint branch
+CODE = {"v6.0.0": "4445cf9", "v6.0.0.2": "c8f195b"}
 
 
 def check(r, version, role):
@@ -69,28 +67,24 @@ def main():
     print(f"{len(runs)} runs checked: all follow the final definition")
 
     REPORT.mkdir(parents=True, exist_ok=True)
-    for f in ("merged.md", "merged.en.md"):
-        src = ROOT / "logs/v6.0.1/report" / f
-        if src.is_file():
-            shutil.move(src, REPORT / f.replace("merged", "report"))
     head, dirty = _commit(__file__)
     write(BATCH, schema=3, batch=BATCH, version=BATCH, purpose="main", label="Results Merge",
           description={"zh": "合并v6.0.0及补充数据。", "en": "v6.0.0 merged with its supplementary data."}, commit=head, script="src/scripts/merge_v6_0_0.py", script_uncommitted=dirty,
           results_space="unified", driver_pid=None, created_at=_now(),
-          title={"zh": "v6.0.0-merge：合并 v6.0.0 及补充数据（Mask / Repair / Lagrangian 取 v6.0.0，Unconstraint 取 v6.0.1；"
+          title={"zh": "v6.0.0-merge：合并 v6.0.0 及补充数据（Mask / Repair / Lagrangian / Unconstraint 均取 v6.0.0，Unconstraint 用完整 ar_pen 奖励；"
                        "v6.0.0.2 的 Mask PPO n_epochs=4 作参照），不重新训练",
-                 "en": "v6.0.0-merge: v6.0.0 merged with its follow-ups (Mask / Repair / Lagrangian from v6.0.0, Unconstraint "
-                       "from v6.0.1; v6.0.0.2 Mask PPO n_epochs=4 as reference), no retraining"},
+                 "en": "v6.0.0-merge: v6.0.0 merged with its follow-ups (Mask / Repair / Lagrangian / Unconstraint from v6.0.0, "
+                       "Unconstraint with the full ar_pen reward; v6.0.0.2 Mask PPO n_epochs=4 as reference), no retraining"},
           RL_algorithm=["PPO", "DQN", "DDQN"], strategies=["unconstraint", "lagrangian", "maskable", "repair"],
           seeds=[1, 2, 3], scenarios=["eq", "gt", "lt"],
           params={"steps": 20_000_000, "checkpoints": [5_000_000, 10_000_000, 15_000_000], "net": "graph",
                   "reward": "ar_pen", "gamma": 1.0, "full_episode": True, "exit_action": "maskable only",
-                  "unconstraint": "v6.0.1: no penalty, terminal AR_obj, no constraint info in the state",
+                  "unconstraint": "v6.0.0: full ar_pen reward (same as maskable / repair), constraint info in the state",
                   "train_pool": "results/sup_diag/{scen}.json", "data": "v4.3.1.4",
                   "lagrangian": {"lambda_max": "none", "lambda_update": "adam", "lambda_lr": 0.035, "lambda_init": 0.001,
                                  "lambda_target": 0.0, "lambda_cost": "behavior"},
                   "seeds_note": "lagrangian / unconstraint: seeds 2, 3 only"},
-          depends_on=["v6.0.0", "v6.0.1", "v6.0.0.2", "v6.0.4-test-50k"], report_dir=f"paper_contents/{BATCH}",
+          depends_on=["v6.0.0", "v6.0.0.2", "v6.0.4-test-50k"], report_dir=f"paper_contents/{BATCH}",
           runs=runs, references=[], status="finished", finished_at=_now())
     print("->", ROOT / "logs" / BATCH / "manifest.json")
 
