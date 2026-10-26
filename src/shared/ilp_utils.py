@@ -71,13 +71,13 @@ def load_scenario(yaml_config: Path, scenario_idx: int, scenarios: list):
 
 def solve_ilp_max_ar(c, e, conflict_sets=None, tol: float = 1e-6, max_iter: int = 30,
                      fixed: dict | None = None) -> dict:
-    """Maximise AR = (sum_ij x_ij n_i / e_j) / (number of active ECUs) exactly,
+    """Maximise AR = (sum_mn x_mn e_m / c_n) / (number of active ECUs) exactly,
     via Dinkelbach's method (v4.3.1.7). AR is a ratio, so each iteration
     solves the parametric ILP
 
-        max  sum_ij x_ij n_i/e_j - lam * sum_j y_j
-        s.t. sum_j x_ij = 1;  sum_i x_ij n_i <= e_j y_j;  x_ij <= y_j;
-             sum_{i in C_k} x_ij <= 1 (every conflict set k, ECU j)
+        max  sum_mn x_mn e_m/c_n - lam * sum_n y_n
+        s.t. sum_n x_mn = 1;  sum_m x_mn e_m <= c_n y_n;  x_mn <= y_n;
+             sum_{m in C_k} x_mn <= 1 (every conflict set k, ECU n)
 
     and sets lam <- F/G of its solution until |dlam| < tol. fixed = {service: ECU}
     pins those placements (regret diagnostic: optimum completion of a prefix). Returns
@@ -129,7 +129,7 @@ def solve_ilp_max_ar(c, e, conflict_sets=None, tol: float = 1e-6, max_iter: int 
 def solve_ilp(ecus, services, conflict_sets=None) -> dict:
     """Solve the assignment ILP via PuLP; return avg_utilization and allocation.
 
-    NOTE (v4.3.1.7): this maximises the TOTAL utilisation sum_ij x_ij n_i/e_j
+    NOTE (v4.3.1.7): this maximises the TOTAL utilisation sum_mn x_mn e_m/c_n
     and only then divides by the number of active ECUs, so its
     avg_utilization is NOT the maximum AR (it is 0.07-0.12 lower on the
     v4.3.1.4 data). Use solve_ilp_max_ar() for the AR optimum. Kept for

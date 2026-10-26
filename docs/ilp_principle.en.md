@@ -8,26 +8,26 @@ Place M services on N ECUs; every service goes to exactly one ECU.
 
 | Symbol | Meaning |
 |---|---|
-| e_j | capacity of ECU j (containers), from {50, 55, …, 195} |
-| n_i | demand of service i (containers), from {10, 15, …, 95} |
+| c_n | capacity of ECU n (containers), from {50, 55, …, 195} |
+| e_m | demand of service m (containers), from {10, 15, …, 95} |
 | C_k | k-th privacy conflict set (K = 10); services of one set may not share an ECU |
-| x_ij ∈ {0,1} | service i is placed on ECU j |
-| y_j ∈ {0,1} | ECU j is used |
+| x_mn ∈ {0,1} | service m is placed on ECU n |
+| y_n ∈ {0,1} | ECU n is used |
 
 Scenario sizes: EQ N=10, M=10; GT N=15, M=10; LT N=10, M=15.
 
 **Objective AR (average ECU utilisation)**:
 
-    AR = F(x) / G(y),  F(x) = Σ_i Σ_j x_ij · n_i / e_j,  G(y) = Σ_j y_j
+    AR = F(x) / G(y),  F(x) = Σ_m Σ_n x_mn · e_m / c_n,  G(y) = Σ_n y_n
 
 i.e. the sum of the utilisations of the used ECUs divided by the number of used ECUs.
 
 **Constraints**:
 
-1. Every service placed exactly once: Σ_j x_ij = 1, ∀i
-2. Capacity: Σ_i x_ij · n_i ≤ e_j · y_j, ∀j (an unused ECU hosts nothing)
-3. Activation: x_ij ≤ y_j, ∀i, j
-4. Privacy conflict: Σ_{i∈C_k} x_ij ≤ 1, ∀k, ∀j
+1. Every service placed exactly once: Σ_n x_mn = 1, ∀m
+2. Capacity: Σ_m x_mn · e_m ≤ c_n · y_n, ∀n (an unused ECU hosts nothing)
+3. Activation: x_mn ≤ y_n, ∀m, n
+4. Privacy conflict: Σ_{m∈C_k} x_mn ≤ 1, ∀k, ∀n
 
 Constraint 4 allows at most one member of each conflict set per ECU, i.e. no two services of the same set share an ECU.
 
