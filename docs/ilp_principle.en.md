@@ -39,23 +39,23 @@ The old `solve_ilp` maximised only the numerator F (total utilisation) and divid
 
 ## 3. Dinkelbach iteration (exact maximum AR)
 
-For a parameter λ define the parametric ILP
+For a parameter ρ define the parametric ILP
 
-    φ(λ) = max over feasible (x, y) of  F(x) − λ · G(y)
+    φ(ρ) = max over feasible (x, y) of  F(x) − ρ · G(y)
 
-Key property, with λ_opt the optimal AR:
+Key property, with AR* the optimal AR:
 
-- φ(λ) > 0 for λ < λ_opt, φ(λ_opt) = 0, φ(λ) < 0 for λ > λ_opt.
-- Since G ≥ 1, φ is strictly decreasing in λ.
+- φ(ρ) > 0 for ρ < AR*, φ(AR*) = 0, φ(ρ) < 0 for ρ > AR*.
+- Since G ≥ 1, φ is strictly decreasing in ρ.
 
 Iteration:
 
-1. λ₀ = 0.
-2. Solve φ(λ_t) with CBC (PuLP's default MILP solver) to get a feasible (x_t, y_t).
-3. Set λ_{t+1} = F(x_t) / G(y_t), the actual AR of that solution.
-4. Stop when |λ_{t+1} − λ_t| < 10⁻⁶ and return λ_{t+1} with its placement; otherwise go to 2 (at most 30 rounds).
+1. ρ₀ = 0.
+2. Solve φ(ρ_t) with CBC (PuLP's default MILP solver) to get a feasible (x_t, y_t).
+3. Set ρ_{t+1} = F(x_t) / G(y_t), the actual AR of that solution.
+4. Stop when |ρ_{t+1} − ρ_t| < 10⁻⁶ and return ρ_{t+1} with its placement; otherwise go to 2 (at most 30 rounds).
 
-Every round yields a feasible solution, so λ_t never decreases; it stops changing only when no feasible solution has a higher AR, where φ(λ) = 0 and λ is the global optimum AR. The number of rounds is finite (there are finitely many feasible solutions) and in practice small. Each subproblem is solved to proven optimality by CBC (status `Optimal`), so the result is the exact optimum, not a heuristic.
+Every round yields a feasible solution, so ρ_t never decreases; it stops changing only when no feasible solution has a higher AR, where φ(ρ) = 0 and ρ is the global optimum AR. The number of rounds is finite (there are finitely many feasible solutions) and in practice small. Each subproblem is solved to proven optimality by CBC (status `Optimal`), so the result is the exact optimum, not a heuristic.
 
 ## 4. Instance generation and filtering
 

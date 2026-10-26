@@ -54,28 +54,46 @@ $$
 
 ## 2. ILP: Dinkelbach's method
 
-The objective is a ratio, so it cannot be given to an ILP solver directly. Dinkelbach's method fixes λ in each iteration and solves a parametric ILP with a linear objective (constraints as in Section 1):
+The objective AR = F/G is a ratio, so it cannot be given to an ILP solver directly. Dinkelbach's method keeps a variable ρ, "the best AR found so far", and in each iteration solves a parametric ILP with a linear objective (constraints as in Section 1):
 
 $$
-\varphi(\lambda) = \max_{(x, y)\ \text{feasible}}\ \big[\, F(x) - \lambda\, G(y) \,\big]
+\varphi(\rho) = \max_{(x, y)\ \text{feasible}}\ \big[\, F(x) - \rho\, G(y) \,\big]
 $$
+
+**What each iteration asks**: since G(y) ≥ 1,
+
+$$
+F(x) - \rho\, G(y) > 0 \iff \frac{F(x)}{G(y)} > \rho \iff \text{the AR of } (x, y) > \rho
+$$
+
+So φ(ρ) > 0 means some placement has an AR above ρ, and φ(ρ) = 0 means none has.
 
 **Iteration**:
 
-1. λ₀ = 0.
-2. Solve φ(λ_t) with CBC (PuLP); the status must be `Optimal`. This gives the optimal solution (x_t, y_t).
-3. λ_{t+1} = F(x_t) / G(y_t), i.e. the AR of that solution, with G = the number of ECUs that actually host a service.
-4. Stop when |λ_{t+1} − λ_t| < 10⁻⁶ and output AR\* = λ_{t+1}; otherwise go back to step 2 (at most 30 iterations).
+1. ρ₀ = 0.
+2. Solve φ(ρ_t) with CBC (PuLP); the status must be `Optimal`. This gives the optimal solution (x_t, y_t).
+3. ρ_{t+1} = AR(x_t, y_t) = F(x_t) / G(y_t), with G = the number of ECUs that actually host a service.
+4. Stop when |ρ_{t+1} − ρ_t| < 10⁻⁶ and output AR\* = ρ_{t+1}; otherwise go back to step 2 (at most 30 iterations).
 
-**Convergence**: since G(y) ≥ 1, φ(λ) is strictly decreasing in λ, and
+**Convergence**:
 
 $$
-\varphi(\lambda) > 0 \iff \lambda < \text{AR}^*,\qquad \varphi(\lambda) = 0 \iff \lambda = \text{AR}^*
+\varphi(\rho) > 0 \iff \rho < \text{AR}^*,\qquad \varphi(\rho) = 0 \iff \rho = \text{AR}^*
 $$
 
-So at convergence the parametric objective φ(λ) is 0. This is the stopping criterion; it does not mean that AR is 0. The reported optimal AR is λ. Every iterate is feasible, so λ_t never decreases, and the number of feasible solutions is finite, so the iteration stops after finitely many steps.
+F(x_t) − ρ_{t+1} G(y_t) = 0 holds only for the previous solution; φ is the maximum over all feasible solutions, so it is positive as long as some placement has a higher AR. It is 0 only when ρ is already the largest AR. So φ = 0 at convergence is the stopping criterion, and the reported optimal AR is ρ, not φ. Every iterate is feasible, so ρ_t never decreases; there are finitely many feasible solutions, so the iteration stops after finitely many steps.
+
+**Illustration** (suppose there are only 3 feasible placements, with AR 0.70, 0.80 and 0.90):
+
+| Iteration | ρ | φ(ρ) | placement returned by the ILP (one of) | new ρ |
+|---|---|---|---|---|
+| 1 | 0 | > 0 | AR 0.70 | 0.70 |
+| 2 | 0.70 | > 0 (0.80 and 0.90 exceed 0.70) | AR 0.90 | 0.90 |
+| 3 | 0.90 | 0 (no placement exceeds 0.90) | — | stop, AR\* = 0.90 |
 
 **Example** (EQ validation set, instance 1): φ(0) = 5.3754 (7 ECUs, AR = 0.7679); φ(0.7679) = 0.0000, stop, AR\* = 0.7679.
+
+Note: ρ is used only by the ILP; the λ of the Lagrangian in Section 6.4 is a different quantity (the dual variable of the violation penalty).
 
 ---
 

@@ -75,24 +75,24 @@ def solve_ilp_max_ar(c, e, conflict_sets=None, tol: float = 1e-6, max_iter: int 
     via Dinkelbach's method (v4.3.1.7). AR is a ratio, so each iteration
     solves the parametric ILP
 
-        max  sum_mn x_mn e_m/c_n - lam * sum_n y_n
+        max  sum_mn x_mn e_m/c_n - rho * sum_n y_n
         s.t. sum_n x_mn = 1;  sum_m x_mn e_m <= c_n y_n;  x_mn <= y_n;
              sum_{m in C_k} x_mn <= 1 (every conflict set k, ECU n)
 
-    and sets lam <- F/G of its solution until |dlam| < tol. fixed = {service: ECU}
+    and sets rho <- F/G of its solution until |drho| < tol. fixed = {service: ECU}
     pins those placements (regret diagnostic: optimum completion of a prefix). Returns
     {status, avg_utilization (= AR*), total_utilization, active_ecus,
     iterations, allocation}. Same constraints as solve_ilp; only the
     objective differs (solve_ilp maximises the total utilisation instead).
     """
     N, M = len(c), len(e)
-    lam, best = 0.0, None
+    rho, best = 0.0, None
     for it in range(1, max_iter + 1):
         prob = pulp.LpProblem("max_AR", pulp.LpMaximize)
         x = pulp.LpVariable.dicts("x", (range(M), range(N)), cat="Binary")
         y = pulp.LpVariable.dicts("y", range(N), cat="Binary")
         prob += (pulp.lpSum(x[m][n] * e[m] / c[n] for m in range(M) for n in range(N))
-                 - lam * pulp.lpSum(y[n] for n in range(N)))
+                 - rho * pulp.lpSum(y[n] for n in range(N)))
         for m in range(M):
             prob += pulp.lpSum(x[m][n] for n in range(N)) == 1
         for m, n in (fixed or {}).items():
@@ -117,12 +117,12 @@ def solve_ilp_max_ar(c, e, conflict_sets=None, tol: float = 1e-6, max_iter: int 
             if svcs:
                 alloc[n] = svcs
         total = sum(e[m] / c[n] for n, svcs in alloc.items() for m in svcs)
-        new_lam = total / len(alloc)
-        best = {"status": status, "avg_utilization": new_lam, "total_utilization": total,
+        new_rho = total / len(alloc)
+        best = {"status": status, "avg_utilization": new_rho, "total_utilization": total,
                 "active_ecus": len(alloc), "iterations": it, "allocation": alloc}
-        if abs(new_lam - lam) < tol:
+        if abs(new_rho - rho) < tol:
             break
-        lam = new_lam
+        rho = new_rho
     return best
 
 
