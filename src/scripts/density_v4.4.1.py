@@ -26,20 +26,20 @@ from paper_rl.data import SCENARIOS, conflict_ratio, draw, load  # noqa: E402
 
 VERSION = "v4.4.1"
 REPORT = ROOT / "paper_contents" / VERSION / "density_report.md"
-BINS = [i / 10 for i in range(11)]
+BINS = [m / 10 for m in range(11)]
 
 
 def feasible(caps, reqs, sets) -> bool:
-    n, m = len(caps), len(reqs)
+    n_, m_ = len(caps), len(reqs)
     prob = pulp.LpProblem("feas", pulp.LpMinimize)
-    x = pulp.LpVariable.dicts("x", (range(m), range(n)), cat="Binary")
+    e = pulp.LpVariable.dicts("x", (range(m_), range(n_)), cat="Binary")
     prob += 0
-    for i in range(m):
-        prob += pulp.lpSum(x[i][j] for j in range(n)) == 1
-    for j in range(n):
-        prob += pulp.lpSum(x[i][j] * reqs[i] for i in range(m)) <= caps[j]
+    for m in range(m_):
+        prob += pulp.lpSum(e[m][n] for n in range(n_)) == 1
+    for n in range(n_):
+        prob += pulp.lpSum(e[m][n] * reqs[m] for m in range(m_)) <= caps[n]
         for s in sets:
-            prob += pulp.lpSum(x[i][j] for i in s) <= 1
+            prob += pulp.lpSum(e[m][n] for m in s) <= 1
     prob.solve(pulp.PULP_CBC_CMD(msg=False))
     return pulp.LpStatus[prob.status] == "Optimal"
 
@@ -74,22 +74,22 @@ def main():
              "- 每格写 均值（实例数）。", ""]
     for scen in SCENARIOS:
         with Pool(a.workers) as pool:
-            res = pool.map(one, [(scen, 900_000_000 + i) for i in range(a.n)], chunksize=8)
+            res = pool.map(one, [(scen, 900_000_000 + m) for m in range(a.n)], chunksize=8)
         data = load(scen, VERSION)
         inst = data["instances"]
-        ps = np.array([x["p"] for x in inst])
+        ps = np.array([e["p"] for e in inst])
         lines += [f"## {scen.upper()}（N = {data['N']}，M = {data['M']}）", "",
-                  f"正式数据：p 均值 {ps.mean():.3f}，中位数 {np.median(ps):.3f}；共抽 {sum(x['draws'] for x in inst)} 次得到 {len(inst)} 个可行实例。", "",
+                  f"正式数据：p 均值 {ps.mean():.3f}，中位数 {np.median(ps):.3f}；共抽 {sum(e['draws'] for e in inst)} 次得到 {len(inst)} 个可行实例。", "",
                   "| ρ 档 | ILP 可行率（抽样） | 正式数据实例数 | ILP AR | ILP 启用 ECU 数 | p 均值 |",
                   "|---|---|---|---|---|---|"]
         for b in range(10):
             fs = [f for r, f in res if bin_of(r) == b]
-            xs = [x for x in inst if bin_of(x["conflict_ratio"]) == b]
+            xs = [e for e in inst if bin_of(e["conflict_ratio"]) == b]
             feas = f"{100 * np.mean(fs):.1f}%（{len(fs)}）" if fs else "—（0）"
             if xs:
-                ar = f"{np.mean([x['ar_star'] for x in xs]):.4f}"
-                act = f"{np.mean([x['ilp_active_ecus'] for x in xs]):.2f}"
-                pm = f"{np.mean([x['p'] for x in xs]):.3f}"
+                ar = f"{np.mean([e['ar_star'] for e in xs]):.4f}"
+                act = f"{np.mean([e['ilp_active_ecus'] for e in xs]):.2f}"
+                pm = f"{np.mean([e['p'] for e in xs]):.3f}"
             else:
                 ar = act = pm = "—"
             lines.append(f"| {label(b)} | {feas} | {len(xs)} | {ar} | {act} | {pm} |")

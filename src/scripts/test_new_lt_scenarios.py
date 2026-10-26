@@ -46,11 +46,11 @@ DEFAULT_MODEL = ROOT / "results/paper-verfication/lt/ppo_mask/e251a0fb_bc/model_
 def _is_conflict_feasible(conflict_sets, M, N):
     adj = [set() for _ in range(M)]
     for cs in conflict_sets:
-        valid = [i for i in cs if i < M]
-        for i in valid:
-            for j in valid:
-                if i != j:
-                    adj[i].add(j)
+        valid = [m for m in cs if m < M]
+        for m in valid:
+            for n in valid:
+                if m != n:
+                    adj[m].add(n)
     colors = [-1] * M
     for node in range(M):
         used = {colors[nb] for nb in adj[node] if colors[nb] >= 0}
@@ -76,8 +76,8 @@ def generate_feasible_scenario(rng: random.Random):
         ]
         if not _is_conflict_feasible(conflict_sets, N_SVCS, N_ECUS):
             continue
-        ecus = [ECU(f"ECU{i}", c) for i, c in enumerate(ecu_capacity)]
-        svcs = [SVC(f"SVC{i}", r) for i, r in enumerate(svc_requirement)]
+        ecus = [ECU(f"ECU{m}", c) for m, c in enumerate(ecu_capacity)]
+        svcs = [SVC(f"SVC{m}", r) for m, r in enumerate(svc_requirement)]
         res = solve_ilp(ecus, svcs, conflict_sets)
         if res["status"] == "Optimal":
             return ecu_capacity, svc_requirement, conflict_sets, res
@@ -155,7 +155,7 @@ def main():
         ilp_ars, rl_ars, rl_success = [], [], []
         attempts_all = []
 
-        for i in range(args.size):
+        for m in range(args.size):
             ecu_cap, svc_req, conflict_sets, ilp_res = generate_feasible_scenario(rng)
             ecus = [ECU(f"ECU{k}", c) for k, c in enumerate(ecu_cap)]
             svcs = [SVC(f"SVC{k}", r) for k, r in enumerate(svc_req)]
@@ -163,13 +163,13 @@ def main():
             rl_res = run_rl(ecus, svcs, conflict_sets, model, args.best_of_n)
 
             scenarios_out.append({
-                "idx": i,
+                "idx": m,
                 "ECUs": ecu_cap,
                 "SVCs": svc_req,
                 "conflict_sets": conflict_sets,
             })
             row = {
-                "idx": i,
+                "idx": m,
                 "demand_cap_ratio": round(sum(svc_req) / sum(ecu_cap), 4),
                 "ilp_ar": round(ilp_res["avg_utilization"], 6),
                 "ilp_active_ecus": ilp_res["active_ecus"],
@@ -185,8 +185,8 @@ def main():
             if rl_res["success"]:
                 rl_ars.append(rl_res["ar"])
 
-            if (i + 1) % 20 == 0:
-                print(f"  [{i+1}/{args.size}] running success_rate so far = {np.mean(rl_success):.3f}")
+            if (m + 1) % 20 == 0:
+                print(f"  [{m+1}/{args.size}] running success_rate so far = {np.mean(rl_success):.3f}")
 
         with open(outdir / f"group{g+1}_scenarios.json", "w") as f:
             json.dump(scenarios_out, f, indent=2)

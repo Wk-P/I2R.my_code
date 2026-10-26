@@ -71,7 +71,7 @@ def main():
             f"{sc:<10}{steps:<12}{len(rows):<3}"
             f"{(sr_mean or 0)*100:>6.1f}%±{(sr_std or 0)*100:<6.1f}      "
             f"{ar_mean or 0:>7.4f}±{ar_std or 0:<7.4f}    "
-            + ",".join(str(r["seed"]) for r in sorted(rows, key=lambda x: x["seed"]))
+            + ",".join(str(r["seed"]) for r in sorted(rows, key=lambda e: e["seed"]))
         )
     if pending:
         lines.append("")

@@ -113,7 +113,7 @@ def train_gap(job):
     from paper_rl.train import evaluate, model_class
     scen, seed, eid = job
     pool = json.loads((ROOT / POOL.format(scen=scen)).read_text())
-    sub = [pool[i] for i in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
+    sub = [pool[m] for m in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
     model = model_class("ppo", "mask").load(str(next((RESULTS / scen / ALGO / eid).glob("model_*"))), device="cpu")
     ev = evaluate(model, sub, "mask", "ar_pen", 0.0, "ppo", "raw", True, True)
     ok = [e for e in ev if not e["exited"]]
@@ -134,9 +134,9 @@ def write_report(exp_ids):
     res = {}
     for job, opens, insts, n in out:
         key, s, sd = job[0], job[2], job[6]
-        ar, ilp = np.mean([x["ar"] for x in insts]), np.mean([x["ilp"] for x in insts])
+        ar, ilp = np.mean([e["ar"] for e in insts]), np.mean([e["ilp"] for e in insts])
         res[(key, s, sd)] = {"exit": 1 - len(insts) / n, "rel": (ilp - ar) / ilp,
-                             "dact": np.mean([x["act"] - x["ilp_act"] for x in insts]),
+                             "dact": np.mean([e["act"] - e["ilp_act"] for e in insts]),
                              "forced": sum(o["kind"] == "forced" for o in opens) / n}
     print("[report] training-set gap", flush=True)
     base_tr = {(r["scen"], r["seed"]): r["train"]["rel"]

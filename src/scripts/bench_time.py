@@ -67,9 +67,9 @@ def policy_times(job):
 def ilp_one(args):
     from shared.ilp_utils import solve_ilp_max_ar
     scen, k = args
-    x = test_split_cache(scen)[k]
+    e = test_split_cache(scen)[k]
     t0 = time.perf_counter()
-    r = solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
+    r = solve_ilp_max_ar(e["ECUs"], e["SVCs"], e["conflict_sets"])
     return scen, k, (time.perf_counter() - t0) * 1000, r["iterations"]
 
 
@@ -108,20 +108,20 @@ def main():
              "- 加速比 = ILP 平均耗时 / 网络平均耗时；中位数加速比 = ILP 中位数 / 网络中位数。", ""]
     lines += ["| 场景 | 方法 | 平均 | 中位数 | P95 | 最大 | 加速比（平均） | 加速比（中位数） |", "|---|---|---|---|---|---|---|---|"]
     for s in SCENARIOS:
-        im = [x[0] for x in ilp[s]]
+        im = [e[0] for e in ilp[s]]
         a = st(im)
-        lines.append(f"| {s.upper()} | ILP（Dinkelbach，平均 {np.mean([x[1] for x in ilp[s]]):.2f} 次迭代） | "
+        lines.append(f"| {s.upper()} | ILP（Dinkelbach，平均 {np.mean([e[1] for e in ilp[s]]):.2f} 次迭代） | "
                      + " | ".join(f(v) for v in a) + " | 1× | 1× |")
         for lb, _ in MODELS:
             for part, key in (("整条 episode", "ms"), ("仅前向", "fwd_ms")):
                 v = [r[key] for r in pol[(lb, s)]]
                 b = st(v)
-                lines.append(f"| {s.upper()} | {lb}：{part} | " + " | ".join(f(x) for x in b)
+                lines.append(f"| {s.upper()} | {lb}：{part} | " + " | ".join(f(e) for e in b)
                              + f" | {a[0] / b[0]:.0f}× | {a[1] / b[1]:.0f}× |")
     lines.append("")
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text("\n".join(lines))
-    (REPORT.with_suffix(".json")).write_text(json.dumps({"ilp": {s: [x[0] for x in ilp[s]] for s in SCENARIOS},
+    (REPORT.with_suffix(".json")).write_text(json.dumps({"ilp": {s: [e[0] for e in ilp[s]] for s in SCENARIOS},
                                                          "policy": {f"{lb}|{s}": pol[(lb, s)] for lb, _ in MODELS for s in SCENARIOS}}))
     print(f"report -> {REPORT}", flush=True)
 

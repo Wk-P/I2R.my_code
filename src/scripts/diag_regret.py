@@ -35,7 +35,7 @@ def test_split(scen):
     inst = load(scen, DATA)["instances"]
     idx = list(range(len(inst)))
     random.Random(SEED).shuffle(idx)                   # same as paper_rl.train.split_instances
-    return [inst[i] for i in idx[int(0.8 * len(inst)):]]
+    return [inst[m] for m in idx[int(0.8 * len(inst)):]]
 
 
 def rollout(args):
@@ -61,13 +61,13 @@ def rollout(args):
             if a == env.N:                                     # EXIT
                 obs, _, done, _, info = env.step(a)
                 break
-            active = [j for j in range(env.N) if env.hosted[j]]
+            active = [n for n in range(env.N) if env.hosted[n]]
             feas = env._feasible(env.t)
             kind = None
             if a not in active and active:
-                kind = "voluntary" if any(feas[j] for j in active) else "forced"
-            steps.append({"svc": order[env.t], "a": a, "legal": [int(j) for j in np.flatnonzero(mask[:env.N])],
-                          "empty": [not env.hosted[j] for j in range(env.N)], "open": kind})
+                kind = "voluntary" if any(feas[n] for n in active) else "forced"
+            steps.append({"svc": order[env.t], "a": a, "legal": [int(n) for n in np.flatnonzero(mask[:env.N])],
+                          "empty": [not env.hosted[n] for n in range(env.N)], "open": kind})
             obs, _, done, _, info = env.step(a)
         out.append({"k": k, "steps": steps, "exited": bool(info["exited"]), "ar": float(info["ar"]),
                     "ilp": float(test[k]["ar_star"]), "M": env.M})
@@ -78,13 +78,13 @@ def values(args):
     """V*(T(s_t, a)) for every legal a at one step (equal-capacity empty ECUs solved once)."""
     from shared.ilp_utils import solve_ilp_max_ar
     scen, k, t, prefix, step = args
-    x = test_split_cache(scen)[k]
-    caps = x["ECUs"]
+    e = test_split_cache(scen)[k]
+    caps = e["ECUs"]
     vals, seen = {}, {}
     for a in step["legal"]:
         key = ("empty", caps[a]) if step["empty"][a] else ("ecu", a)
         if key not in seen:
-            r = solve_ilp_max_ar(caps, x["SVCs"], x["conflict_sets"], fixed={**prefix, step["svc"]: a})
+            r = solve_ilp_max_ar(caps, e["SVCs"], e["conflict_sets"], fixed={**prefix, step["svc"]: a})
             seen[key] = float(r["avg_utilization"]) if r["status"] == "Optimal" else None
         vals[a] = seen[key]
     return scen, k, t, vals
@@ -125,31 +125,31 @@ def main():
     with Pool(a.workers) as pool:
         traj = {}
         for s, out in pool.map(rollout, chunks):
-            for e in out:
-                traj[(s, e["k"])] = e
+            for e_ in out:
+                traj[(s, e_["k"])] = e_
         tasks = []
-        for (s, k), e in traj.items():
+        for (s, k), e_ in traj.items():
             prefix = {}
-            for t, st in enumerate(e["steps"]):
+            for t, st in enumerate(e_["steps"]):
                 tasks.append((s, k, t, dict(prefix), st))
                 prefix[st["svc"]] = st["a"]
         print(f"{len(traj)} trajectories, {len(tasks)} steps to solve", flush=True)
         t_solve, every = time.time(), max(1, len(tasks) // 50)
-        for i, (s, k, t, vals) in enumerate(pool.imap_unordered(values, tasks, chunksize=4), 1):
+        for m, (s, k, t, vals) in enumerate(pool.imap_unordered(values, tasks, chunksize=4), 1):
             traj[(s, k)]["steps"][t]["vals"] = vals
-            if i % every == 0 or i == len(tasks):              # progress line, parsed by the panel
+            if m % every == 0 or m == len(tasks):              # progress line, parsed by the panel
                 el = time.time() - t_solve
-                print(f"[regret] solved {i}/{len(tasks)} ({100 * i / len(tasks):.0f}%) | "
-                      f"elapsed {el / 60:.1f} min | eta {el / i * (len(tasks) - i) / 60:.1f} min", flush=True)
+                print(f"[regret] solved {m}/{len(tasks)} ({100 * m / len(tasks):.0f}%) | "
+                      f"elapsed {el / 60:.1f} min | eta {el / m * (len(tasks) - m) / 60:.1f} min", flush=True)
     print(f"solved in {(time.time() - t0) / 60:.1f} min", flush=True)
 
     pc = lambda v: f"{100 * v:.1f}%"
     f4 = lambda v: f"{v:.4f}"
     zh, en = [], []                                     # v4.4.11: every report in Chinese and English
 
-    def L(z, e=None):                                   # one line in both languages (e = z if identical)
+    def L(z, e_=None):                                   # one line in both languages (e = z if identical)
         zh.append(z)
-        en.append(z if e is None else e)
+        en.append(z if e_ is None else e_)
 
     label_en = a.label_en or f"model '{a.key}' of {a.manifest if not a.ref else a.ref}, seed {SEED}"
     L("# 逐步 regret 分解（用 ILP 测量，不训练）", "# Per-step regret decomposition (measured with the ILP, no training)")
@@ -172,13 +172,13 @@ def main():
     summary = {}
     for s in SCENARIOS:
         ok, ex = [], []
-        for (sc, k), e in sorted(traj.items()):
+        for (sc, k), e_ in sorted(traj.items()):
             if sc != s:
                 continue
-            M = e["M"]
+            M = e_["M"]
             regs, nopt, nleg, picked, inf_t = [], [], [], [], None
-            v_prev = max(v for v in e["steps"][0]["vals"].values() if v is not None)
-            for t, st in enumerate(e["steps"]):
+            v_prev = max(v for v in e_["steps"][0]["vals"].values() if v is not None)
+            for t, st in enumerate(e_["steps"]):
                 vals = st["vals"]
                 feas_v = [v for v in vals.values() if v is not None]
                 vs = max(feas_v) if feas_v else None
@@ -192,12 +192,12 @@ def main():
                 nopt.append(sum(v is not None and vs - v <= EPS for v in vals.values()))
                 picked.append(r <= EPS)
             rec = {"regs": regs, "nopt": nopt, "nleg": nleg, "picked": picked, "M": M, "inf_t": inf_t,
-                   "gap": e["ilp"] - e["ar"], "v0": v_prev,
-                   "forced": [t for t, st in enumerate(e["steps"]) if st["open"] == "forced"]}
-            (ex if e["exited"] or inf_t is not None else ok).append(rec)
+                   "gap": e_["ilp"] - e_["ar"], "v0": v_prev,
+                   "forced": [t for t, st in enumerate(e_["steps"]) if st["open"] == "forced"]}
+            (ex if e_["exited"] or inf_t is not None else ok).append(rec)
         M = ok[0]["M"] if ok else ex[0]["M"]
         tele = max(abs(sum(r["regs"]) - r["gap"]) for r in ok) if ok else float("nan")
-        all_regs = [x for r in ok for x in r["regs"]]
+        all_regs = [e for r in ok for e in r["regs"]]
         tot = sum(sum(r["regs"]) for r in ok)
         summary[s] = {"opt_rate": float(np.mean([p for r in ok for p in r["picked"]])),
                       "opt_rate_t": [float(np.mean([r["picked"][t] for r in ok if len(r["picked"]) > t])) for t in range(M)],
@@ -219,12 +219,12 @@ def main():
           f"| PPO regret per step: mean / median | {f4(np.mean(all_regs))} / {f4(np.median(all_regs))} |")
         L(f"| PPO 选中最优动作的比例 | {pc(np.mean([p for r in ok for p in r['picked']]))} |",
           f"| Share of steps where PPO picks an optimal action | {pc(np.mean([p for r in ok for p in r['picked']]))} |")
-        nl, no = np.mean([x for r in ok for x in r['nleg']]), np.mean([x for r in ok for x in r['nopt']])
+        nl, no = np.mean([e for r in ok for e in r['nleg']]), np.mean([e for r in ok for e in r['nopt']])
         L(f"| 每步合法动作数 / 其中最优动作数（均值） | {nl:.2f} / {no:.2f} |",
           f"| Legal actions / optimal actions per step (mean) | {nl:.2f} / {no:.2f} |")
-        L(f"| 最优动作唯一的步所占比例 | {pc(np.mean([x == 1 for r in ok for x in r['nopt']]))} |",
-          f"| Share of steps with a unique optimal action | {pc(np.mean([x == 1 for r in ok for x in r['nopt']]))} |")
-        nr = np.mean([sum(x > EPS for x in r['regs']) for r in ok])
+        L(f"| 最优动作唯一的步所占比例 | {pc(np.mean([e == 1 for r in ok for e in r['nopt']]))} |",
+          f"| Share of steps with a unique optimal action | {pc(np.mean([e == 1 for r in ok for e in r['nopt']]))} |")
+        nr = np.mean([sum(e > EPS for e in r['regs']) for r in ok])
         L(f"| 每个实例有 regret 的步数（均值） | {nr:.2f} |", f"| Steps with regret per instance (mean) | {nr:.2f} |")
         thirds = [(0, M // 3), (M // 3, 2 * M // 3), (2 * M // 3, M)]
         for lo, hi in thirds:
@@ -232,11 +232,11 @@ def main():
             v = pc(part / tot) if tot else "—"
             L(f"| 第 {lo + 1}–{hi} 步贡献的 gap 占比 | {v} |", f"| Share of the gap from steps {lo + 1}–{hi} | {v} |")
         # regret steps vs later forced opens
-        before = [x for r in ok for t, x in enumerate(r["regs"]) if x > EPS and any(f > t for f in r["forced"])]
-        at_f = [x for r in ok for t, x in enumerate(r["regs"]) if x > EPS and t in r["forced"]]
-        lag = [min(f for f in r["forced"] if f > t) - t for r in ok for t, x in enumerate(r["regs"])
-               if x > EPS and any(f > t for f in r["forced"])]
-        rsum = sum(x for r in ok for x in r["regs"] if x > EPS)
+        before = [e for r in ok for t, e in enumerate(r["regs"]) if e > EPS and any(f > t for f in r["forced"])]
+        at_f = [e for r in ok for t, e in enumerate(r["regs"]) if e > EPS and t in r["forced"]]
+        lag = [min(f for f in r["forced"] if f > t) - t for r in ok for t, e in enumerate(r["regs"])
+               if e > EPS and any(f > t for f in r["forced"])]
+        rsum = sum(e for r in ok for e in r["regs"] if e > EPS)
         vb, va_ = (pc(sum(before) / rsum), pc(sum(at_f) / rsum)) if rsum else ("—", "—")
         L(f"| 有 regret 的步之后还会出现被逼开启：regret 占比 | {vb} |",
           f"| Regret at steps followed by a forced opening: share of regret | {vb} |")
@@ -263,7 +263,7 @@ def main():
             rs = [r["regs"][t] for r in ok if len(r["regs"]) > t]
             if not rs:
                 continue
-            L(f"| {t + 1} | {f4(np.mean(rs))} | {pc(sum(rs) / tot) if tot else '—'} | {pc(np.mean([x > EPS for x in rs]))} | "
+            L(f"| {t + 1} | {f4(np.mean(rs))} | {pc(sum(rs) / tot) if tot else '—'} | {pc(np.mean([e > EPS for e in rs]))} | "
               f"{np.mean([r['nleg'][t] for r in ok]):.2f} | {np.mean([r['nopt'][t] for r in ok]):.2f} | "
               f"{pc(np.mean([r['picked'][t] for r in ok]))} |")
         L("")

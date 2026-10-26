@@ -13,8 +13,8 @@ from shared.ilp_utils import solve_ilp
 times, ars = [], []
 for sc in C.TEST_SCENARIOS:
     caps, reqs, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
-    e = [ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
-    s = [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
+    e = [ECU(f"ECU{m}", c) for m, c in enumerate(caps)]
+    s = [SVC(f"SVC{m}", r) for m, r in enumerate(reqs)]
     t0 = time.perf_counter(); res = solve_ilp(e, s, cs); times.append(time.perf_counter() - t0)
     ars.append(res["avg_utilization"])
 import numpy as np

@@ -69,7 +69,7 @@ def split_instances(scen: str, seed: int):
     idx = list(range(len(inst)))
     random.Random(seed).shuffle(idx)
     n_train = int(C.TRAIN_FRACTION * len(inst))
-    return data, [inst[i] for i in idx[:n_train]], [inst[i] for i in idx[n_train:]]
+    return data, [inst[m] for m in idx[:n_train]], [inst[m] for m in idx[n_train:]]
 
 
 # ── learners ────────────────────────────────────────────────────────────────
@@ -178,8 +178,8 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
         def _on_rollout_end(self) -> None:
             """v5.0.3.7 (lam_window "rollout"): one update per PPO rollout from its episodes' mean cost."""
             if mech == "lagrange" and lam_window == "rollout" and self._roll:
-                j = float(np.mean(self._roll))
-                self._step_lambda(j, j)
+                n = float(np.mean(self._roll))
+                self._step_lambda(n, n)
                 self._roll = []
 
         def _on_step(self) -> bool:
@@ -217,15 +217,15 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             self._since += 1
             if len(self._viol) == C.LAMBDA_UPDATE_WINDOW and self._since >= C.LAMBDA_UPDATE_WINDOW:
                 j_beh = float(np.mean(self._viol))
-                j = self._greedy_jc() if lam_cost == "greedy" else j_beh
-                self._step_lambda(j_beh, j)
+                n = self._greedy_jc() if lam_cost == "greedy" else j_beh
+                self._step_lambda(j_beh, n)
                 self._since = 0
 
-        def _step_lambda(self, j_beh: float, j: float) -> None:
+        def _step_lambda(self, j_beh: float, n: float) -> None:
             d = lam_target
             if self._adam is not None:
                 self._adam.zero_grad()
-                (-self._lam_t * (j - d)).backward()
+                (-self._lam_t * (n - d)).backward()
                 self._adam.step()
                 with __import__("torch").no_grad():
                     self._lam_t.clamp_(0.0, lam_max)
@@ -233,10 +233,10 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             else:
                 # linear: e = J_C - d (v5.0.3); normalized (v5.0.3.1): e = (J_C - d) / max(J_C, d) in (-1, 1), so a step
                 # up and a step down have the same size lam_lr (with d ~ 0 the linear error can rise ~1000x faster than it falls)
-                e = j - d if lam_update == "linear" else (j - d) / max(j, d, 1e-12)
+                e = n - d if lam_update == "linear" else (n - d) / max(n, d, 1e-12)
                 self.lam = float(np.clip(self.lam + lam_lr * e, 0.0, lam_max))
             self.training_env.env_method("set_lambda", self.lam)
-            self.dual_rows.append((self._n_ep, self.num_timesteps, j_beh, j, self.lam))
+            self.dual_rows.append((self._n_ep, self.num_timesteps, j_beh, n, self.lam))
 
         def _greedy_jc(self) -> float:
             """v5.0.3.3: J_C of the greedy (epsilon = 0) policy that is deployed and tested, not of the epsilon-greedy
@@ -256,9 +256,9 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
     return Cb()
 
 
-def lam_max_arg(x: str) -> float:
+def lam_max_arg(e: str) -> float:
     """--lambda-max: a number, or 'none' for no cap (v5.0.3.2; kept as inf in memory)."""
-    return float("inf") if x.strip().lower() in ("none", "inf") else float(x)
+    return float("inf") if e.strip().lower() in ("none", "inf") else float(e)
 
 
 def lam_max_json(v: float):
@@ -365,7 +365,7 @@ def curve_history(run_dir: Path) -> tuple[list, list[int]]:
         chain.append((d, at))
     for d, at in reversed(chain):
         with open(d / "training_curve.csv") as f:
-            prev = [tuple(float(x) for x in r) for r in list(csv.reader(f))[1:]]
+            prev = [tuple(float(e) for e in r) for r in list(csv.reader(f))[1:]]
         rows = [r for r in rows if r[0] <= prev[0][0]] if rows and prev else rows
         rows += [r for r in prev if r[0] <= at]
         marks.append(at)
@@ -385,7 +385,7 @@ def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[
         return
     a = np.array([r[:8] for r in rows], dtype=float)    # v5.0.0 rows carry a 9th column (exited); history may have 8
     w = max(1, min(C.SMOOTH_W, len(a) // 10))
-    sm = lambda y: moving_avg(y, w)[0]                  # trailing mean: the curve starts at the first episode
+    sm = lambda c: moving_avg(c, w)[0]                  # trailing mean: the curve starts at the first episode
     ts = a[:, 0]
     fig, ax = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
     ax[0].plot(ts, sm(a[:, 1]), color="steelblue"); ax[0].set_ylabel("Episode reward")
@@ -398,11 +398,11 @@ def plot_curve(rows, ar_star, path: Path, title: str, history: tuple[list, list[
     if len(ex) and ex[:, 1].any():
         ax[3].plot(ex[:, 0], moving_avg(ex[:, 1], w)[0], color="purple", label="EXIT")
     ax[3].set_ylabel("violation / EXIT rate"); ax[3].set_ylim(-0.02, 1.02); ax[3].legend(); ax[3].set_xlabel("training steps")
-    for x in ax:
-        x.grid(alpha=0.3)
-        x.set_xlim(0, x_max if x_max else max(float(ts[-1]), 1.0))   # step axis: 0 .. total steps
+    for e in ax:
+        e.grid(alpha=0.3)
+        e.set_xlim(0, x_max if x_max else max(float(ts[-1]), 1.0))   # step axis: 0 .. total steps
         for mk in (history[1] if history else []):    # where a continued run took over
-            x.axvline(mk, color="gray", ls=":", lw=1)
+            e.axvline(mk, color="gray", ls=":", lw=1)
     ax[0].set_title(title)
     plt.tight_layout(); plt.savefig(path, dpi=120); plt.close()
 
@@ -506,11 +506,11 @@ def main():
     data, train, test = split_instances(a.scen, a.seed)
     if a.train_pool:                                    # v4.4.14: many unique (ILP-verified) training instances
         pool = json.loads((ROOT / a.train_pool.format(scen=a.scen)).read_text())
-        assert all(x.get("ar_star", 0) > 0 for x in pool), "every training instance must have an ILP optimum"
+        assert all(e.get("ar_star", 0) > 0 for e in pool), "every training instance must have an ILP optimum"
         train = pool
     if a.test_set:                                      # v6.0.4: one fixed test set for every seed
         test = json.loads((ROOT / a.test_set.format(scen=a.scen)).read_text())
-        assert all(x.get("ar_star", 0) > 0 for x in test), "every test instance must have an ILP optimum"
+        assert all(e.get("ar_star", 0) > 0 for e in test), "every test instance must have an ILP optimum"
     n, m = data["N"], data["M"]
     outdir = results_dir(a.scen, a.algo)
     exp_id = resolve_exp_id(outdir)
@@ -552,18 +552,18 @@ def main():
         assert a.order == "desc", "--bc: demonstrations are built in descending order (paper_rl.bc)"
         from paper_rl.bc import alloc_path, expert_dataset, pretrain
         allocs_all = json.loads(alloc_path(a.scen).read_text())
-        pos = {id(x): k for k, x in enumerate(data["instances"])}
+        pos = {id(e): k for k, e in enumerate(data["instances"])}
         t_bc = time.time()
         demo = expert_dataset(dict(mechanism=mech, reward_mode=a.reward, obs_mode=a.obs, full_episode=a.full_episode,
-                                   exit_action=a.exit_action), train, [allocs_all[pos[id(x)]] for x in train])
+                                   exit_action=a.exit_action), train, [allocs_all[pos[id(e)]] for e in train])
         bc_info = pretrain(model, demo, seed=a.seed)
         model.save(str(run_dir / f"bc_only_{exp_id}"))
         ev_bc = evaluate(model, test, mech, a.reward, 0.0, learner, a.obs, a.full_episode, a.exit_action, a.action)
-        ok_bc = [e for e in ev_bc if not e["exited"] and e["cap_v"] == 0 and e["conf_v"] == 0]
+        ok_bc = [e_ for e_ in ev_bc if not e_["exited"] and e_["cap_v"] == 0 and e_["conf_v"] == 0]
         bc_info.update({"bc_seconds": round(time.time() - t_bc, 1),
-                        "bc_only_exit_rate": round(float(np.mean([e["exited"] for e in ev_bc])), 6),
-                        "bc_only_ar": round(float(np.mean([e["ar"] for e in ok_bc])), 6) if ok_bc else None,
-                        "bc_only_ilp_ar": round(float(np.mean([e["ar_star"] for e in ok_bc])), 6) if ok_bc else None})
+                        "bc_only_exit_rate": round(float(np.mean([e_["exited"] for e_ in ev_bc])), 6),
+                        "bc_only_ar": round(float(np.mean([e_["ar"] for e_ in ok_bc])), 6) if ok_bc else None,
+                        "bc_only_ilp_ar": round(float(np.mean([e_["ar_star"] for e_ in ok_bc])), 6) if ok_bc else None})
         print(f"  [bc] {bc_info}", flush=True)
     start = resumed["at_step"] if resumed else 0
     greedy_env = None
@@ -580,7 +580,7 @@ def main():
         from paper_rl.grad_diag import GradDiagCallback
         extra.append(GradDiagCallback(run_dir / "grad_cos.csv"))
     if a.checkpoints:                                   # v4.4.15: save the model at these step counts
-        extra.append(checkpoint_callback(sorted(int(x) for x in a.checkpoints.split(",")), run_dir, exp_id,
+        extra.append(checkpoint_callback(sorted(int(e) for e in a.checkpoints.split(",")), run_dir, exp_id,
                                          (lambda: main_cb.lam) if mech == "lagrange" else None, a.lambda_max))
     if a.val_every:                                     # v6.1.0: intermediate validation for the tuner
         extra.append(val_callback(a.val_every, run_dir / "val_curve.jsonl", lambda mdl: evaluate(
@@ -598,20 +598,20 @@ def main():
 
     ev = evaluate(model, test, mech, a.reward, lam, learner, a.obs, a.full_episode, a.exit_action, a.action, a.order, a.order_seed,
                   a.lambda_max)
-    sr = float(np.mean([e["success"] for e in ev]))
-    ars = np.array([e["ar"] for e in ev])
-    succ_ratio = [e["ar"] / e["ar_star"] for e in ev if e["success"] and e["ar_star"] > 0]
-    cap_rate = float(np.mean([e["cap_v"] > 0 for e in ev]))
-    conf_rate = float(np.mean([e["conf_v"] > 0 for e in ev]))
-    ilp_ar = float(np.mean([e["ar_star"] for e in ev]))
-    ok = [e for e in ev if e["success"]]
-    ar_ok = float(np.mean([e["ar"] for e in ok])) if ok else float("nan")
-    ilp_ok = float(np.mean([e["ar_star"] for e in ok])) if ok else float("nan")
+    sr = float(np.mean([e_["success"] for e_ in ev]))
+    ars = np.array([e_["ar"] for e_ in ev])
+    succ_ratio = [e_["ar"] / e_["ar_star"] for e_ in ev if e_["success"] and e_["ar_star"] > 0]
+    cap_rate = float(np.mean([e_["cap_v"] > 0 for e_ in ev]))
+    conf_rate = float(np.mean([e_["conf_v"] > 0 for e_ in ev]))
+    ilp_ar = float(np.mean([e_["ar_star"] for e_ in ev]))
+    ok = [e_ for e_ in ev if e_["success"]]
+    ar_ok = float(np.mean([e_["ar"] for e_ in ok])) if ok else float("nan")
+    ilp_ok = float(np.mean([e_["ar_star"] for e_ in ok])) if ok else float("nan")
     print(f"  eval: violation-free={sr:.4f} | violation-free instances: AR={ar_ok:.4f} ILP AR={ilp_ok:.4f} "
           f"AR gap={ilp_ok - ar_ok:.4f} | cap viol={cap_rate:.4f} | privacy viol={conf_rate:.4f} | "
-          f"EXIT={np.mean([e['exited'] for e in ev]):.4f} | "
+          f"EXIT={np.mean([e_['exited'] for e_ in ev]):.4f} | "
           f"train {train_s / 60:.1f} min", flush=True)
-    ar_obj = float(np.mean([e["ar_obj"] for e in ev]))
+    ar_obj = float(np.mean([e_["ar_obj"] for e_ in ev]))
     if mech == "none":                                  # v6.0.1: the unconstrained objective over all test instances
         print(f"  eval (unconstrained objective, all instances): AR_obj={ar_obj:.4f} ILP AR={ilp_ar:.4f} "
               f"| any violation={1 - sr:.4f}", flush=True)
@@ -635,10 +635,10 @@ def main():
             "ar_obj_mean": round(ar_obj, 6),
             "ar_ratio_successful": round(float(np.mean(succ_ratio)), 6) if succ_ratio else None,
             "cap_viol_rate": round(cap_rate, 6), "conflict_viol_rate": round(conf_rate, 6),
-            "cap_viol_total": int(sum(e["cap_v"] for e in ev)),
-            "conflict_viol_total": int(sum(e["conf_v"] for e in ev)),
-            "dead_end_rate": round(float(np.mean([e["dead_end"] for e in ev])), 6),
-            "exit_rate": round(float(np.mean([e["exited"] for e in ev])), 6),
+            "cap_viol_total": int(sum(e_["cap_v"] for e_ in ev)),
+            "conflict_viol_total": int(sum(e_["conf_v"] for e_ in ev)),
+            "dead_end_rate": round(float(np.mean([e_["dead_end"] for e_ in ev])), 6),
+            "exit_rate": round(float(np.mean([e_["exited"] for e_ in ev])), 6),
         },
         "training": {"total_steps": start + a.steps, "steps_this_run": a.steps, "n_episodes": len(cb.rows), "train_seconds": round(train_s, 1),
                      "ar_last50": round(float(np.mean([r[2] for r in cb.rows[-50:]])), 6) if cb.rows else None,

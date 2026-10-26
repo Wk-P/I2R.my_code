@@ -139,7 +139,7 @@ def directional_step(step_fn):
             info["dead_end"] = True
             return obs, -C, done, truncated, info
 
-        placed_on = next((j for j, p in enumerate(self.ecu_placements) if len(p) > before[j]), None)
+        placed_on = next((n for n, p in enumerate(self.ecu_placements) if len(p) > before[n]), None)
         if placed_on is not None and (is_repair or c_t == 0):
             self._dir_ru += req / float(self.initial_vms[placed_on])
             self._dir_active.add(placed_on)

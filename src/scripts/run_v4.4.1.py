@@ -47,7 +47,7 @@ if PILOT:
     MANIFEST = LOG_DIR / "manifest.json"
     REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "pilot_report.md"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-BINS = [i / 10 for i in range(11)]
+BINS = [m / 10 for m in range(11)]
 
 
 def new_exp_id():
@@ -93,8 +93,8 @@ def eval_run(job):
     model = model_class(learner, mech).load(str(next(run_dir.glob("model_*"))), device="cpu")
     _, _, test = split_instances(scen, seed)
     ev = evaluate(model, test, mech, REWARD, 0.0, learner, OBS, full_episode=True, exit_action=mech == "mask")
-    for e, x in zip(ev, test):
-        e["rho"] = x["conflict_ratio"]
+    for e_, e in zip(ev, test):
+        e_["rho"] = e["conflict_ratio"]
     return job, ev
 
 
@@ -127,8 +127,8 @@ def write_report(exp_ids):
     pc = lambda v: f"{100 * v:.1f}%"
 
     def cells(st):
-        return [ms([x["exit"] for x in st], pc), ms([x["ar"] for x in st], f4), ms([x["ilp_ar"] for x in st], f4),
-                ms([x["gap"] for x in st], f4), ms([x["rel"] for x in st], pc)]
+        return [ms([e["exit"] for e in st], pc), ms([e["ar"] for e in st], f4), ms([e["ilp_ar"] for e in st], f4),
+                ms([e["gap"] for e in st], f4), ms([e["rel"] for e in st], pc)]
 
     bin_of = lambda r: min(int(r * 10), 9)
     label = lambda b: f"[{BINS[b]:.1f}, {BINS[b + 1]:.1f}" + ("]" if b == 9 else ")")
@@ -154,16 +154,16 @@ def write_report(exp_ids):
                   "| 模型 | 测试实例数 | EXIT 率 | AR | ILP AR | 绝对 gap | 相对 gap |", "|---|---|---|---|---|---|---|"]
         for a in ALGOS:
             st = [stats(evs[(s, a, sd)]) for sd in SEEDS if (s, a, sd) in evs]
-            lines.append("| " + " | ".join(["Maskable PPO", str(sum(x["n"] for x in st))] + cells(st)) + " |")
+            lines.append("| " + " | ".join(["Maskable PPO", str(sum(e["n"] for e in st))] + cells(st)) + " |")
         lines += ["", "按冲突密度 ρ 分档：", "",
                   "| 模型 | ρ 档 | 测试实例数 | EXIT 率 | AR | ILP AR | 绝对 gap | 相对 gap |", "|---|---|---|---|---|---|---|---|"]
         for a in ALGOS:
             for b in range(10):
-                st = [stats([e for e in evs[(s, a, sd)] if bin_of(e["rho"]) == b]) for sd in SEEDS if (s, a, sd) in evs]
-                st = [x for x in st if x["n"]]
+                st = [stats([e_ for e_ in evs[(s, a, sd)] if bin_of(e_["rho"]) == b]) for sd in SEEDS if (s, a, sd) in evs]
+                st = [e for e in st if e["n"]]
                 if not st:
                     continue
-                lines.append("| " + " | ".join(["Maskable PPO", label(b), str(sum(x["n"] for x in st))] + cells(st)) + " |")
+                lines.append("| " + " | ".join(["Maskable PPO", label(b), str(sum(e["n"] for e in st))] + cells(st)) + " |")
         lines.append("")
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text("\n".join(lines))

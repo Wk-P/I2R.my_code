@@ -46,11 +46,11 @@ def rollout(args):
         steps, done = [], False
         while not done:
             mask = env.action_masks()
-            legal = [int(j) for j in np.flatnonzero(mask[:env.N])]
-            x = decode_raw(torch.as_tensor(obs, dtype=torch.float32)[None], env.N, env.M)
+            legal = [int(n) for n in np.flatnonzero(mask[:env.N])]
+            e = decode_raw(torch.as_tensor(obs, dtype=torch.float32)[None], env.N, env.M)
             with torch.no_grad():
-                logits = net(*x)[0][0].numpy()
-                P = net.plan_enc(x[0], x[1], x[2])[0, min(env.t, env.M - 1)].numpy()
+                logits = net(*e)[0][0].numpy()
+                P = net.plan_enc(e[0], e[1], e[2])[0, min(env.t, env.M - 1)].numpy()
             if not legal:                                       # only EXIT left
                 obs, _, done, _, _ = env.step(env.N)
                 break
@@ -58,7 +58,7 @@ def rollout(args):
             a_full = legal[int(np.argmax(logits[legal]))]
             a_dyn = legal[int(np.argmax(dl[legal]))]
             steps.append({"svc": env.order[env.t], "a": a_full, "a_dyn": a_dyn, "legal": legal,
-                          "empty": [not env.hosted[j] for j in range(env.N)],
+                          "empty": [not env.hosted[n] for n in range(env.N)],
                           "std_p": float(np.std(P[legal])), "std_dl": float(np.std(dl[legal]))})
             obs, _, done, _, info = env.step(a_full)
         out.append({"k": k, "steps": steps, "exited": bool(env.exited)})
@@ -75,28 +75,28 @@ def main():
     a = ap.parse_args()
     ids = json.loads(MANIFEST.read_text())["exp_ids"]
     t0, per_seed = time.time(), {}
-    for sd in [int(x) for x in a.seeds.split(",")]:
+    for sd in [int(e) for e in a.seeds.split(",")]:
         DR.SEED = sd                                            # test split of this seed (set before forking)
         DR._CACHE.clear()
         eid = ids[str(sd)][a.scen][KEY]
         with Pool(a.workers) as pool:
             traj = {}
             for s, out in pool.map(rollout, [(a.scen, eid, list(range(c, min(c + 25, a.n)))) for c in range(0, a.n, 25)]):
-                for e in out:
-                    traj[e["k"]] = e
+                for e_ in out:
+                    traj[e_["k"]] = e_
             tasks = []
-            for k, e in traj.items():
+            for k, e_ in traj.items():
                 prefix = {}
-                for t, st in enumerate(e["steps"]):
+                for t, st in enumerate(e_["steps"]):
                     tasks.append((a.scen, k, t, dict(prefix), st))
                     prefix[st["svc"]] = st["a"]
-            for i, (s, k, t, vals) in enumerate(pool.imap_unordered(DR.values, tasks, chunksize=4), 1):
+            for m, (s, k, t, vals) in enumerate(pool.imap_unordered(DR.values, tasks, chunksize=4), 1):
                 traj[k]["steps"][t]["vals"] = vals
-                if i % max(1, len(tasks) // 20) == 0:
-                    print(f"[plan-diag] seed {sd}: solved {i}/{len(tasks)} ({100 * i / len(tasks):.0f}%)", flush=True)
+                if m % max(1, len(tasks) // 20) == 0:
+                    print(f"[plan-diag] seed {sd}: solved {m}/{len(tasks)} ({100 * m / len(tasks):.0f}%)", flush=True)
         rows = []                                               # one row per step with a feasible completion
-        for k, e in traj.items():
-            for t, st in enumerate(e["steps"]):
+        for k, e_ in traj.items():
+            for t, st in enumerate(e_["steps"]):
                 feas = [v for v in st["vals"].values() if v is not None]
                 if not feas or st["vals"][st["a"]] is None:
                     break
@@ -104,7 +104,7 @@ def main():
                 rd = st["vals"][st["a_dyn"]]
                 rows.append({"t": t, "reg": vs - st["vals"][st["a"]], "reg_dyn": None if rd is None else vs - rd,
                              "changed": st["a"] != st["a_dyn"], "std_p": st["std_p"], "std_dl": st["std_dl"]})
-        per_seed[sd] = {"eid": eid, "rows": rows, "n_inst": len(traj), "n_exit": sum(e["exited"] for e in traj.values())}
+        per_seed[sd] = {"eid": eid, "rows": rows, "n_inst": len(traj), "n_exit": sum(e_["exited"] for e_ in traj.values())}
         print(f"seed {sd} done ({(time.time() - t0) / 60:.1f} min)", flush=True)
     write(a, per_seed, time.time() - t0)
 

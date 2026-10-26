@@ -70,58 +70,58 @@ def solve_service_deployment(M, N, e_list, n_list, conflict_sets=None, seed=None
         prob = pulp.LpProblem(f"Maximize_AR_iter{iteration}", pulp.LpMaximize)
 
         # x[i][j] = 1 if service i assigned to ECU j
-        x = pulp.LpVariable.dicts("x", (range(M), range(N)), cat='Binary')
+        e = pulp.LpVariable.dicts("x", (range(M), range(N)), cat='Binary')
         # y[j]    = 1 if ECU j has at least one service (active)
-        y = pulp.LpVariable.dicts("y", range(N), cat='Binary')
+        c = pulp.LpVariable.dicts("y", range(N), cat='Binary')
 
         # Parametric objective: F(x) - λ * G(y)
         prob += (
-            pulp.lpSum(x[i][j] * n_list[i] / e_list[j]
-                       for i in range(M) for j in range(N))
-            - lambda_val * pulp.lpSum(y[j] for j in range(N))
+            pulp.lpSum(e[m][n] * n_list[m] / e_list[n]
+                       for m in range(M) for n in range(N))
+            - lambda_val * pulp.lpSum(c[n] for n in range(N))
         )
 
         # Each service assigned to exactly one ECU
-        for i in range(M):
-            prob += pulp.lpSum(x[i][j] for j in range(N)) == 1, f"Assign_{i}"
+        for m in range(M):
+            prob += pulp.lpSum(e[m][n] for n in range(N)) == 1, f"Assign_{m}"
 
         # Capacity constraint per ECU
-        for j in range(N):
-            prob += pulp.lpSum(x[i][j] * n_list[i] for i in range(M)) <= e_list[j], f"Cap_{j}"
+        for n in range(N):
+            prob += pulp.lpSum(e[m][n] * n_list[m] for m in range(M)) <= e_list[n], f"Cap_{n}"
 
         # Linking: x[i][j]=1 forces y[j]=1; no service means y[j] must be 0
-        for j in range(N):
-            prob += pulp.lpSum(x[i][j] for i in range(M)) >= y[j], f"LinkLB_{j}"
-            for i in range(M):
-                prob += x[i][j] <= y[j], f"LinkUB_{i}_{j}"
+        for n in range(N):
+            prob += pulp.lpSum(e[m][n] for m in range(M)) >= c[n], f"LinkLB_{n}"
+            for m in range(M):
+                prob += e[m][n] <= c[n], f"LinkUB_{m}_{n}"
 
         # Hard-infeasible assignments
-        for i in range(M):
-            for j in range(N):
-                if n_list[i] > e_list[j]:
-                    prob += x[i][j] == 0, f"Infeasible_{i}_{j}"
+        for m in range(M):
+            for n in range(N):
+                if n_list[m] > e_list[n]:
+                    prob += e[m][n] == 0, f"Infeasible_{m}_{n}"
 
         # Conflict constraints: at most one service from each conflict subset per ECU
         if conflict_sets:
             for k, subset in enumerate(conflict_sets):
-                valid = [i for i in subset if i < M]
+                valid = [m for m in subset if m < M]
                 if len(valid) >= 2:
-                    for j in range(N):
-                        prob += pulp.lpSum(x[i][j] for i in valid) <= 1, f"Conflict_{k}_ECU_{j}"
+                    for n in range(N):
+                        prob += pulp.lpSum(e[m][n] for m in valid) <= 1, f"Conflict_{k}_ECU_{n}"
 
         prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
         if pulp.LpStatus[prob.status] != 'Optimal':
             break
 
-        best_x, best_y = x, y
+        best_x, best_y = e, c
 
-        active = sum(1 for j in range(N)
-                     if pulp.value(y[j]) is not None and pulp.value(y[j]) > 0.5)
+        active = sum(1 for n in range(N)
+                     if pulp.value(c[n]) is not None and pulp.value(c[n]) > 0.5)
         total  = sum(
-            pulp.value(x[i][j]) * n_list[i] / e_list[j]
-            for i in range(M) for j in range(N)
-            if pulp.value(x[i][j]) is not None and pulp.value(x[i][j]) > 0.5
+            pulp.value(e[m][n]) * n_list[m] / e_list[n]
+            for m in range(M) for n in range(N)
+            if pulp.value(e[m][n]) is not None and pulp.value(e[m][n]) > 0.5
         )
 
         if active == 0:
@@ -142,21 +142,21 @@ def solve_service_deployment(M, N, e_list, n_list, conflict_sets=None, seed=None
     }
 
     if best_x is not None:
-        for j in range(N):
-            svcs = [i for i in range(M)
-                    if pulp.value(best_x[i][j]) is not None and pulp.value(best_x[i][j]) > 0.5]
+        for n in range(N):
+            svcs = [m for m in range(M)
+                    if pulp.value(best_x[m][n]) is not None and pulp.value(best_x[m][n]) > 0.5]
             if svcs:
-                result['allocation'][j] = {
+                result['allocation'][n] = {
                     'services':    svcs,
-                    'utilization': sum(n_list[i] for i in svcs) / e_list[j],
-                    'capacity':    e_list[j],
-                    'demand':      sum(n_list[i] for i in svcs),
+                    'utilization': sum(n_list[m] for m in svcs) / e_list[n],
+                    'capacity':    e_list[n],
+                    'demand':      sum(n_list[m] for m in svcs),
                 }
         result['active_ecus']       = len(result['allocation'])
         result['total_utilization'] = sum(
-            n_list[i] / e_list[j]
-            for j, info in result['allocation'].items()
-            for i in info['services']
+            n_list[m] / e_list[n]
+            for n, info in result['allocation'].items()
+            for m in info['services']
         )
         result['avg_utilization'] = (
             result['total_utilization'] / result['active_ecus']
@@ -211,13 +211,13 @@ def _generate_summary_statistics(results, output_dir):
 
     # ── Chart 1: Histogram + KDE ────────────────────────────────────────────
     ax1 = fig.add_subplot(gs[0, 0])
-    n, bins, patches = ax1.hist(avg_utilizations, bins=20,
+    n_, bins, patches = ax1.hist(avg_utilizations, bins=20,
                                 color='#3498db', alpha=0.7,
                                 edgecolor='black', linewidth=1.0)
     import matplotlib.patches as mpatches
     patch_list: list[mpatches.Rectangle] = list(patches)  # type: ignore[arg-type]
-    for i, patch in enumerate(patch_list):
-        mid = (bins[i] + bins[i + 1]) / 2
+    for m, patch in enumerate(patch_list):
+        mid = (bins[m] + bins[m + 1]) / 2
         if mid >= 60:
             patch.set_facecolor('#2ecc71')
         elif mid >= 50:
@@ -316,17 +316,17 @@ def _generate_summary_statistics(results, output_dir):
     table.scale(1, 2.4)
 
     # Header row
-    for j in range(len(stats_data[0])):
-        cell = table[(0, j)]
+    for n in range(len(stats_data[0])):
+        cell = table[(0, n)]
         cell.set_facecolor('#2c3e50')
         cell.set_text_props(weight='bold', color='white', fontsize=14)
     # Data rows
-    for i in range(1, len(stats_data)):
-        bg = '#ffffff' if i % 2 == 1 else '#ecf0f1'
-        for j in range(len(stats_data[i])):
-            cell = table[(i, j)]
+    for m in range(1, len(stats_data)):
+        bg = '#ffffff' if m % 2 == 1 else '#ecf0f1'
+        for n in range(len(stats_data[m])):
+            cell = table[(m, n)]
             cell.set_facecolor(bg)
-            if j == 0:
+            if n == 0:
                 cell.set_text_props(weight='bold', fontsize=13)
 
     ax_table.set_title('Summary Statistics', fontsize=16, fontweight='bold', pad=10)

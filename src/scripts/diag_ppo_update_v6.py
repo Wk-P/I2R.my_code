@@ -69,7 +69,7 @@ def probe(args):
 
 def build(rows, lang, minutes, steps):
     zh = lang == "zh"
-    T = (lambda z, e: z if zh else e)
+    T = (lambda z, e_: z if zh else e_)
     L = ["# v6.0.3.1 " + T("PPO 每次更新的幅度诊断", "PPO per-update step-size diagnostic"), ""]
     L.append(T(f"- 生成时间 {time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/diag_ppo_update_v6.py`；耗时 {minutes:.1f} 分钟。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/diag_ppo_update_v6.py`; took {minutes:.1f} min."))
@@ -93,7 +93,7 @@ def build(rows, lang, minutes, steps):
     for s in SCENS:
         for p in POINTS:
             g = [r["mean"] for r in rows if r["scen"] == s and r["point"] == p]
-            f = lambda k, fmt: format(st.mean(x[k] for x in g), fmt)
+            f = lambda k, fmt: format(st.mean(e[k] for e in g), fmt)
             L.append(f"| {s.upper()} | {p // 1_000_000}M | {f('approx_kl', '.5f')} | {float(f('clip_fraction', '.6f')):.3%} | "
                      f"{-float(f('entropy_loss', '.6f')):.4f} | {f('value_loss', '.6f')} | {f('explained_variance', '.4f')} |")
     L.append("")
@@ -108,13 +108,13 @@ def main():
     a = ap.parse_args()
     t0 = time.time()
     rs = runs()
-    tasks = [(r, p, a.steps, f"cuda:{i % 3}") for i, (r, p) in enumerate((r, p) for r in rs for p in POINTS)]
+    tasks = [(r, p, a.steps, f"cuda:{m % 3}") for m, (r, p) in enumerate((r, p) for r in rs for p in POINTS)]
     print(f"{len(tasks)} probes of {a.steps:,} steps", flush=True)
     rows = []
     with get_context("spawn").Pool(a.workers) as pool:
-        for i, r in enumerate(pool.imap_unordered(probe, tasks), 1):
+        for m, r in enumerate(pool.imap_unordered(probe, tasks), 1):
             rows.append(r)
-            print(f"[probe] {i}/{len(tasks)} {r['scen']} seed {r['seed']} {r['point'] // 1_000_000}M "
+            print(f"[probe] {m}/{len(tasks)} {r['scen']} seed {r['seed']} {r['point'] // 1_000_000}M "
                   f"kl={r['mean']['approx_kl']:.5f} clip={r['mean']['clip_fraction']:.4f} | {(time.time() - t0) / 60:.1f} min", flush=True)
     minutes = (time.time() - t0) / 60
     OUT.mkdir(parents=True, exist_ok=True)

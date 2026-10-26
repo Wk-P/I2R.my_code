@@ -148,7 +148,7 @@ def ckpt_eval(job):
     _, train, test = split_instances(s, sd)
     if pool:
         p = json.loads((ROOT / POOL.format(scen=s)).read_text())
-        train = [p[i] for i in sorted(random.Random(0).sample(range(len(p)), 1600))]
+        train = [p[m] for m in sorted(random.Random(0).sample(range(len(p)), 1600))]
     model = model_class(learner, mech).load(str(files[0]), device="cpu")
     (te, ex), (tr, _) = _gap(model, test, learner), _gap(model, train, learner)
     return job, (te, tr, ex)
@@ -173,7 +173,7 @@ def write_report(V, exp_ids):
                                    for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)]
                                    if exp_ids.get(str(sd), {}).get(s, {}).get(k)])
               for k, (algo, net, pool, lz, le) in vs.items()] + references(V["version"])
-    jobs = [(i, algo, pool, *p) for i, (_, _, algo, pool, pts) in enumerate(series) for p in pts]
+    jobs = [(m, algo, pool, *p) for m, (_, _, algo, pool, pts) in enumerate(series) for p in pts]
     print(f"[report] learning-curve evaluation ({len(jobs)} models)", flush=True)
     with Pool(min(len(jobs), 36)) as pool:
         out = pool.map(ckpt_eval, jobs)
@@ -183,8 +183,8 @@ def write_report(V, exp_ids):
             curve[(job[0], job[4], job[3], job[7])] = r
     reg = {}
     todo = [(k, v[0], sd) for k, v in vs.items() for sd in SEEDS]
-    for i, (k, algo, sd) in enumerate(todo, 1):
-        print(f"[report] regret {i}/{len(todo)} | seed {sd} {k}", flush=True)
+    for m, (k, algo, sd) in enumerate(todo, 1):
+        print(f"[report] regret {m}/{len(todo)} | seed {sd} {k}", flush=True)
         g = regret(V, k, algo, sd)
         for s in SCENARIOS:
             reg[(k, s, sd)] = (sum(g[s]["regret_t"][:EARLY]), float(np.mean(g[s]["opt_rate_t"][:EARLY])))
@@ -194,8 +194,8 @@ def write_report(V, exp_ids):
     sl = lambda st: f"{st / 1e6:g}M"
     for lang in ("zh", "en"):
         zh = lang == "zh"
-        T = lambda z, e: z if zh else e
-        lab = lambda i: series[i][0] if zh else series[i][1]
+        T = lambda z, e_: z if zh else e_
+        lab = lambda m: series[m][0] if zh else series[m][1]
         L = [f"# v{V['version']} {T(*V['cfg']['title'])}", "",
              T(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/run_v4.5.py --version {V['version']}`。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/run_v4.5.py --version {V['version']}`."),
@@ -210,18 +210,18 @@ def write_report(V, exp_ids):
              T(f"- manifest：`{V['manifest'].relative_to(ROOT)}`。", f"- Manifest: `{V['manifest'].relative_to(ROOT)}`."), ""]
         L += [T("## 学习曲线：测试集相对 gap", "## Learning curve: test relative gap"), ""]
         for s in SCENARIOS:
-            L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(i) for i in range(len(series))) + " |",
+            L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(m) for m in range(len(series))) + " |",
                   "|---|" + "---|" * len(series)]
             for st in steps:
-                L.append(f"| {sl(st)} | " + " | ".join(ms([curve[(i, s, sd, st)][0] for sd in SEEDS if (i, s, sd, st) in curve], pc)
-                                                        for i in range(len(series))) + " |")
+                L.append(f"| {sl(st)} | " + " | ".join(ms([curve[(m, s, sd, st)][0] for sd in SEEDS if (m, s, sd, st) in curve], pc)
+                                                        for m in range(len(series))) + " |")
             L.append("")
         L += [T("## 学习曲线：三场景平均（每个种子先对三场景取平均）", "## Learning curve: mean over the three scenarios (per seed first)"), "",
-              "| " + T("步数", "Steps") + " | " + " | ".join(lab(i) for i in range(len(series))) + " |", "|---|" + "---|" * len(series)]
+              "| " + T("步数", "Steps") + " | " + " | ".join(lab(m) for m in range(len(series))) + " |", "|---|" + "---|" * len(series)]
         for st in steps:
             cells = []
-            for i in range(len(series)):
-                v = [np.mean([curve[(i, s, sd, st)][0] for s in SCENARIOS]) for sd in SEEDS if all((i, s, sd, st) in curve for s in SCENARIOS)]
+            for m in range(len(series)):
+                v = [np.mean([curve[(m, s, sd, st)][0] for s in SCENARIOS]) for sd in SEEDS if all((m, s, sd, st) in curve for s in SCENARIOS)]
                 cells.append(ms(v, pc))
             L.append(f"| {sl(st)} | " + " | ".join(cells) + " |")
         L += ["", T("## 20M：测试集与训练集 gap、前几步决策", "## 20M: test and training-set gap, early decisions"), "",
@@ -230,16 +230,16 @@ def write_report(V, exp_ids):
               "|---|---|---|---|---|---|---|"]
         keys = list(vs)
         for s in SCENARIOS:
-            for i in range(len(series)):
-                c = [curve[(i, s, sd, STEPS)] for sd in SEEDS if (i, s, sd, STEPS) in curve]
-                r = [reg[(keys[i], s, sd)] for sd in SEEDS if i < len(keys) and (keys[i], s, sd) in reg]
-                L.append(f"| {s.upper()} | {lab(i)} | {ms([x[0] for x in c], pc)} | {ms([x[1] for x in c], pc)} | {ms([x[2] for x in c], pc)} | "
-                         f"{ms([x[0] for x in r], lambda v: f'{v:.4f}')} | {ms([x[1] for x in r], pc)} |")
+            for m in range(len(series)):
+                c = [curve[(m, s, sd, STEPS)] for sd in SEEDS if (m, s, sd, STEPS) in curve]
+                r = [reg[(keys[m], s, sd)] for sd in SEEDS if m < len(keys) and (keys[m], s, sd) in reg]
+                L.append(f"| {s.upper()} | {lab(m)} | {ms([e[0] for e in c], pc)} | {ms([e[1] for e in c], pc)} | {ms([e[2] for e in c], pc)} | "
+                         f"{ms([e[0] for e in r], lambda v: f'{v:.4f}')} | {ms([e[1] for e in r], pc)} |")
         L += ["", T("## 逐种子测试集 gap（20M）", "## Test gap per seed (20M)"), "",
               T("| 场景 | 模型 | 种子 1 | 种子 2 | 种子 3 |", "| Scenario | Model | Seed 1 | Seed 2 | Seed 3 |"), "|---|---|---|---|---|"]
         for s in SCENARIOS:
-            for i in range(len(series)):
-                L.append(f"| {s.upper()} | {lab(i)} | " + " | ".join(pc(curve[(i, s, sd, STEPS)][0]) if (i, s, sd, STEPS) in curve else "—"
+            for m in range(len(series)):
+                L.append(f"| {s.upper()} | {lab(m)} | " + " | ".join(pc(curve[(m, s, sd, STEPS)][0]) if (m, s, sd, STEPS) in curve else "—"
                                                                     for sd in SEEDS) + " |")
         L.append("")
         p = V["report"] if zh else V["report"].with_suffix(".en.md")

@@ -39,21 +39,21 @@ def ilp_expert_actions(caps, reqs, conflict_sets, sorted_desc=True):
 
     Returns None if the ILP is infeasible or doesn't place every service."""
     M = len(reqs)
-    ecus = [ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
-    svcs = [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
+    ecus = [ECU(f"ECU{m}", c) for m, c in enumerate(caps)]
+    svcs = [SVC(f"SVC{m}", r) for m, r in enumerate(reqs)]
     res = solve_ilp(ecus, svcs, conflict_sets)
     if res["status"] != "Optimal":
         return None
 
     svc_to_ecu = {}
-    for j, info in res["allocation"].items():
-        for i in info["services"]:
-            svc_to_ecu[i] = j
+    for n, info in res["allocation"].items():
+        for m in info["services"]:
+            svc_to_ecu[m] = n
     if len(svc_to_ecu) != M:
         return None
 
-    order = sorted(range(M), key=lambda i: -reqs[i]) if sorted_desc else list(range(M))
-    return [svc_to_ecu[i] for i in order]
+    order = sorted(range(M), key=lambda m: -reqs[m]) if sorted_desc else list(range(M))
+    return [svc_to_ecu[m] for m in order]
 
 
 def build_bc_dataset(scenarios, env_cls, use_mask=True, violation_key="total_violations",
@@ -82,8 +82,8 @@ def build_bc_dataset(scenarios, env_cls, use_mask=True, violation_key="total_vio
             skipped_infeasible += 1
             continue
 
-        ecus = [ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
-        svcs = [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
+        ecus = [ECU(f"ECU{m}", c) for m, c in enumerate(caps)]
+        svcs = [SVC(f"SVC{m}", r) for m, r in enumerate(reqs)]
         env = env_cls(ecus, svcs, scenarios=[sc])
         obs, _ = env.reset()
 

@@ -46,11 +46,11 @@ class GraphMaskablePolicy(MaskableActorCriticPolicy):
 
     def _run_eager(self, obs):
         obs = obs.float()
-        x = decode_raw(obs, self.n_ecu, self.n_svc)
+        e = decode_raw(obs, self.n_ecu, self.n_svc)
         lam = raw_lambda(obs, self.n_ecu, self.n_svc) if self.gkw["lam_in"] else None
-        logits, value, _, _ = (self.gnet if self.mask_logits else self.gnet.scores)(*x, lam)
+        logits, value, _, _ = (self.gnet if self.mask_logits else self.gnet.scores)(*e, lam)
         if self.separate:
-            value = self.vnet.scores(*x, lam)[1]
+            value = self.vnet.scores(*e, lam)[1]
         return logits[:, :self.action_space.n], value.unsqueeze(-1)
 
     def _dist(self, logits, action_masks):

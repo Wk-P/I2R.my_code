@@ -95,13 +95,13 @@ def write_report(exp_ids):
     for job, opens, insts, n in out:
         lb, _, s = job[:3]
         exit_r = 1 - len(insts) / n
-        ar = float(np.mean([x["ar"] for x in insts])) if insts else None
-        ilp = float(np.mean([x["ilp"] for x in insts])) if insts else None
+        ar = float(np.mean([e["ar"] for e in insts])) if insts else None
+        ilp = float(np.mean([e["ilp"] for e in insts])) if insts else None
         res.setdefault((lb, s), []).append({
             "exit": exit_r, "ar": ar, "ilp": ilp, "gap": None if ar is None else ilp - ar,
             "rel": None if ar is None else (ilp - ar) / ilp,
-            "act": float(np.mean([x["act"] for x in insts])) if insts else None,
-            "ilp_act": float(np.mean([x["ilp_act"] for x in insts])) if insts else None,
+            "act": float(np.mean([e["act"] for e in insts])) if insts else None,
+            "ilp_act": float(np.mean([e["ilp_act"] for e in insts])) if insts else None,
             "forced": sum(o["kind"] == "forced" for o in opens) / n,
             "vol": sum(o["kind"] == "voluntary" for o in opens) / n})
 
@@ -132,11 +132,11 @@ def write_report(exp_ids):
         for lb, _, _ in kinds:
             st = res.get((lb, s), [])
             if st:
-                lines.append("| " + " | ".join([lb, ms([x["exit"] for x in st], pc), ms([x["ar"] for x in st], f4),
-                                                  ms([x["ilp"] for x in st], f4), ms([x["gap"] for x in st], f4),
-                                                  ms([x["rel"] for x in st], pc), ms([x["act"] for x in st], f2),
-                                                  ms([x["ilp_act"] for x in st], f2), ms([x["forced"] for x in st], f2),
-                                                  ms([x["vol"] for x in st], f2)]) + " |")
+                lines.append("| " + " | ".join([lb, ms([e["exit"] for e in st], pc), ms([e["ar"] for e in st], f4),
+                                                  ms([e["ilp"] for e in st], f4), ms([e["gap"] for e in st], f4),
+                                                  ms([e["rel"] for e in st], pc), ms([e["act"] for e in st], f2),
+                                                  ms([e["ilp_act"] for e in st], f2), ms([e["forced"] for e in st], f2),
+                                                  ms([e["vol"] for e in st], f2)]) + " |")
         bc = [json.loads((RESULTS / s / ALGO / exp_ids[str(sd)][s][ALGO] / "results.json").read_text())["bc"]
               for sd in SEEDS if exp_ids.get(str(sd), {}).get(s, {}).get(ALGO)]
         if bc:

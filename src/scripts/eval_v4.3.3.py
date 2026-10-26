@@ -46,7 +46,7 @@ LABEL = {"ppo": "PPO 无约束（对照）", "lagrange_ppo": "Lagrangian-PPO", "
 
 def best_of(samples, k):
     """samples: [(success, ar)] for one instance; best of the first k, AR* not used."""
-    return max(samples[:k], key=lambda x: (x[0], x[1]))
+    return max(samples[:k], key=lambda e: (e[0], e[1]))
 
 
 def run(job):
@@ -82,12 +82,12 @@ def run(job):
     rows, t0 = [], time.perf_counter()
     for k in range(len(test)):
         samples = []
-        for j in range(K_MAX):
+        for n in range(K_MAX):
             env.use_instance(k)
             obs, _ = env.reset()
             done = False
             while not done:
-                obs, _, done, _, info = env.step(act(obs, j))
+                obs, _, done, _, info = env.step(act(obs, n))
             samples.append((bool(info["valid_placed"] == env.M), float(info["ar"])))
         rows.append({"ar_star": test[k]["ar_star"], "samples": samples})
     ms = (time.perf_counter() - t0) * 1000 / (len(test) * K_MAX)
@@ -97,7 +97,7 @@ def run(job):
 
 def summarise(r, k):
     """success rate; AR and ILP AR over the same successful instances (best of the first k samples)."""
-    best = [tuple(best_of(x["samples"], k)) + (x["ar_star"],) for x in r["rows"]]
+    best = [tuple(best_of(e["samples"], k)) + (e["ar_star"],) for e in r["rows"]]
     ok = [b for b in best if b[0]]
     ar = np.mean([b[1] for b in ok]) if ok else np.nan
     ilp = np.mean([b[2] for b in ok]) if ok else np.nan
@@ -106,7 +106,7 @@ def summarise(r, k):
 
 def write_report(runs):
     def ms(v, f):
-        v = [x for x in v if not np.isnan(x)]
+        v = [e for e in v if not np.isnan(e)]
         return f"{f(np.mean(v))} ± {f(np.std(v, ddof=1) if len(v) > 1 else 0.0)}" if v else "—"
 
     f4 = lambda v: f"{v:.4f}"
@@ -133,8 +133,8 @@ def write_report(runs):
                 st = [summarise(r, k) for r in rs]
                 t = k * np.mean([r["ms_episode"] for r in rs])
                 L.append("| " + " | ".join([LABEL[a] if k == KS[0] else "", str(k),
-                                            ms([x[0] for x in st], pc), ms([x[1] for x in st], f4),
-                                            ms([x[2] for x in st], f4), ms([x[3] for x in st], f4),
+                                            ms([e[0] for e in st], pc), ms([e[1] for e in st], f4),
+                                            ms([e[2] for e in st], f4), ms([e[3] for e in st], f4),
                                             f"{t:.1f}", f"{ilp[s]['ilp']['ms_mean'] / t:.1f}×"]) + " |")
         L.append("")
     (OUT / "report.md").write_text("\n".join(L))
@@ -172,7 +172,7 @@ def main():
     raw = OUT / "raw.jsonl"
     runs = [json.loads(l) for l in open(raw)] if "--resume" in sys.argv and raw.exists() else []
     have = {(r["scen"], r["algo"], int(r["seed"])) for r in runs}
-    todo = [j for j in jobs if (j[0], j[1], int(j[2])) not in have]
+    todo = [n for n in jobs if (n[0], n[1], int(n[2])) not in have]
     with open(raw, "a" if runs else "w") as f, Pool(WORKERS) as pool:
         for r in pool.imap_unordered(run, todo, chunksize=1):
             f.write(json.dumps(r) + "\n")

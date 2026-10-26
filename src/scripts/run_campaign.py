@@ -98,7 +98,7 @@ class Cfg:
         self.label = a.label
         self.test_set = a.test_set                        # v6.0.4: fixed test set (None: the seed's 400-instance split)
         self.learners = tuple(a.learners.split(","))      # v6.0.0.1: PPO-only batches
-        self.ppo_params = {k: (float(v) if "." in v else int(v)) for k, v in (x.split("=") for x in a.ppo_params.split(",") if x)}
+        self.ppo_params = {k: (float(v) if "." in v else int(v)) for k, v in (e.split("=") for e in a.ppo_params.split(",") if e)}
 
 
 # ── plan ─────────────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ def commit():
 
 def title(C, strategies, runs):
     """Manifest title from what the batch actually runs (strategies, learners, seeds, PPO flags, test set)."""
-    seeds = sorted({x["seed"] for x in runs})
+    seeds = sorted({e["seed"] for e in runs})
     word = "strategy" if len(strategies) == 1 else "strategies"
     flags = ", ".join(f"{k}={v}" for k, v in C.ppo_params.items())
     zh = [f"{len(strategies)} {word}（{' / '.join(strategies)}）× 3 场景 × {' / '.join(l.upper() for l in C.learners)}，种子 {', '.join(map(str, seeds))}"]
@@ -171,15 +171,15 @@ def write_manifest(C, L):
             st = L.state["runs"].get(r["label"], {})
             runs.append({"key": r["key"], "role": "main", "group": gid, "depends_on": [], "RL_algorithm": r["learner"].upper(),
                          "strategy": r["strategy"], "seed": r["seed"], "scenario": r["scenario"], "params": r["params"],
-                         "dir": r["algo"], "exp_id": st.get("exp_id"), "attempts": [x.get("exp_id") for x in st.get("attempts", [])],
+                         "dir": r["algo"], "exp_id": st.get("exp_id"), "attempts": [e.get("exp_id") for e in st.get("attempts", [])],
                          "status": st.get("status", "planned")})
-    strategies = [s for s in ("unconstraint", "lagrangian", "maskable", "repair") if any(x["strategy"] == s for x in runs)]
+    strategies = [s for s in ("unconstraint", "lagrangian", "maskable", "repair") if any(e["strategy"] == s for e in runs)]
     man = {"schema": 3, "batch": C.batch, "version": C.version, "purpose": "smoke" if C.smoke else "main", "commit": commit(),
            "results_space": C.space, "driver_pid": os.getpid(), "created_at": L.state.get("created_at"),
            "title": title(C, strategies, runs),
            "label": C.label,
            "RL_algorithm": [l.upper() for l in C.learners], "strategies": strategies,
-           "seeds": sorted({x["seed"] for x in runs}), "scenarios": list(SCENARIOS),
+           "seeds": sorted({e["seed"] for e in runs}), "scenarios": list(SCENARIOS),
            "groups": {g: {"strategy": C.groups_def[g][0], "seed": C.groups_def[g][1]} for g in C.groups},
            "params": {"steps": C.steps, "checkpoints": C.ckpts, "net": "graph", "reward": "ar_pen", "gamma": 1.0,
                       "full_episode": True, "exit_action": "maskable only", "train_pool": POOL, "test_set": C.test_set, "data": DATA, "eps_steps_dqn": EPS_STEPS,
@@ -197,8 +197,8 @@ def gpu_stats():
                               "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=30).stdout
         st = {}
         for line in out.strip().splitlines():
-            i, u, mu, mt = [x.strip() for x in line.split(",")]
-            st[int(i)] = {"util": float(u), "mem_used": float(mu), "mem_pct": 100.0 * float(mu) / float(mt)}
+            m, u, mu, mt = [e.strip() for e in line.split(",")]
+            st[int(m)] = {"util": float(u), "mem_used": float(mu), "mem_pct": 100.0 * float(mu) / float(mt)}
         return st or None
     except Exception:
         return None
@@ -409,8 +409,8 @@ def parse_eval(log: Path):
         pass
     if not m:
         return None
-    f = lambda x: float("nan") if x == "nan" else float(x)
-    vf, ar, ilp, gap, cap, priv, ex, mins = (f(x) for x in m.groups())
+    f = lambda e: float("nan") if e == "nan" else float(e)
+    vf, ar, ilp, gap, cap, priv, ex, mins = (f(e) for e in m.groups())
     return {"viol_free": vf, "ar": ar, "ilp_ar": ilp, "gap": gap, "cap": cap, "priv": priv, "exit": ex, "train_min": mins}
 
 
@@ -516,8 +516,8 @@ print(json.dumps({"n": len(ev), "viol_free": len(ok) / len(ev), "gap": ilp - ar 
 
 
 # ── summaries ────────────────────────────────────────────────────────────────
-def pc(x):
-    return "—" if x is None or x != x else f"{100 * x:.2f}%"
+def pc(e):
+    return "—" if e is None or e != e else f"{100 * e:.2f}%"
 
 
 def group_table(C, L, gid):
@@ -650,13 +650,13 @@ def main():
 
 
 def smoke_summary(C, L, hours, tables):
-    evs = [json.loads(x) for x in (C.log_dir / "events.jsonl").read_text().splitlines()]
-    inj = [e for e in evs if e["kind"] == "inject"]
-    caught = {e["label"]: e for e in evs if e["kind"] == "finish" and e.get("problems")}
+    evs = [json.loads(e) for e in (C.log_dir / "events.jsonl").read_text().splitlines()]
+    inj = [e_ for e_ in evs if e_["kind"] == "inject"]
+    caught = {e_["label"]: e_ for e_ in evs if e_["kind"] == "finish" and e_.get("problems")}
     retried_ok = [lab for lab in SMOKE_INJECT if L.state["runs"].get(lab, {}).get("status") == "ok"
                   and len(L.state["runs"][lab]["attempts"]) >= 2]
     lines = [f"smoke 结束：{len(C.groups)} 组 × 9 个 run（4 种 strategy × 3 场景 × PPO / DQN / DDQN），{C.steps:,} 步，用时 {hours * 60:.0f} 分钟。",
-             f"故障注入：{len(inj)} 次（{', '.join(e['label'] for e in inj)}）；被检出 {sum(1 for k in SMOKE_INJECT if k in caught)} 个；"
+             f"故障注入：{len(inj)} 次（{', '.join(e_['label'] for e_ in inj)}）；被检出 {sum(1 for k in SMOKE_INJECT if k in caught)} 个；"
              f"自动重跑后通过 {len(retried_ok)} 个。",
              "所有 run 都通过了：退出码、results.json 设置（ar_pen / EXIT 仅 Maskable / 步数 / 种子 / 训练池 / Lagrangian 参数 / ε）、"
              "最终模型与全部 checkpoint、eval 行、重载评估一致性、无违约实例 AR ≤ ILP AR。"]

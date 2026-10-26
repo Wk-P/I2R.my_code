@@ -52,7 +52,7 @@ def _batch_eta(runs: list[dict], batch_steps: int | None) -> dict | None:
     for r in run:
         speed.setdefault(r["RL_algorithm"], []).append(r["live"]["steps_per_sec"])
     mean = lambda xs: sum(xs) / len(xs)
-    every = mean([x for v in speed.values() for x in v])
+    every = mean([e for v in speed.values() for e in v])
     slots = sorted(r["live"]["eta_seconds"] for r in run)
     for r in runs:
         if r["status"] in ("queued", "waiting"):
@@ -254,7 +254,7 @@ def batch(name: str):
 def report(name: str, file: str = "report.md", lang: str = "zh"):
     man = D.manifest(name) or {}
     if "/" not in file and file.endswith(".log"):     # a non-training batch's log
-        p = next((x for x in D.batch_logs(name, man) if x.name == file), None)
+        p = next((e for e in D.batch_logs(name, man) if e.name == file), None)
         if p is None:
             raise HTTPException(404)
         return {"file": p.name, "dir": str(p.parent.relative_to(D.ROOT)), "text": p.read_text(errors="replace"),
@@ -277,8 +277,8 @@ def report_data(name: str):
     if rdir is None:
         return {"report": None, "sweeps": []}
     return {"report": D.read_json(rdir / "report_data.json"),
-            "sweeps": [dict(j, RL_algorithm=(j.get("RL_algorithm") or j.get("learner") or "").upper())
-                       for p in sorted(rdir.glob("lam_sweep_*.json")) if (j := D.read_json(p))]}
+            "sweeps": [dict(n, RL_algorithm=(n.get("RL_algorithm") or n.get("learner") or "").upper())
+                       for p in sorted(rdir.glob("lam_sweep_*.json")) if (n := D.read_json(p))]}
 
 
 def _run_path(space, scen, algo, exp_id) -> Path:

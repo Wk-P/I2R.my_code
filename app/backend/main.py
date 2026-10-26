@@ -149,7 +149,7 @@ def _result_branches() -> list[dict]:
             "kind": m.get("kind", "branch"), "order": m.get("order", 99), "stage": m.get("stage"),
             "first": min(mtimes), "last": max(mtimes),
         })
-    out.sort(key=lambda x: (x["order"], -x["last"]))
+    out.sort(key=lambda e: (e["order"], -e["last"]))
     return out
 
 
@@ -261,8 +261,8 @@ def _sort_key(run_dir: Path) -> str:
         return data["created_at"]
     m = _TS_RE.match(run_dir.name)
     if m:
-        y, mo, d, h, mi, s = m.groups()
-        return f"{y}-{mo}-{d}T{h}:{mi}:{s}"
+        c, mo, d, h, mi, s = m.groups()
+        return f"{c}-{mo}-{d}T{h}:{mi}:{s}"
     return run_dir.name
 
 
@@ -402,7 +402,7 @@ def _tag_sort_key(tag: str):
     m = _re.match(r"^v(\d+(?:\.\d+)*)(.*)$", tag)
     if not m:
         return (0, [], tag)
-    return (1, [int(x) for x in m.group(1).split(".")], m.group(2))
+    return (1, [int(e) for e in m.group(1).split(".")], m.group(2))
 
 
 def _tag_doc_path(tag: str) -> Path | None:
@@ -453,7 +453,7 @@ _SCENS = ("LT", "EQ", "GT")
 
 
 def _vkey(v: str):
-    return tuple(int(x) for x in re.findall(r"\d+", v))
+    return tuple(int(e) for e in re.findall(r"\d+", v))
 
 
 def _pct(cell: str):
@@ -468,23 +468,23 @@ def _parse_report(text: str) -> dict:
     title = next((l[2:].strip() for l in lines if l.startswith("# ")), "")
     change = ""
     for l in lines:
-        m = re.match(r"^- (唯一改动[^：:]*|两个单变量实验[^：:]*|Single change[^:]*)[：:]\s*(.*)", l)
-        if m:
-            change = re.split(r"(?<=[。.])\s", m.group(2), 1)[0]
+        m_ = re.match(r"^- (唯一改动[^：:]*|两个单变量实验[^：:]*|Single change[^:]*)[：:]\s*(.*)", l)
+        if m_:
+            change = re.split(r"(?<=[。.])\s", m_.group(2), 1)[0]
             break
-    gaps, models, section, i = {}, [], None, 0
-    while i < len(lines):
-        l = lines[i]
-        m = re.match(r"^##\s+(LT|EQ|GT)\b", l)
-        if m:
-            section = m.group(1)
-        if l.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[-| :]+\|?$", lines[i + 1].strip()):
+    gaps, models, section, m = {}, [], None, 0
+    while m < len(lines):
+        l = lines[m]
+        m_ = re.match(r"^##\s+(LT|EQ|GT)\b", l)
+        if m_:
+            section = m_.group(1)
+        if l.startswith("|") and m + 1 < len(lines) and re.match(r"^\|[-| :]+\|?$", lines[m + 1].strip()):
             head = [c.strip() for c in l.strip().strip("|").split("|")]
             rows = []
-            j = i + 2
-            while j < len(lines) and lines[j].startswith("|"):
-                rows.append([c.strip() for c in lines[j].strip().strip("|").split("|")])
-                j += 1
+            n = m + 2
+            while n < len(lines) and lines[n].startswith("|"):
+                rows.append([c.strip() for c in lines[n].strip().strip("|").split("|")])
+                n += 1
             gcol = next((head.index(h) for h in _GAP_HEAD if h in head), None)
             mcol = next((head.index(h) for h in ("模型", "Model") if h in head), None)
             scol = next((head.index(h) for h in ("场景", "Scenario") if h in head), None)
@@ -499,13 +499,13 @@ def _parse_report(text: str) -> dict:
                         gaps[(sc, r[mcol])] = v
                         if r[mcol] not in models:
                             models.append(r[mcol])
-            i = j
+            m = n
             continue
-        i += 1
+        m += 1
     out = {"title": title, "change": change, "models": models,
            "gaps": {mdl: {sc: gaps.get((sc, mdl)) for sc in _SCENS} for mdl in models}}
-    refs = [m for m in models if re.search(r"参照|reference", m, re.I)]
-    variants = [m for m in models[1:] if m not in refs]
+    refs = [m_ for m_ in models if re.search(r"参照|reference", m_, re.I)]
+    variants = [m_ for m_ in models[1:] if m_ not in refs]
     out["refs"], out["variants"] = refs, variants
     if models:
         new, base = (variants[-1] if variants else models[-1]), models[0]
@@ -580,7 +580,7 @@ def _parse_curves(text: str, default_label: str) -> dict:
     训练集相对 gap | 测试 EXIT 率 ...; the version's own model)."""
     lines = text.splitlines()
     out: dict = {}
-    sec = [i for i, ln in enumerate(lines) if ln.startswith("## ")] + [len(lines)]
+    sec = [m for m, ln in enumerate(lines) if ln.startswith("## ")] + [len(lines)]
     for a, b in zip(sec, sec[1:]):
         head = lines[a]
         if not (head.startswith("## 学习曲线") or head.startswith("## Learning curve")):
@@ -590,19 +590,19 @@ def _parse_curves(text: str, default_label: str) -> dict:
         block = lines[a + 1:b]
         if metric == "avg":
             for hdr, rows in _md_tables(block):
-                for j, lab in enumerate(hdr[1:], 1):
-                    pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[j])] for r in rows if _STEP_RE.match(r[0]) and _val(r[j])[0] is not None]
+                for n, lab in enumerate(hdr[1:], 1):
+                    pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[n])] for r in rows if _STEP_RE.match(r[0]) and _val(r[n])[0] is not None]
                     if pts:
                         out.setdefault("gap", []).append({"label": lab, "scen": "AVG", "points": pts})
             continue
-        subs = [i for i, ln in enumerate(block) if ln.startswith("### ")] + [len(block)]
+        subs = [m for m, ln in enumerate(block) if ln.startswith("### ")] + [len(block)]
         if len(subs) > 1:                                # per-scenario layout
             for c, d in zip(subs, subs[1:]):
                 scen = block[c][4:].strip().upper()
                 for hdr, rows in _md_tables(block[c + 1:d]):
-                    for j, lab in enumerate(hdr[1:], 1):
-                        pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[j])] for r in rows
-                               if j < len(r) and _STEP_RE.match(r[0]) and _val(r[j])[0] is not None]
+                    for n, lab in enumerate(hdr[1:], 1):
+                        pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[n])] for r in rows
+                               if n < len(r) and _STEP_RE.match(r[0]) and _val(r[n])[0] is not None]
                         if pts:
                             out.setdefault(metric, []).append({"label": lab, "scen": scen, "points": pts})
             continue
@@ -612,14 +612,14 @@ def _parse_curves(text: str, default_label: str) -> dict:
                     "fail": next((k for k, h in enumerate(hdr) if "EXIT" in h and "逐" not in h and "per seed" not in h.lower()), None)}
             if len(hdr) < 3 or cols["gap"] is None:
                 continue
-            for m, k in cols.items():
+            for m_, k in cols.items():
                 if k is None:
                     continue
                 for scen in ("LT", "EQ", "GT"):
                     pts = [[float(_STEP_RE.match(r[1])[1]), *_val(r[k])] for r in rows
                            if r[0].upper() == scen and _STEP_RE.match(r[1]) and _val(r[k])[0] is not None]
                     if pts:
-                        out.setdefault(m, []).append({"label": default_label, "scen": scen, "points": pts})
+                        out.setdefault(m_, []).append({"label": default_label, "scen": scen, "points": pts})
     return out
 
 
@@ -918,12 +918,12 @@ def _project_related_procs() -> list[dict]:
         # both `python foo.py args...` and `python -m pkg.module args...`.
         tokens = p["cmd"].split()
         script_name, script_args = None, []
-        for i, tok in enumerate(tokens):
+        for m, tok in enumerate(tokens):
             if tok.endswith(".py"):
-                script_name, script_args = Path(tok).name, tokens[i + 1:i + 3]
+                script_name, script_args = Path(tok).name, tokens[m + 1:m + 3]
                 break
-            if tok == "-m" and i + 1 < len(tokens):
-                script_name, script_args = tokens[i + 1], tokens[i + 2:i + 4]
+            if tok == "-m" and m + 1 < len(tokens):
+                script_name, script_args = tokens[m + 1], tokens[m + 2:m + 4]
                 break
         script_label = " ".join([script_name] + script_args) if script_name else None
         out.append({
@@ -1164,14 +1164,14 @@ def _gpu_status() -> list[dict]:
     target temperatures and the compute processes on each GPU (_pids, consumed by get_system)."""
     out = _smi([f"--query-gpu={','.join(_GPU_FIELDS)}", "--format=csv,noheader,nounits"])
 
-    def num(x):
+    def num(e):
         try:
-            return float(x)
+            return float(e)
         except ValueError:
             return None
     gpus, by_uuid = [], {}
     for line in out.strip().splitlines():
-        f = [x.strip() for x in line.split(",")]
+        f = [e.strip() for e in line.split(",")]
         if len(f) != len(_GPU_FIELDS):
             continue
         r = dict(zip(_GPU_FIELDS, f))
@@ -1184,13 +1184,13 @@ def _gpu_status() -> list[dict]:
              "temp": num(r["temperature.gpu"]), "fan": num(r["fan.speed"]), "power": num(r["power.draw"]),
              "power_limit": num(r["power.limit"]), "clock_sm": num(r["clocks.sm"]), "clock_sm_max": num(r["clocks.max.sm"]),
              "clock_mem": num(r["clocks.mem"]), "pstate": r["pstate"],
-             "throttle": [{"zh": z, "en": e} for b, (z, e) in _GPU_THROTTLE.items() if bits & b],
+             "throttle": [{"zh": z, "en": e_} for b, (z, e_) in _GPU_THROTTLE.items() if bits & b],
              "pcie": f"Gen{r['pcie.link.gen.current']} x{r['pcie.link.width.current']}",
              "procs": 0, "procs_mem": 0.0, "_pids": []}
         gpus.append(g)
         by_uuid[r["uuid"]] = g
     for line in _smi(["--query-compute-apps=gpu_uuid,pid,used_memory", "--format=csv,noheader,nounits"]).strip().splitlines():
-        f = [x.strip() for x in line.split(",")]
+        f = [e.strip() for e in line.split(",")]
         if len(f) == 3 and f[0] in by_uuid:
             g = by_uuid[f[0]]
             g["procs"] += 1
@@ -1221,16 +1221,16 @@ def _gpu_sampler() -> None:
         out = _smi([f"--query-gpu={fields}", "--format=csv,noheader,nounits"])
         row = []
         for line in out.strip().splitlines():
-            f = [x.strip() for x in line.split(",")]
+            f = [e.strip() for e in line.split(",")]
             if len(f) != 7:
                 continue
-            num = lambda x: float(x) if x.replace(".", "", 1).isdigit() else None
+            num = lambda e: float(e) if e.replace(".", "", 1).isdigit() else None
             try:
                 bits = int(f[6], 16)
             except ValueError:
                 bits = 0
             row.append({"i": int(f[0]), "clock": num(f[1]), "max": num(f[2]), "util": num(f[3]), "temp": num(f[4]),
-                        "power": num(f[5]), "thr": [e for b, (_, e) in _GPU_THROTTLE.items() if bits & b]})
+                        "power": num(f[5]), "thr": [e_ for b, (_, e_) in _GPU_THROTTLE.items() if bits & b]})
         if row:
             with _gpu_hist_lock:
                 _gpu_hist.append({"t": round(t, 1), "gpus": row})
@@ -1275,7 +1275,7 @@ def _host_status() -> dict:
     for line in _read("/proc/stat").splitlines():
         if line.startswith("cpu"):
             f = line.split()
-            v = [int(x) for x in f[1:]]
+            v = [int(e) for e in f[1:]]
             idle = v[3] + (v[4] if len(v) > 4 else 0)
             now[f[0]] = (sum(v[:8]), idle)
     usage, per_core = None, []
@@ -1286,13 +1286,13 @@ def _host_status() -> dict:
             dt, di = now[k][0] - _CPU_PREV[k][0], now[k][1] - _CPU_PREV[k][1]
             return round(100.0 * (1 - di / dt), 1) if dt > 0 else None
         usage = pct("cpu")
-        per_core = [pct(f"cpu{i}") for i in range(os.cpu_count() or 0)]
+        per_core = [pct(f"cpu{m}") for m in range(os.cpu_count() or 0)]
     _CPU_PREV.clear()
     _CPU_PREV.update(now)
 
     cpuinfo = _read("/proc/cpuinfo")
     model = re.search(r"model name\s*:\s*(.+)", cpuinfo)
-    mhz = [float(x) for x in re.findall(r"cpu MHz\s*:\s*([\d.]+)", cpuinfo)]
+    mhz = [float(e) for e in re.findall(r"cpu MHz\s*:\s*([\d.]+)", cpuinfo)]
     sockets = len(set(re.findall(r"physical id\s*:\s*(\d+)", cpuinfo))) or None
     cores = len(set(re.findall(r"physical id\s*:\s*(\d+)\s*\n(?:.*\n)*?core id\s*:\s*(\d+)", cpuinfo))) or None
     max_mhz = _read("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").strip()
@@ -1590,18 +1590,18 @@ def _eval_raw_summary(manifest: dict) -> dict:
             per_k = {}
             for k in ks:
                 n_ok, ar_sum, ilp_sum = 0, 0.0, 0.0
-                for x in rows:
+                for e in rows:
                     if manifest.get("raw_format") == "best_of_k":
-                        ok, ar = max(x["samples"][:k], key=lambda s: (s[0], s[1]))
+                        ok, ar = max(e["samples"][:k], key=lambda s: (s[0], s[1]))
                     else:
-                        ok, ar = x["success"], x["ar"]
+                        ok, ar = e["success"], e["ar"]
                     if ok:
-                        n_ok, ar_sum, ilp_sum = n_ok + 1, ar_sum + ar, ilp_sum + x["ar_star"]
+                        n_ok, ar_sum, ilp_sum = n_ok + 1, ar_sum + ar, ilp_sum + e["ar_star"]
                 # [success rate, AR, ILP AR] -- AR and ILP AR over the same successful instances
                 per_k[str(k)] = [n_ok / len(rows), ar_sum / n_ok if n_ok else None, ilp_sum / n_ok if n_ok else None]
             ms = r.get("ms_episode")
             if ms is None and rows and "ms" in rows[0]:
-                ms = sum(x["ms"] for x in rows) / len(rows)
+                ms = sum(e["ms"] for e in rows) / len(rows)
             out[key] = {"ms": ms, "k": per_k}
     _eval_raw_cache[str(path)] = (mtime, out)
     return out
@@ -1618,15 +1618,15 @@ def _eval_batch_state(batch_name: str, manifest: dict) -> dict:
     alive = bool(manifest.get("script")) and _script_alive(manifest["script"])
     free = int(manifest.get("workers") or 1) if alive else 0
     runs = []
-    for j in manifest.get("jobs", []):
-        key = (j["scenario"], j["algo"], int(j["seed"]))
+    for n in manifest.get("jobs", []):
+        key = (n["scenario"], n["algo"], int(n["seed"]))
         if key in summary or key in done_ms:
             status = "done"
         elif free:
             status, free = "running", free - 1
         else:
             status = "queued" if alive else "skipped"
-        runs.append({"scenario": j["scenario"], "algo": j["algo"], "seed": int(j["seed"]), "variant": "",
+        runs.append({"scenario": n["scenario"], "algo": n["algo"], "seed": int(n["seed"]), "variant": "",
                      "exp_id": None, "status": status,
                      "ms": (summary.get(key) or {}).get("ms") or done_ms.get(key),
                      "metrics": (summary.get(key) or {}).get("k")})
@@ -1679,7 +1679,7 @@ def _eval_batch_progress(st: dict) -> dict:
         rows.append({"scenario": scenario, "algo": algo, "variant": "", "n_done": len(done), "n_total": len(rs),
                      "ms": agg([r["ms"] for r in done]), "metrics": metrics,
                      "seeds": sorted(({"seed": r["seed"], "status": r["status"], "exp_id": None,
-                                       "progress_pct": None} for r in rs), key=lambda x: x["seed"])})
+                                       "progress_pct": None} for r in rs), key=lambda e: e["seed"])})
     st.pop("runs")
     st.pop("results_root")
     st["rows"] = rows
@@ -1795,34 +1795,34 @@ def _report_progress(batch_name: str) -> dict | None:
         f.seek(0, 2)
         f.seek(max(0, f.tell() - 400_000))
         lines = f.read().decode("utf-8", "replace").splitlines()
-    done_at = max((i for i, l in enumerate(lines) if l.startswith("=== done")), default=None)
+    done_at = max((m for m, l in enumerate(lines) if l.startswith("=== done")), default=None)
     if done_at is None:
         return None
     after = lines[done_at + 1:]
     finished = any(l.startswith("report -> ") and "/regret_" not in l for l in after)
     k = n = None
-    x = y = eta = None
-    durations = [float(m.group(1)) for l in after if (m := SOLVED_RE.match(l))]
+    e = c = eta = None
+    durations = [float(m_.group(1)) for l in after if (m_ := SOLVED_RE.match(l))]
     stage = "replay" if any(l.startswith("[report] replay") for l in after) else "starting"
     for l in after:
-        if m := REPORT_RE.match(l):
-            k, n, x, y, eta = int(m.group(1)), int(m.group(2)), None, None, None
+        if m_ := REPORT_RE.match(l):
+            k, n, e, c, eta = int(m_.group(1)), int(m_.group(2)), None, None, None
             stage = "regret"
-        elif m := REGRET_RE.match(l):
-            x, y, eta = int(m.group(1)), int(m.group(2)), float(m.group(3))
+        elif m_ := REGRET_RE.match(l):
+            e, c, eta = int(m_.group(1)), int(m_.group(2)), float(m_.group(3))
             stage = "regret"
         elif l.endswith("steps to solve"):
-            stage, x, y, eta = "regret", 0, None, None
+            stage, e, c, eta = "regret", 0, None, None
     if k is None and stage == "regret":
-        k = len(durations) + (0 if x is not None and y and x == y else 1)   # old scripts: count finished diagnostics
-    cur = (x / y) if (x is not None and y) else 0.0
+        k = len(durations) + (0 if e is not None and c and e == c else 1)   # old scripts: count finished diagnostics
+    cur = (e / c) if (e is not None and c) else 0.0
     pct = None
     if n:
         pct = round(100 * min(1.0, ((k or 1) - 1 + cur) / n), 1)
         if eta is not None and durations:
             eta = eta + (n - (k or 1)) * (sum(durations) / len(durations))
     return {"stage": "done" if finished else stage, "finished": finished, "k": k, "n": n,
-            "current_done": x, "current_total": y, "current_pct": round(100 * cur, 1) if y else None,
+            "current_done": e, "current_total": c, "current_pct": round(100 * cur, 1) if c else None,
             "overall_pct": 100.0 if finished else pct, "eta_minutes": None if finished or eta is None else round(eta, 1),
             "updated": log.stat().st_mtime}
 
@@ -1907,7 +1907,7 @@ def _reference_rows(batch_name: str, agg) -> list[dict]:
                "full_episode": any(run.get("full_episode") for run in done), "n_done": len(done), "n_total": len(refs),
                "seeds": sorted(({"seed": ref.get("seed"), "status": "done" if run else "stopped", "exp_id": ref.get("exp_id"),
                                  "progress_pct": None, "branch": ref.get("results_space")} for ref, run in got),
-                               key=lambda x: x["seed"] or 0)}
+                               key=lambda e: e["seed"] or 0)}
         for k in keys:
             row[k + "_mean"], row[k + "_std"] = agg([run.get(k) for run in done])
         rows.append(row)
@@ -1963,13 +1963,13 @@ def get_batch_progress(batch_name: str):
                "n_done": len(done), "n_total": len(rs),
                "seeds": sorted(({"seed": r["seed"], "status": r["status"], "exp_id": r["exp_id"],
                                  "progress_pct": r["progress_pct"]} for r in rs),
-                               key=lambda x: (x["seed"] is None, x["seed"] or 0))}
+                               key=lambda e: (e["seed"] is None, e["seed"] or 0))}
         for k in ("test_success_rate", "test_ar_mean", "ilp_ar", "test_cap_viol_rate", "test_conflict_viol_rate",
                   "test_exit_rate", "final_lambda"):
             row[k + "_mean"], row[k + "_std"] = agg([r.get(k) for r in done])
         rows.append(row)
     scen_order = {"lt": 0, "eq": 1, "gt": 2}
-    rows.sort(key=lambda x: (scen_order.get(x["scenario"], 9), x["algo"], x["variant"]))
+    rows.sort(key=lambda e: (scen_order.get(e["scenario"], 9), e["algo"], e["variant"]))
     st["rows"] = rows + _reference_rows(batch_name, agg)
     st["elapsed_seconds"] = _elapsed(st)
     st["report"] = _report_progress(batch_name) if st["status"] != "running" else None

@@ -53,13 +53,13 @@ def q_for(p: float, k: int = K_SETS) -> float:
     return math.sqrt(1 - (1 - p) ** (1 / k))
 
 
-def draw(n: int, m: int, p: float, rng: random.Random):
+def draw(n: int, m_: int, p: float, rng: random.Random):
     q = q_for(p)
     caps = [rng.choice(CAP_CHOICES) for _ in range(n)]
-    reqs = [rng.choice(REQ_CHOICES) for _ in range(m)]
+    reqs = [rng.choice(REQ_CHOICES) for _ in range(m_)]
     sets = []
     for _ in range(K_SETS):
-        s = [i for i in range(m) if rng.random() < q]
+        s = [m for m in range(m_) if rng.random() < q]
         if len(s) >= 2:
             sets.append(s)
     return caps, reqs, sets
@@ -97,11 +97,11 @@ def _gen_one(args):
 
 def generate(scen: str, p: float | None, n_inst: int, seed: int = 42, workers: int = 32) -> dict:
     from multiprocessing import Pool
-    n, m = SCENARIOS[scen]
+    n, m_ = SCENARIOS[scen]
     base = {"lt": 1, "eq": 2, "gt": 3}[scen] * 10_000_000 + seed * 100_000
     with Pool(workers) as pool:
-        inst = pool.map(_gen_one, [(n, m, p, base + i) for i in range(n_inst)], chunksize=8)
-    return {"scenario": scen, "N": n, "M": m, "conflict_pair_prob": "U[0,1) per instance" if p is None else p, "k_sets": K_SETS,
+        inst = pool.map(_gen_one, [(n, m_, p, base + m) for m in range(n_inst)], chunksize=8)
+    return {"scenario": scen, "N": n, "M": m_, "conflict_pair_prob": "U[0,1) per instance" if p is None else p, "k_sets": K_SETS,
             "cap_choices": [CAP_CHOICES[0], CAP_CHOICES[-1], 5],
             "req_choices": [REQ_CHOICES[0], REQ_CHOICES[-1], 5],
             "seed": seed, "ar_star_solver": "dinkelbach_max_ar", "instances": inst}
@@ -148,9 +148,9 @@ if __name__ == "__main__":
     for scen in SCENARIOS:
         d = generate(scen, None if a.p_random else a.p, a.n, workers=a.workers)
         yaml.safe_dump(d, open(out / f"{scen}.yaml", "w"), sort_keys=False)
-        ars = [x["ar_star"] for x in d["instances"]]
+        ars = [e["ar_star"] for e in d["instances"]]
         msg = f"{scen}: {len(ars)} instances, mean AR* {sum(ars)/len(ars):.4f}"
         if a.p_random:
-            ps = [x["p"] for x in d["instances"]]
-            msg += f", mean p {sum(ps)/len(ps):.3f}, draws {sum(x['draws'] for x in d['instances'])}"
+            ps = [e["p"] for e in d["instances"]]
+            msg += f", mean p {sum(ps)/len(ps):.3f}, draws {sum(e['draws'] for e in d['instances'])}"
         print(msg)

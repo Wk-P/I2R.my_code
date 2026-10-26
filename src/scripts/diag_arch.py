@@ -38,18 +38,18 @@ def raw(insts):
     """Instances (original index) -> placement-order tensors + expert ECU per step."""
     import torch
     caps, reqs, adj, exp = [], [], [], []
-    for x in insts:
-        M = len(x["SVCs"])
-        order = sorted(range(M), key=lambda i: -x["SVCs"][i])                 # as PlacementEnv.reset
+    for e in insts:
+        M = len(e["SVCs"])
+        order = sorted(range(M), key=lambda m: -e["SVCs"][m])                 # as PlacementEnv.reset
         pos = {o: n for n, o in enumerate(order)}
         a = np.zeros((M, M), dtype=bool)
-        for s in x["conflict_sets"]:
+        for s in e["conflict_sets"]:
             for u in s:
                 for v in s:
                     if u != v:
                         a[pos[u], pos[v]] = True
-        caps.append(x["ECUs"]); reqs.append([x["SVCs"][o] for o in order]); adj.append(a)
-        exp.append([x["alloc"][o] for o in order])
+        caps.append(e["ECUs"]); reqs.append([e["SVCs"][o] for o in order]); adj.append(a)
+        exp.append([e["alloc"][o] for o in order])
     return (torch.tensor(caps, dtype=torch.float32), torch.tensor(reqs, dtype=torch.float32),
             torch.as_tensor(np.array(adj)), torch.tensor(exp))
 
@@ -57,7 +57,7 @@ def raw(insts):
 def batch_states(d, idx, t):
     """Expert prefix states for instances idx at steps t -> net inputs + label sets."""
     import torch
-    caps, reqs, adj, exp = (x[idx] for x in d)
+    caps, reqs, adj, exp = (e[idx] for e in d)
     M = reqs.shape[1]
     assign = torch.where(torch.arange(M) < t.unsqueeze(1), exp, torch.full_like(exp, -1))
     return caps, reqs, adj, assign, t, exp[torch.arange(len(idx)), t]
@@ -139,9 +139,9 @@ def train_attn(scen, size):
             print(f"  {scen} attn {size} step {step} loss {float(loss.detach()):.3f} ({(time.time() - t0) / 60:.1f} min)", flush=True)
     model.eval()
     sub = torch.as_tensor(np.random.default_rng(0).choice(size, min(size, 2000), replace=False))
-    tr_acc, tr_t = attn_eval(model, tuple(x[sub] for x in tr), M)
+    tr_acc, tr_t = attn_eval(model, tuple(e[sub] for e in tr), M)
     te_acc, te_t = attn_eval(model, te, M)
-    ro = attn_rollout(model, te, [x["ar_star"] for x in test])
+    ro = attn_rollout(model, te, [e["ar_star"] for e in test])
     torch.save(model.state_dict(), OUT / f"attn_{scen}_{size}.pt")
     return {"scen": scen, "net": "attn", "size": size, "train": tr_acc, "test": te_acc, "train_t": tr_t, "test_t": te_t,
             "minutes": (time.time() - t0) / 60, **ro}

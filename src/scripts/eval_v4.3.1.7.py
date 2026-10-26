@@ -77,15 +77,15 @@ def eval_run(job):
     return {"scen": scen, "algo": algo, "seed": seed, "exp_id": exp_id, "rows": rows}
 
 
-def ilp_one(x):
+def ilp_one(e):
     from shared.ilp_utils import solve_ilp_max_ar
     t0 = time.perf_counter()
-    r = solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
+    r = solve_ilp_max_ar(e["ECUs"], e["SVCs"], e["conflict_sets"])
     return (time.perf_counter() - t0) * 1000, r["avg_utilization"], r["iterations"]
 
 
 def stats(v):
-    v = [x for x in v if x is not None]
+    v = [e for e in v if e is not None]
     if not v:
         return None, None
     return float(np.mean(v)), (float(np.std(v, ddof=1)) if len(v) > 1 else 0.0)
@@ -99,18 +99,18 @@ def summarize(runs, ilp):
             for m in MECHS:
                 algo = l if m == "none" else f"{m}_{l}"
                 per_seed = []
-                for r in (x for x in runs if x["scen"] == s and x["algo"] == algo):
+                for r in (e for e in runs if e["scen"] == s and e["algo"] == algo):
                     rows = r["rows"]
-                    succ = [x for x in rows if x["success"]]
+                    succ = [e for e in rows if e["success"]]
                     per_seed.append({
-                        "success": np.mean([x["success"] for x in rows]),
-                        "ar_success": np.mean([x["ar"] for x in succ]) if succ else None,
-                        "ratio_success": np.mean([x["ar"] / x["ar_star"] for x in succ]) if succ else None,
-                        "ratio_all": np.mean([x["ar"] / x["ar_star"] if x["success"] else 0.0 for x in rows]),
-                        "gap_success": np.mean([x["ar_star"] - x["ar"] for x in succ]) if succ else None,
-                        "viol": np.mean([x["viol"] for x in rows]),
-                        "dead_end": np.mean([x["dead_end"] for x in rows]),
-                        "ms": np.mean([x["ms"] for x in rows]),
+                        "success": np.mean([e["success"] for e in rows]),
+                        "ar_success": np.mean([e["ar"] for e in succ]) if succ else None,
+                        "ratio_success": np.mean([e["ar"] / e["ar_star"] for e in succ]) if succ else None,
+                        "ratio_all": np.mean([e["ar"] / e["ar_star"] if e["success"] else 0.0 for e in rows]),
+                        "gap_success": np.mean([e["ar_star"] - e["ar"] for e in succ]) if succ else None,
+                        "viol": np.mean([e["viol"] for e in rows]),
+                        "dead_end": np.mean([e["dead_end"] for e in rows]),
+                        "ms": np.mean([e["ms"] for e in rows]),
                     })
                 S["models"][algo] = {k: stats([p[k] for p in per_seed]) for k in per_seed[0]} | {"n_seeds": len(per_seed)}
         out["scenarios"][s] = S

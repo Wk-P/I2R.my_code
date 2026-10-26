@@ -10,7 +10,7 @@ run = ROOT/"results/unified"/scen/algo/eid
 argv = json.loads((run/"run.json").read_text())["argv"]
 print("argv", " ".join(argv))
 pool = json.loads((ROOT/f"results/sup_diag/{scen}.json").read_text())
-sub = [pool[i] for i in sorted(random.Random(0).sample(range(len(pool)), 1600))]
+sub = [pool[m] for m in sorted(random.Random(0).sample(range(len(pool)), 1600))]
 _, _, test = split_instances(scen, 1)
 ck = json.loads((run/"ckpt_lambda.json").read_text())
 fin = json.loads((run/"results.json").read_text())["training"]["final_lambda"]
@@ -28,10 +28,10 @@ def cost(model, insts, lam, rand=None, n=None):
         c.append(info["cost_ep"])
     c = np.array(c); return f"J_C={c.mean():.4f} fail={np.mean(c>0):.3f}"
 for name, f, lam in models:
-    m = model_class(learner, "lagrange").load(str(f), device="cpu")
+    m_ = model_class(learner, "lagrange").load(str(f), device="cpu")
     print(name, "lam", round(lam,4))
-    print("  pool random 500 (as greedy_env):", cost(m, pool, lam, rand=999, n=500))
-    print("  train-1600 subset             :", cost(m, sub, lam))
-    print("  test 400                      :", cost(m, test, lam))
+    print("  pool random 500 (as greedy_env):", cost(m_, pool, lam, rand=999, n=500))
+    print("  train-1600 subset             :", cost(m_, sub, lam))
+    print("  test 400                      :", cost(m_, test, lam))
     for l2 in (0.5, 2.0):
-        print(f"  test 400 with obs lam={l2}      :", cost(m, test, l2))
+        print(f"  test 400 with obs lam={l2}      :", cost(m_, test, l2))

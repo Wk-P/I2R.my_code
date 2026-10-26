@@ -38,7 +38,7 @@ SCENARIOS = [
 ]
 NM = {"lt": "N=10,M=15", "eq": "N=10,M=10", "gt": "N=15,M=10"}
 
-x = np.arange(len(ALGO_ORDER))
+e = np.arange(len(ALGO_ORDER))
 labels = [TICK[a] for a in ALGO_ORDER]
 colors = [COLOR[a] for a in ALGO_ORDER]
 
@@ -57,9 +57,9 @@ for scen, title in SCENARIOS:
 
     # Allocation ratio
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.bar(x, [v["ar_mean"] for v in A], yerr=[v["ar_std"] for v in A], capsize=4, color=colors)
+    ax.bar(e, [v["ar_mean"] for v in A], yerr=[v["ar_std"] for v in A], capsize=4, color=colors)
     ax.axhline(S["ilp_ar"], ls="--", color="black", lw=1, label=f"ILP (Optimal) = {S['ilp_ar']:.4f}")
-    ax.set_xticks(x)
+    ax.set_xticks(e)
     ax.set_xticklabels(labels)
     ax.set_ylabel("AR (mean ± std over seeds)")
     ax.set_title(f"{title}\nAllocation Ratio (AR)")
@@ -70,8 +70,8 @@ for scen, title in SCENARIOS:
     fig, ax = plt.subplots(figsize=(7, 5))
     sm = [v["success_mean"] * 100 for v in A]
     ss = [v["success_std"] * 100 for v in A]
-    ax.bar(x, sm, yerr=ss, capsize=4, color=colors)
-    ax.set_xticks(x)
+    ax.bar(e, sm, yerr=ss, capsize=4, color=colors)
+    ax.set_xticks(e)
     ax.set_xticklabels(labels)
     ax.set_ylabel("Success rate % (mean ± std over seeds)")
     ax.set_title(f"{title}\nTest-set Success Rate")
@@ -81,9 +81,9 @@ for scen, title in SCENARIOS:
     # Violations (%)
     fig, ax = plt.subplots(figsize=(7, 5))
     w = 0.35
-    ax.bar(x - w / 2, [v["cap_viol_mean"] * 100 for v in A], width=w, color=CAP_C, label="CapViol%")
-    ax.bar(x + w / 2, [v["conflict_viol_mean"] * 100 for v in A], width=w, color=CONF_C, label="ConflictViol%")
-    ax.set_xticks(x)
+    ax.bar(e - w / 2, [v["cap_viol_mean"] * 100 for v in A], width=w, color=CAP_C, label="CapViol%")
+    ax.bar(e + w / 2, [v["conflict_viol_mean"] * 100 for v in A], width=w, color=CONF_C, label="ConflictViol%")
+    ax.set_xticks(e)
     ax.set_xticklabels(labels)
     top = max([v["cap_viol_mean"] for v in A] + [v["conflict_viol_mean"] for v in A]) * 100
     ax.set_ylim(0, max(top * 1.35, 10))  # headroom so the legend does not cover bars
@@ -98,14 +98,14 @@ for scen, title in SCENARIOS:
     names = ["ILP"] + [TICK[a] for a in ALGO_ORDER]
     ms = [S["ilp_timing_ms"]["ms_mean"]] + [S["algos"][a]["ms_per_episode_mean"] for a in ALGO_ORDER]
     err = [S["ilp_timing_ms"]["ms_std"]] + [S["algos"][a]["ms_per_episode_std"] for a in ALGO_ORDER]
-    lower = [min(e, m * 0.6) for m, e in zip(ms, err)]  # keep lower whisker visible on log axis
+    lower = [min(e_, m * 0.6) for m, e_ in zip(ms, err)]  # keep lower whisker visible on log axis
     xt = np.arange(len(names))
     fig, ax = plt.subplots(figsize=(7.5, 5))
     ax.bar(xt, ms, yerr=[lower, err], capsize=4, color=["#7f7f7f"] + colors)
     ax.set_yscale("log")
-    for xi, m, e in zip(xt, ms, err):
-        ax.text(xi, (m + e) * 1.12, f"{m:.1f}", ha="center", fontsize=9)
-    ax.set_ylim(1, max(m + e for m, e in zip(ms, err)) * 4)
+    for xi, m, e_ in zip(xt, ms, err):
+        ax.text(xi, (m + e_) * 1.12, f"{m:.1f}", ha="center", fontsize=9)
+    ax.set_ylim(1, max(m + e_ for m, e_ in zip(ms, err)) * 4)
     ax.set_xticks(xt)
     ax.set_xticklabels(names)
     ax.set_ylabel("Time per test instance (ms, log scale)")
@@ -122,14 +122,14 @@ def styled_table(rows, col_labels, highlight, title, name, figsize, col_widths=N
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1, 2.0)
-    for j in range(len(col_labels)):
-        table[(0, j)].set_facecolor("#c9d6ea")
-        table[(0, j)].set_text_props(fontweight="bold")
-    for i, hl in enumerate(highlight, start=1):
-        for j in range(len(col_labels)):
-            table[(i, j)].set_facecolor("#fdf1c7" if hl else "white")
+    for n in range(len(col_labels)):
+        table[(0, n)].set_facecolor("#c9d6ea")
+        table[(0, n)].set_text_props(fontweight="bold")
+    for m, hl in enumerate(highlight, start=1):
+        for n in range(len(col_labels)):
+            table[(m, n)].set_facecolor("#fdf1c7" if hl else "white")
             if hl:
-                table[(i, j)].set_text_props(fontweight="bold")
+                table[(m, n)].set_text_props(fontweight="bold")
     fig.tight_layout()
     out = FIGDIR / name
     fig.savefig(out, dpi=150, bbox_inches="tight")

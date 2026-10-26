@@ -55,11 +55,11 @@ def analyze(path):
 
     print(f"\n{path}  (n={n} episodes)")
     print(f"{'decile':<8}{'success_rate':<14}{'all_ep_AR':<14}{'success_only_AR':<16}")
-    for i in range(n_bins):
-        sr = succ_rate[i]
-        a = all_ar[i]
-        sa = succ_only_ar[i]
-        print(f"{i+1:<8}{(sr if sr is not None else float('nan')):<14.4f}"
+    for m in range(n_bins):
+        sr = succ_rate[m]
+        a = all_ar[m]
+        sa = succ_only_ar[m]
+        print(f"{m+1:<8}{(sr if sr is not None else float('nan')):<14.4f}"
               f"{(a if a is not None else float('nan')):<14.4f}"
               f"{(sa if sa is not None else float('nan')):<16.4f}")
 

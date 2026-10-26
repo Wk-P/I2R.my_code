@@ -30,20 +30,20 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for k, scen in enumerate(SCENARIOS):
         t0 = time.time()
-        seen = {key(x) for f in (POOL, TEST) for x in json.loads(Path(str(f).format(scen=scen)).read_text())}
-        seen |= {key(x) for x in load(scen, "v4.3.1.4")["instances"]}
+        seen = {key(e) for f in (POOL, TEST) for e in json.loads(Path(str(f).format(scen=scen)).read_text())}
+        seen |= {key(e) for e in load(scen, "v4.3.1.4")["instances"]}
         base, nxt, out = 900_000_000 + k * 10_000_000, 0, []
         with Pool(48) as pool:
             while len(out) < N_VAL:
                 need = N_VAL - len(out)
-                for x in pool.map(_gen, [(scen, base + nxt + i) for i in range(need)], chunksize=4):
-                    if key(x) not in seen and x["ar_star"] > 0:
-                        seen.add(key(x))
-                        out.append(x)
+                for e in pool.map(_gen, [(scen, base + nxt + m) for m in range(need)], chunksize=4):
+                    if key(e) not in seen and e["ar_star"] > 0:
+                        seen.add(key(e))
+                        out.append(e)
                 nxt += need
         assert len(out) == N_VAL
         (OUT / f"{scen}.json").write_text(json.dumps(out))
-        print(f"{scen}: {len(out)} instances ({nxt} seeds), mean AR* {sum(x['ar_star'] for x in out) / len(out):.4f}, "
+        print(f"{scen}: {len(out)} instances ({nxt} seeds), mean AR* {sum(e['ar_star'] for e in out) / len(out):.4f}, "
               f"{(time.time() - t0) / 60:.1f} min", flush=True)
 
 

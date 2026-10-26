@@ -131,31 +131,31 @@ def live_pids_by_exp():
 
 def main():
     # interleave scenarios: lt, eq, gt for each (mode, algo)
-    queue = [(m, s, a) for a in ALGOS for m in MODES for s in SCENARIOS]
+    queue = [(m_, s, a) for a in ALGOS for m_ in MODES for s in SCENARIOS]
     exp_ids, adopted = {}, []
     if "--resume" in sys.argv and MANIFEST.exists():
         exp_ids = json.loads(MANIFEST.read_text())["exp_ids"]
-        launched = {(m, s, a): e for m, d in exp_ids.items() for s, d2 in d.items() for a, e in d2.items()}
-        queue = [j for j in queue if j not in launched]
+        launched = {(m_, s, a): e_ for m_, d in exp_ids.items() for s, d2 in d.items() for a, e_ in d2.items()}
+        queue = [n for n in queue if n not in launched]
         live = live_pids_by_exp()
-        adopted = [(live[e], f"{m} {s}/{a}", WEIGHT[a]) for (m, s, a), e in launched.items() if e in live]
+        adopted = [(live[e_], f"{m_} {s}/{a}", WEIGHT[a]) for (m_, s, a), e_ in launched.items() if e_ in live]
         print(f"=== resume: {len(launched)} launched, {len(adopted)} running, {len(queue)} to launch ===", flush=True)
     print(f"=== v4.3.1.3 reward pilot start {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(queue)} jobs ===", flush=True)
     active, failed, done = [], [], 0
     alive = lambda pid: Path(f"/proc/{pid}").exists()
     while queue or active or adopted:
-        adopted = [x for x in adopted if alive(x[0])]
-        load = sum(x[-1] for x in active) + sum(x[-1] for x in adopted)
-        i = 0
-        while i < len(queue):
-            m, s, a = queue[i]
+        adopted = [e for e in adopted if alive(e[0])]
+        load = sum(e[-1] for e in active) + sum(e[-1] for e in adopted)
+        m = 0
+        while m < len(queue):
+            m_, s, a = queue[m]
             if load + WEIGHT[a] <= CAPACITY:
-                queue.pop(i)
-                p, f = launch(m, s, a, exp_ids)
-                active.append((p, f, f"{m} {s}/{a}", WEIGHT[a]))
+                queue.pop(m)
+                p, f = launch(m_, s, a, exp_ids)
+                active.append((p, f, f"{m_} {s}/{a}", WEIGHT[a]))
                 load += WEIGHT[a]
             else:
-                i += 1
+                m += 1
         still = []
         for p, f, label, w in active:
             ret = p.poll()

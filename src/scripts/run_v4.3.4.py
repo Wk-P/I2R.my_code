@@ -136,9 +136,9 @@ def write_report(exp_ids):
         return f"{f(np.mean(vals))} ± {f(sd)}" + ("" if len(vals) == 3 else f" (n={len(vals)})")
 
     def row(label, mech, steps_, st):
-        return "| " + " | ".join([label, mech, steps_, ms([x["success"] for x in st], pc),
-                                  ms([x["ar"] for x in st], f4), ms([x["ilp_ar"] for x in st], f4),
-                                  ms([x["gap"] for x in st], f4), ms([x["dead_end"] for x in st], pc)]) + " |"
+        return "| " + " | ".join([label, mech, steps_, ms([e["success"] for e in st], pc),
+                                  ms([e["ar"] for e in st], f4), ms([e["ilp_ar"] for e in st], f4),
+                                  ms([e["gap"] for e in st], f4), ms([e["dead_end"] for e in st], pc)]) + " |"
 
     f4 = lambda v: f"{v:.4f}"
     pc = lambda v: f"{100 * v:.1f}%"
@@ -196,12 +196,12 @@ def main():
     exp_ids = {}
     # PPO first: they are the longest jobs, so the DQN ones fill in the tail.
     queue = [(sd, s, a) for sd in SEEDS for a in ALGOS for s in SCENARIOS]
-    queue.sort(key=lambda j: not j[2].endswith("ppo"))
+    queue.sort(key=lambda n: not n[2].endswith("ppo"))
     adopted = []
     if "--resume" in sys.argv and MANIFEST.exists():
         exp_ids = json.loads(MANIFEST.read_text())["exp_ids"]
         launched = {(int(sd), s, a): e for sd, d in exp_ids.items() for s, d2 in d.items() for a, e in d2.items()}
-        queue = [j for j in queue if j not in launched]
+        queue = [n for n in queue if n not in launched]
         live = live_pids()
         adopted = [(live[e], WEIGHT[a]) for (sd, s, a), e in launched.items() if e in live]
         print(f"=== resume: {len(launched)} launched, {len(adopted)} running, {len(queue)} to launch ===", flush=True)

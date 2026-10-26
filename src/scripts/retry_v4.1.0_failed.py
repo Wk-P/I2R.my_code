@@ -74,13 +74,13 @@ def main():
 
     while queue or active:
         current_load = sum(w for _, _, w, _ in active)
-        i = 0
-        while i < len(queue):
-            weight = THREAD_WEIGHT[queue[i][1]]
+        m = 0
+        while m < len(queue):
+            weight = THREAD_WEIGHT[queue[m][1]]
             if current_load + weight > CAPACITY:
-                i += 1
+                m += 1
                 continue
-            scenario, algo, seed = queue.pop(i)
+            scenario, algo, seed = queue.pop(m)
             proc, log_f, label, w = launch(scenario, algo, seed, exp_ids)
             active.append((proc, log_f, w, label))
             current_load += w

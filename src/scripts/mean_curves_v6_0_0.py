@@ -57,21 +57,21 @@ def main():
     R, rows, ilp = runs(), [], {}
     for (s, l, k), ds in sorted(R.items()):
         per = [binned(d, edges) for d in ds]
-        ilp.setdefault(s, []).extend(x[1] for x in per)
+        ilp.setdefault(s, []).extend(e[1] for e in per)
         for metric in ("episode_ar", "viol", "episode_exited"):
             M = np.vstack([p[0][metric].to_numpy() for p in per])
-            for i in range(a.bins):
-                rows.append(dict(scenario=s, learner=l, strategy=k, metric=metric, step=int(mid[i]),
-                                 mean=np.nanmean(M[:, i]), std=np.nanstd(M[:, i]), n_seeds=len(ds)))
+            for m in range(a.bins):
+                rows.append(dict(scenario=s, learner=l, strategy=k, metric=metric, step=int(mid[m]),
+                                 mean=np.nanmean(M[:, m]), std=np.nanstd(M[:, m]), n_seeds=len(ds)))
         print(f"{s} {l:4s} {k:12s} seeds={len(ds)}", flush=True)
     df = pd.DataFrame(rows)
     df.to_csv(OUT / "mean_curves.csv", index=False)
 
     for s in SCEN:
         fig, ax = plt.subplots(2, 3, figsize=(16, 8.5), sharex=True)
-        for j, l in enumerate(LEARN):
-            for i, metric in enumerate(("episode_ar", "viol")):
-                A = ax[i, j]
+        for n, l in enumerate(LEARN):
+            for m, metric in enumerate(("episode_ar", "viol")):
+                A = ax[m, n]
                 for k in STRAT:
                     q = df[(df.scenario == s) & (df.learner == l) & (df.strategy == k) & (df.metric == metric)]
                     if q.empty:
@@ -84,9 +84,9 @@ def main():
                 A.set_xlim(0, total)
                 A.set_ylabel("training episode AR" if metric == "episode_ar" else "violation rate (cap or privacy)")
                 A.grid(alpha=.3)
-                if i == 1:
+                if m == 1:
                     A.set_xlabel("timestep")
-            ax[0, j].legend(fontsize=8, loc="lower right")
+            ax[0, n].legend(fontsize=8, loc="lower right")
         fig.suptitle(f"v6.0.0 — {s.upper()} — seed mean ± std ({a.bins} bins over 20M steps)")
         fig.tight_layout()
         fig.savefig(OUT / f"{s}.png", dpi=130)

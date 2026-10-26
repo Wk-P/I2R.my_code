@@ -30,14 +30,14 @@ BC_BATCH = 256
 BC_VALUE_COEF = 0.5
 
 
-def _alloc_one(x):
+def _alloc_one(e):
     from shared.ilp_utils import solve_ilp_max_ar
-    r = solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
+    r = solve_ilp_max_ar(e["ECUs"], e["SVCs"], e["conflict_sets"])
     assert r["status"] == "Optimal", r["status"]
-    svc_ecu = [None] * len(x["SVCs"])
-    for j, svcs in r["allocation"].items():
-        for i in svcs:
-            svc_ecu[i] = int(j)
+    svc_ecu = [None] * len(e["SVCs"])
+    for n, svcs in r["allocation"].items():
+        for m in svcs:
+            svc_ecu[m] = int(n)
     return svc_ecu, float(r["avg_utilization"])
 
 
@@ -50,7 +50,7 @@ def build_allocs(version: str, workers: int = 48) -> None:
         inst = load(scen, version)["instances"]
         with Pool(workers) as pool:
             res = pool.map(_alloc_one, inst, chunksize=4)
-        diff = max(abs(ar - x["ar_star"]) for (_, ar), x in zip(res, inst))
+        diff = max(abs(ar - e["ar_star"]) for (_, ar), e in zip(res, inst))
         assert diff < 1e-5, f"{scen}: ILP AR differs from stored ar_star by {diff}"
         alloc_path(scen, version).write_text(json.dumps([a for a, _ in res]))
         print(f"{scen}: {len(inst)} allocations, max |AR - ar_star| = {diff:.2e}", flush=True)
@@ -62,25 +62,25 @@ def expert_dataset(env_kwargs: dict, instances: list, allocs: list):
     env = PlacementEnv(instances, **env_kwargs)
     obs_l, mask_l, lab_l, ret_l = [], [], [], []
     for k, inst in enumerate(instances):
-        order = sorted(range(len(inst["SVCs"])), key=lambda i: -inst["SVCs"][i])   # as PlacementEnv.reset
+        order = sorted(range(len(inst["SVCs"])), key=lambda m: -inst["SVCs"][m])   # as PlacementEnv.reset
         env.use_instance(k)
         obs, _ = env.reset()
         done, t = False, 0
         while not done:
             mask = env.action_masks()
-            j = allocs[k][order[t]]
-            assert mask[j], "expert action masked"
+            n = allocs[k][order[t]]
+            assert mask[n], "expert action masked"
             lab = np.zeros_like(mask)
-            if env.hosted[j]:
-                lab[j] = True
+            if env.hosted[n]:
+                lab[n] = True
             else:                                        # empty ECU: every legal empty ECU of equal capacity
                 for q in range(env.N):
-                    lab[q] = mask[q] and not env.hosted[q] and env.cap[q] == env.cap[j]
+                    lab[q] = mask[q] and not env.hosted[q] and env.cap[q] == env.cap[n]
             obs_l.append(obs)
             mask_l.append(mask)
             lab_l.append(lab)
             ret_l.append(inst["ar_star"])
-            obs, _, done, _, info = env.step(j)
+            obs, _, done, _, info = env.step(n)
             t += 1
         assert info["valid_placed"] == env.M and abs(info["ar"] - inst["ar_star"]) < 1e-4, "expert replay mismatch"
     return (np.array(obs_l, dtype=np.float32), np.array(mask_l), np.array(lab_l), np.array(ret_l, dtype=np.float32))
@@ -89,7 +89,7 @@ def expert_dataset(env_kwargs: dict, instances: list, allocs: list):
 def pretrain(model, data, epochs: int = BC_EPOCHS, seed: int = 0) -> dict:
     """Fit the MaskablePPO policy to the expert labels and its value head to the expert return."""
     import torch
-    obs, mask, lab, ret = (torch.as_tensor(x) for x in data)
+    obs, mask, lab, ret = (torch.as_tensor(e) for e in data)
     pol = model.policy
     opt = torch.optim.Adam(pol.parameters(), lr=BC_LR)
     g = torch.Generator().manual_seed(seed)

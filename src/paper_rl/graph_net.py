@@ -65,8 +65,8 @@ def _capture_nograd(fn, obs):
     with torch.no_grad(), torch.cuda.graph(g):
         static_out = fn(static_in)
 
-    def run(x):
-        static_in.copy_(x)
+    def run(e):
+        static_in.copy_(e)
         g.replay()
         return tuple(o.clone() for o in static_out)   # the next replay overwrites the static outputs
     return run
@@ -129,11 +129,11 @@ def build(caps, reqs, adj, assign, t, glob_std: bool = False, glob3: bool = Fals
                        (adj & uu).float().sum(-1) / M * unpl], -1)
     L = 1 + N + M
     rel = torch.zeros(B, N_REL, L, L, device=dev)
-    s, e = slice(1 + N, L), slice(1, 1 + N)
+    s, e_ = slice(1 + N, L), slice(1, 1 + N)
     rel[:, 0, s, s] = (adj & uu).float()
-    for r, x in ((1, hostf), (2, (conf_ecu & unpl.unsqueeze(-1)).float()), (3, (fits & unpl.unsqueeze(-1)).float())):
-        rel[:, r, s, e] = x
-        rel[:, r, e, s] = x.transpose(1, 2)
+    for r, e in ((1, hostf), (2, (conf_ecu & unpl.unsqueeze(-1)).float()), (3, (fits & unpl.unsqueeze(-1)).float())):
+        rel[:, r, s, e_] = e
+        rel[:, r, e_, s] = e.transpose(1, 2)
     return (glob, ecu, svc), rel, mask, ar
 
 
@@ -146,21 +146,21 @@ class Block(nn.Module):
         self.rel_w = nn.Parameter(torch.zeros(N_REL, heads))
         self.ff = nn.Sequential(nn.Linear(d, 2 * d), nn.GELU(), nn.Linear(2 * d, d))
 
-    def forward(self, x, rel):
-        B, L, d = x.shape
-        q, k, v = self.qkv(self.ln1(x)).view(B, L, 3, self.h, self.dk).permute(2, 0, 3, 1, 4)
+    def forward(self, e, rel):
+        B, L, d = e.shape
+        q, k, v = self.qkv(self.ln1(e)).view(B, L, 3, self.h, self.dk).permute(2, 0, 3, 1, 4)
         bias = torch.einsum("brij,rh->bhij", rel, self.rel_w)
         att = torch.softmax(q @ k.transpose(-1, -2) / self.dk ** 0.5 + bias, -1)
-        x = x + self.o((att @ v).transpose(1, 2).reshape(B, L, d))
-        return x + self.ff(self.ln2(x))
+        e = e + self.o((att @ v).transpose(1, 2).reshape(B, L, d))
+        return e + self.ff(self.ln2(e))
 
 
 def _encode(inp, type_emb, blocks, ln, feats, rel):
     glob, ecu, svc = feats
-    x = torch.cat([inp[0](glob).unsqueeze(1) + type_emb[0], inp[1](ecu) + type_emb[1], inp[2](svc) + type_emb[2]], 1)
+    e = torch.cat([inp[0](glob).unsqueeze(1) + type_emb[0], inp[1](ecu) + type_emb[1], inp[2](svc) + type_emb[2]], 1)
     for b in blocks:
-        x = b(x, rel)
-    return ln(x)
+        e = b(e, rel)
+    return ln(e)
 
 
 class PlanEncoder(nn.Module):
@@ -241,13 +241,13 @@ class GraphPolicyNet(nn.Module):
             assert lam is not None, "lam_in network needs lambda (Lagrange raw observation)"
             feats = (torch.cat([feats[0], lam.float().unsqueeze(1)], 1), *feats[1:])
         N = caps.shape[1]
-        x = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
-        h_ecu = x[:, 1:1 + N]
+        e = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
+        h_ecu = e[:, 1:1 + N]
         if self.pair_head:
             M = reqs.shape[1]
-            h_svc = x[torch.arange(x.shape[0], device=x.device), 1 + N + t.clamp(max=M - 1)]   # current service
+            h_svc = e[torch.arange(e.shape[0], device=e.device), 1 + N + t.clamp(max=M - 1)]   # current service
             h_svc = h_svc.unsqueeze(1).expand_as(h_ecu)
-            z = torch.cat([h_svc, h_ecu, h_svc * h_ecu, x[:, :1].expand_as(h_ecu)], -1)
+            z = torch.cat([h_svc, h_ecu, h_svc * h_ecu, e[:, :1].expand_as(h_ecu)], -1)
             ecu_logits = self.pair_mlp(z).squeeze(-1)
         else:
             ecu_logits = self.ecu_head(h_ecu).squeeze(-1)
@@ -258,8 +258,8 @@ class GraphPolicyNet(nn.Module):
             if self.plan_decay:                         # v4.4.13: beta_t = (M - t) / M
                 row = row * ((M - t.clamp(max=M - 1)).float() / M).unsqueeze(1)
             ecu_logits = ecu_logits + row
-        logits = torch.cat([ecu_logits, self.exit_head(x[:, 0])], 1)
-        value = self.value_head(torch.cat([x[:, 0], x[:, 1:].mean(1)], -1)).squeeze(-1)
+        logits = torch.cat([ecu_logits, self.exit_head(e[:, 0])], 1)
+        value = self.value_head(torch.cat([e[:, 0], e[:, 1:].mean(1)], -1)).squeeze(-1)
         return logits, value, mask, ar
 
 
@@ -267,12 +267,12 @@ def state_from_env(env):
     """Raw state tensors (batch of 1) of a PlacementEnv (ECU action, placement order)."""
     import numpy as np
     adj = np.zeros((env.M, env.M), dtype=bool)
-    for i, ps in enumerate(env.partners):
-        adj[i, list(ps)] = True
+    for m, ps in enumerate(env.partners):
+        adj[m, list(ps)] = True
     assign = np.full(env.M, -1)
-    for j, hs in enumerate(env.hosted):
-        for i in hs:
-            assign[i] = j
+    for n, hs in enumerate(env.hosted):
+        for m in hs:
+            assign[m] = n
     return (torch.as_tensor(env.cap[None], dtype=torch.float32), torch.as_tensor(env.req[None], dtype=torch.float32),
             torch.as_tensor(adj[None]), torch.as_tensor(assign[None]), torch.as_tensor([env.t]))
 

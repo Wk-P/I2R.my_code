@@ -126,7 +126,7 @@ def ckpt_eval(job):
     from paper_rl.train import model_class, split_instances
     scen, seed, eid, pattern = job
     pool = json.loads((ROOT / POOL.format(scen=scen)).read_text())
-    sub = [pool[i] for i in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
+    sub = [pool[m] for m in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
     test = split_instances(scen, seed)[2]
     model = model_class("ppo", "mask").load(str(next((RESULTS / scen / ALGO / eid).glob(pattern))), device="cpu")
     (te, te_exit), (tr, _) = _gap(model, test), _gap(model, sub)
@@ -148,9 +148,9 @@ def write_report(exp_ids):
     res = {}
     for job, opens, insts, n in out:
         key, s, sd = job[0], job[2], job[6]
-        ar, ilp = np.mean([x["ar"] for x in insts]), np.mean([x["ilp"] for x in insts])
+        ar, ilp = np.mean([e["ar"] for e in insts]), np.mean([e["ilp"] for e in insts])
         res[(key, s, sd)] = {"exit": 1 - len(insts) / n, "rel": (ilp - ar) / ilp,
-                             "dact": np.mean([x["act"] - x["ilp_act"] for x in insts]),
+                             "dact": np.mean([e["act"] - e["ilp_act"] for e in insts]),
                              "forced": sum(o["kind"] == "forced" for o in opens) / n}
     print("[report] training-set gap", flush=True)
     base_tr = {(r["scen"], r["seed"]): r["train"]["rel"]
@@ -199,7 +199,7 @@ def write_report(exp_ids):
 def render(lang, res, seeds, ms, pc, f4, f2, f2u, curve):
     """The report in Chinese (zh) or English (en); same data, same tables."""
     zh = lang == "zh"
-    T = lambda z, e: z if zh else e
+    T = lambda z, e_: z if zh else e_
     lb = lambda key: VARIANTS[key][0] if zh else LABEL_EN[key]
     cols = [(T("测试集相对 gap", "Test relative gap"), "rel", pc), (T("训练集相对 gap", "Train relative gap"), "train_rel", pc), (T(f"第 1–{EARLY} 步 regret", f"Steps 1–{EARLY} regret"), "r15", f4),
             (T(f"第 1–{EARLY} 步选中最优", f"Steps 1–{EARLY} optimal-action rate"), "p15", pc),
@@ -238,8 +238,8 @@ def render(lang, res, seeds, ms, pc, f4, f2, f2u, curve):
         for st in steps:
             c = [curve[(s, sd, st)] for sd in seeds if (s, sd, st) in curve]
             if c:
-                lines.append(f"| {s.upper()} | {st // 1_000_000}M | {ms([x[0] for x in c], pc)} | {ms([x[1] for x in c], pc)} | {ms([x[2] for x in c], pc)} | "
-                             + " / ".join(pc(x[0]) for x in c) + " | " + " / ".join(pc(x[1]) for x in c) + " |")
+                lines.append(f"| {s.upper()} | {st // 1_000_000}M | {ms([e[0] for e in c], pc)} | {ms([e[1] for e in c], pc)} | {ms([e[2] for e in c], pc)} | "
+                             + " / ".join(pc(e[0]) for e in c) + " | " + " / ".join(pc(e[1]) for e in c) + " |")
     avg = lambda st, k: [np.mean([curve[(s, sd, st)][k] for s in SCENARIOS]) for sd in seeds if all((s, sd, st) in curve for s in SCENARIOS)]
     lines += ["", T("三场景平均（每个种子先对三场景取平均，再对种子求均值 ± SD）：", "Average over the three scenarios (per seed first, then mean ± SD over seeds):"), "",
               T("| 步数 | 测试集相对 gap | 训练集相对 gap |", "| Steps | Test relative gap | Train relative gap |"), "|---|---|---|"]

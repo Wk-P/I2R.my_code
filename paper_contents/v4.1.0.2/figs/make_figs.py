@@ -46,7 +46,7 @@ for scen, title in SCENARIOS:
     S = d["scenarios"][scen]
     A = [S["algos"][a] for a in ALGO_ORDER]
     labels = [DISPLAY[a] for a in ALGO_ORDER]
-    x = np.arange(len(ALGO_ORDER))
+    e = np.arange(len(ALGO_ORDER))
 
     fig, axes = plt.subplots(1, 3, figsize=(20, 7))
     fig.patch.set_facecolor("#fcfcfa")
@@ -54,21 +54,21 @@ for scen, title in SCENARIOS:
 
     ax = axes[0]
     ar = [v["ar_mean"] for v in A]
-    ax.bar(x, ar, yerr=[v["ar_std"] for v in A], capsize=4, color=COLORS, width=0.62,
+    ax.bar(e, ar, yerr=[v["ar_std"] for v in A], capsize=4, color=COLORS, width=0.62,
            error_kw={"ecolor": "#555555"})
     ax.axhline(S["ilp_ar"], ls="--", color="black", lw=1.8)
     ax.text(-0.3, S["ilp_ar"] + 0.012, f"ILP optimum {S['ilp_ar']:.3f}", fontsize=11)
-    for xi, m in zip(x, ar):
-        ax.text(xi, m - 0.04, f"{m:.3f}", ha="center", color="white", fontsize=11)
+    for xi, m_ in zip(e, ar):
+        ax.text(xi, m_ - 0.04, f"{m_:.3f}", ha="center", color="white", fontsize=11)
     ax.set_ylim(0, max(0.8, S["ilp_ar"] + 0.06))
     ax.set_title("Allocation Ratio (mean ± std)", fontsize=14, pad=14)
 
     ax = axes[1]
     sm = [v["success_mean"] for v in A]
     ss = [v["success_std"] for v in A]
-    ax.bar(x, sm, yerr=ss, capsize=4, color=COLORS, width=0.62, error_kw={"ecolor": "#555555"})
-    for xi, m, s in zip(x, sm, ss):
-        ax.text(xi, m + s + 0.03, f"{m:.3f}", ha="center", fontsize=11)
+    ax.bar(e, sm, yerr=ss, capsize=4, color=COLORS, width=0.62, error_kw={"ecolor": "#555555"})
+    for xi, m_, s in zip(e, sm, ss):
+        ax.text(xi, m_ + s + 0.03, f"{m_:.3f}", ha="center", fontsize=11)
     ax.set_ylim(0, 1.12)
     ax.set_title("Success Rate (mean ± std)", fontsize=14, pad=14)
 
@@ -76,9 +76,9 @@ for scen, title in SCENARIOS:
     w = 0.36
     cap = [v["cap_viol_mean"] for v in A]
     conf = [v["conflict_viol_mean"] for v in A]
-    ax.bar(x - w / 2, cap, width=w, color="#2a7ad5", label="Capacity violation")
-    ax.bar(x + w / 2, conf, width=w, color="#eb6834", label="Conflict violation")
-    for xi, c, f in zip(x, cap, conf):
+    ax.bar(e - w / 2, cap, width=w, color="#2a7ad5", label="Capacity violation")
+    ax.bar(e + w / 2, conf, width=w, color="#eb6834", label="Conflict violation")
+    for xi, c, f in zip(e, cap, conf):
         ax.text(xi - w / 2, c + 0.015, f"{c:.2f}", ha="center", fontsize=10)
         ax.text(xi + w / 2, f + 0.015, f"{f:.2f}", ha="center", fontsize=10)
     ax.set_ylim(0, 1.12)
@@ -88,7 +88,7 @@ for scen, title in SCENARIOS:
     for ax in axes:
         style(ax)
         ax.set_facecolor("#fcfcfa")
-        ax.set_xticks(x)
+        ax.set_xticks(e)
         ax.set_xticklabels(labels, rotation=20, ha="right", fontsize=11)
 
     fig.text(0.5, 0.015, FOOTNOTE, ha="center", fontsize=10, color="#444444")
@@ -121,12 +121,12 @@ table = ax.table(cellText=rows, colLabels=col_labels, cellLoc="center", loc="upp
 table.auto_set_font_size(False)
 table.set_fontsize(12)
 table.scale(1, 1.8)
-for (i, j), cell in table.get_celld().items():
+for (m, n), cell in table.get_celld().items():
     cell.set_edgecolor("#dddddd")
-    if i == 0:
+    if m == 0:
         cell.set_facecolor("#eef1f7")
         cell.set_text_props(fontweight="bold")
-    elif ((i - 1) // 6) % 2 == 1:
+    elif ((m - 1) // 6) % 2 == 1:
         cell.set_facecolor("#f7f7f4")
 fig.tight_layout()
 out = FIGDIR / "summary_table.png"

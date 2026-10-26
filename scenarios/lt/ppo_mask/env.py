@@ -114,8 +114,8 @@ class P4Env(gym.Env):
     def _init_conflict_sets(self, K: int = 10) -> list[set]:
         sets = []
         for _ in range(K):
-            j = random.randint(2, self.M)
-            sets.append(set(random.sample(range(self.M), j)))
+            n = random.randint(2, self.M)
+            sets.append(set(random.sample(range(self.M), n)))
         return sets
 
     def _has_conflict(self, ecu_idx: int, svc_idx: int) -> bool:
@@ -146,11 +146,11 @@ class P4Env(gym.Env):
             return 0.0
         n_remaining = max(self.M - self._step, 1)
         risk_sum = 0.0
-        for i in range(self._step, self.M):
+        for m in range(self._step, self.M):
             n_valid = sum(
-                1 for j in range(self.N)
-                if self.remaining_vms[j] >= self.services[i].requirement
-                and not self._has_conflict(j, i)
+                1 for n in range(self.N)
+                if self.remaining_vms[n] >= self.services[m].requirement
+                and not self._has_conflict(n, m)
             )
             risk_sum += 1.0 / (n_valid + 1)
         return risk_sum / n_remaining
@@ -185,18 +185,18 @@ class P4Env(gym.Env):
         sim_allowed = [s.copy() for s in self.ecu_allowed]
         placed = 0
         n_remaining = self.M - self._step
-        for i in range(self._step, self.M):
-            req = self.services[i].requirement
+        for m in range(self._step, self.M):
+            req = self.services[m].requirement
             best_j, best_cap = -1, -1.0
-            for j in range(self.N):
-                if sim_vms[j] >= req and i in sim_allowed[j] and sim_vms[j] > best_cap:
-                    best_j, best_cap = j, sim_vms[j]
+            for n in range(self.N):
+                if sim_vms[n] >= req and m in sim_allowed[n] and sim_vms[n] > best_cap:
+                    best_j, best_cap = n, sim_vms[n]
             if best_j == -1:
                 break
             sim_vms[best_j] -= req
             for subset in self.conflict_sets:
-                if i in subset:
-                    sim_allowed[best_j] -= (subset - {i})
+                if m in subset:
+                    sim_allowed[best_j] -= (subset - {m})
             placed += 1
         return placed / n_remaining
 
@@ -207,15 +207,15 @@ class P4Env(gym.Env):
         if self._scenarios is not None:
             caps, reqs, _cs = random.choice(self._scenarios)
             self._sc = (caps, reqs, _cs)
-            self.ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-            self.services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+            self.ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
+            self.services = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
             self.initial_vms = np.array([e.capacity for e in self.ecus], dtype=np.float32)
             self.conflict_sets = [set(cs) for cs in _cs]
         else:
             self.conflict_sets = self._init_conflict_sets()
         # Sort services descending and remap conflict_set indices to match the new order.
-        sort_idx = sorted(range(self.M), key=lambda i: -self.services[i].requirement)
-        self.services = [self.services[i] for i in sort_idx]
+        sort_idx = sorted(range(self.M), key=lambda m: -self.services[m].requirement)
+        self.services = [self.services[m] for m in sort_idx]
         inv_perm = [0] * self.M
         for new_i, old_i in enumerate(sort_idx):
             inv_perm[old_i] = new_i
@@ -254,14 +254,14 @@ class P4Env(gym.Env):
             if self._step in subset:
                 hyp_allowed_action -= (subset - {self._step})
 
-        for i in range(self._step + 1, self.M):
-            req = self.services[i].requirement
+        for m in range(self._step + 1, self.M):
+            req = self.services[m].requirement
             has_valid = False
-            for j in range(self.N):
-                if j == action:
-                    cap_ok, conflict_ok = hyp_remaining_action >= req, i in hyp_allowed_action
+            for n in range(self.N):
+                if n == action:
+                    cap_ok, conflict_ok = hyp_remaining_action >= req, m in hyp_allowed_action
                 else:
-                    cap_ok, conflict_ok = self.remaining_vms[j] >= req, not self._has_conflict(j, i)
+                    cap_ok, conflict_ok = self.remaining_vms[n] >= req, not self._has_conflict(n, m)
                 if cap_ok and conflict_ok:
                     has_valid = True
                     break
@@ -274,8 +274,8 @@ class P4Env(gym.Env):
             return np.zeros(self.N, dtype=bool)
         svc = self.services[self._step]
         base_mask = np.array(
-            [(self.remaining_vms[j] >= svc.requirement) and (not self._has_conflict(j, self._step))
-             for j in range(self.N)],
+            [(self.remaining_vms[n] >= svc.requirement) and (not self._has_conflict(n, self._step))
+             for n in range(self.N)],
             dtype=bool,
         )
         # One-step feasibility lookahead: among the currently-legal ECUs,
@@ -290,7 +290,7 @@ class P4Env(gym.Env):
         if not np.any(base_mask):
             return base_mask
         refined_mask = np.array(
-            [base_mask[j] and not self._lethal_after(j) for j in range(self.N)], dtype=bool
+            [base_mask[n] and not self._lethal_after(n) for n in range(self.N)], dtype=bool
         )
         return refined_mask if np.any(refined_mask) else base_mask
 
@@ -310,7 +310,7 @@ class P4Env(gym.Env):
             svc = self.services[self._step]
             service_demand_norm = np.float32(svc.requirement / max_cap)
             conflict_flag = np.array(
-                [float(self._has_conflict(j, self._step)) for j in range(self.N)],
+                [float(self._has_conflict(n, self._step)) for n in range(self.N)],
                 dtype=np.float32,
             )
             valid_flag = self.action_masks().astype(np.float32)
@@ -332,18 +332,18 @@ class P4Env(gym.Env):
             remaining_svcs[self._step:] = self._req_arr[self._step:] / max_cap
 
         ecu_allowed_frac = np.array(
-            [len(self.ecu_allowed[j]) / self.M for j in range(self.N)],
+            [len(self.ecu_allowed[n]) / self.M for n in range(self.N)],
             dtype=np.float32,
         )
 
         svc_valid_ecus = np.zeros(self.M, dtype=np.float32)
-        for i in range(self._step, self.M):
+        for m in range(self._step, self.M):
             n_valid = sum(
-                1 for j in range(self.N)
-                if self.remaining_vms[j] >= self.services[i].requirement
-                and not self._has_conflict(j, i)
+                1 for n in range(self.N)
+                if self.remaining_vms[n] >= self.services[m].requirement
+                and not self._has_conflict(n, m)
             )
-            svc_valid_ecus[i] = n_valid / self.N
+            svc_valid_ecus[m] = n_valid / self.N
         # Delegates to _bottleneck_risk() rather than re-deriving inline, so
         # the observation feature and step()'s shaping potential can never
         # drift apart (they did briefly during v2.4.0 development).
@@ -513,8 +513,8 @@ P4Env.step = directional_step(P4Env.step)
 if __name__ == "__main__":
     random.seed(42)
     N, M = 7, 10
-    ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(random.sample(range(50, 200, 5), N))]
-    services = [SVC(f"SVC{i}", req) for i, req in enumerate(random.sample(range(10, 80, 5), M))]
+    ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(random.sample(range(50, 200, 5), N))]
+    services = [SVC(f"SVC{m}", req) for m, req in enumerate(random.sample(range(10, 80, 5), M))]
 
     print("ECU capacities :", [e.capacity for e in ecus])
     print("Service demands:", [s.requirement for s in services])

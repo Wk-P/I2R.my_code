@@ -47,7 +47,7 @@ def rl_train_set(scen, seed=1):
     alloc = json.loads(alloc_path(scen, S.DATA).read_text())
     idx = list(range(len(inst)))
     random.Random(seed).shuffle(idx)                   # same as paper_rl.train.split_instances
-    return [{**inst[i], "alloc": alloc[i]} for i in idx[:int(0.8 * len(inst))]]
+    return [{**inst[m], "alloc": alloc[m]} for m in idx[:int(0.8 * len(inst))]]
 
 
 def train_sup(scen, tag):
@@ -84,8 +84,8 @@ def train_sup(scen, tag):
     model.eval()
     tr_acc, _ = A.attn_eval(model, tr, M)
     te_acc, te_t = A.attn_eval(model, te, M)
-    ro_te = A.attn_rollout(model, te, [x["ar_star"] for x in test])
-    ro_tr = A.attn_rollout(model, tr, [x["ar_star"] for x in inst])
+    ro_te = A.attn_rollout(model, te, [e["ar_star"] for e in test])
+    ro_tr = A.attn_rollout(model, tr, [e["ar_star"] for e in inst])
     torch.save(model.state_dict(), OUT / f"attn_{scen}_{tag}.pt")
     r = {"scen": scen, "tag": tag, "size": size, "train_acc": tr_acc, "test_acc": te_acc, "test_t": te_t,
          "test": ro_te, "train": ro_tr, "minutes": (time.time() - t0) / 60}

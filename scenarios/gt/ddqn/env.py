@@ -75,8 +75,8 @@ class DDQNEnv(gym.Env):
     def _init_conflict_sets(self, K: int = 10) -> list[set]:
         sets = []
         for _ in range(K):
-            j = random.randint(2, self.M)
-            sets.append(set(random.sample(range(self.M), j)))
+            n = random.randint(2, self.M)
+            sets.append(set(random.sample(range(self.M), n)))
         return sets
 
     def _has_conflict(self, ecu_idx: int, svc_idx: int) -> bool:
@@ -97,8 +97,8 @@ class DDQNEnv(gym.Env):
         if self._scenarios is not None:
             caps, reqs, _cs = random.choice(self._scenarios)
             self._sc = (caps, reqs, _cs)
-            self.ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-            self.services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+            self.ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
+            self.services = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
             self.initial_vms = np.array([e.capacity for e in self.ecus], dtype=np.float32)
             self.conflict_sets = [set(s) for s in _cs]
         else:
@@ -131,7 +131,7 @@ class DDQNEnv(gym.Env):
             svc = self.services[self._step]
             service_demand_norm = np.float32(svc.requirement / max_cap)
             conflict_flag = np.array(
-                [float(self._has_conflict(j, self._step)) for j in range(self.N)],
+                [float(self._has_conflict(n, self._step)) for n in range(self.N)],
                 dtype=np.float32,
             )
             valid_flag = (self.remaining_vms >= svc.requirement).astype(np.float32)
@@ -155,11 +155,11 @@ class DDQNEnv(gym.Env):
         )
 
         svc_valid_ecus = np.zeros(self.M, dtype=np.float32)
-        for i in range(self._step, self.M):
-            svc_valid_ecus[i] = sum(
-                1 for j in range(self.N)
-                if self.remaining_vms[j] >= self.services[i].requirement
-                and not self._has_conflict(j, i)
+        for m in range(self._step, self.M):
+            svc_valid_ecus[m] = sum(
+                1 for n in range(self.N)
+                if self.remaining_vms[n] >= self.services[m].requirement
+                and not self._has_conflict(n, m)
             ) / self.N
 
         return np.concatenate([
@@ -201,7 +201,7 @@ class DDQNEnv(gym.Env):
         self.ecu_placements[action].add(self._step)
         if ru > 0:
             self._total_ru += ru
-        _active = sum(1 for j in range(self.N) if self.ecu_placements[j])
+        _active = sum(1 for n in range(self.N) if self.ecu_placements[n])
         self.ar = self._total_ru / _active if _active > 0 else 0.0
         self._step += 1
 
@@ -252,8 +252,8 @@ if __name__ == "__main__":
     import random as rng
     rng.seed(42)
     N, M = 7, 4
-    ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(rng.sample(range(50, 200, 5), N))]
-    services = [SVC(f"SVC{i}", req) for i, req in enumerate(rng.sample(range(10, 100, 5), M))]
+    ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(rng.sample(range(50, 200, 5), N))]
+    services = [SVC(f"SVC{m}", req) for m, req in enumerate(rng.sample(range(10, 100, 5), M))]
 
     print("ECU capacities :", [e.capacity for e in ecus])
     print("Service demands:", [s.requirement for s in services])
@@ -266,7 +266,7 @@ if __name__ == "__main__":
     done = False
     while not done:
         svc = env.services[env._step]
-        valid = [j for j in range(N) if env.remaining_vms[j] >= svc.requirement]
+        valid = [n for n in range(N) if env.remaining_vms[n] >= svc.requirement]
         if not valid:
             print("  No valid ECU!")
             break

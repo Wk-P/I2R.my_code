@@ -112,7 +112,7 @@ class locked:
 def update(item_id: str, **fields) -> dict:
     with locked():
         items = load()
-        it = next(x for x in items if x["id"] == item_id)
+        it = next(e for e in items if e["id"] == item_id)
         it.update(fields)
         save(items)
         return dict(it)
@@ -171,9 +171,9 @@ def run() -> None:
                 with open(log, "w") as fh:
                     proc = subprocess.Popen(cur["cmd"], cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                             start_new_session=True)
-            except OSError as e:                # bad command: fail this item and stop, do not crash the runner
-                update(cur["id"], status="failed", finished=now(), exit=None, error=str(e))
-                mail(f"队列：{cur['id']} 无法启动，队列已停止", f"{cur['id']} 启动失败：{e}\n命令：{' '.join(cur['cmd'])}")
+            except OSError as e_:                # bad command: fail this item and stop, do not crash the runner
+                update(cur["id"], status="failed", finished=now(), exit=None, error=str(e_))
+                mail(f"队列：{cur['id']} 无法启动，队列已停止", f"{cur['id']} 启动失败：{e_}\n命令：{' '.join(cur['cmd'])}")
                 continue
             update(cur["id"], status="running", pid=proc.pid, started=now())
             print(f"[queue] {now()} start {cur['id']} pid={proc.pid}", flush=True)
@@ -181,7 +181,7 @@ def run() -> None:
             ret = proc.wait()
             it = update(cur["id"], status="done" if ret == 0 else "failed", finished=now(), exit=ret)
             print(f"[queue] {now()} {it['id']} exited {ret}", flush=True)
-            left = [x["id"] for x in load() if x["status"] == "queued"]
+            left = [e["id"] for e in load() if e["status"] == "queued"]
             if ret == 0:
                 mail(f"队列：完成 {it['id']}", f"{it['id']} 已完成。\n接下来：{', '.join(left) or '队列已空'}")
             else:
@@ -231,16 +231,16 @@ def edit(a) -> None:
         items.append({"id": a.id, "cmd": cmd, "wait_for": a.wait_for, "status": "queued", "log": a.log or f"logs/run_{a.id}_driver.log",
                       "added": now(), "started": None, "finished": None, "pid": None, "exit": None})
     elif a.cmd == "remove":
-        it = next((x for x in items if x["id"] == a.id), None)
+        it = next((e for e in items if e["id"] == a.id), None)
         assert it and it["status"] in ("queued", "waiting"), f"{a.id}: only queued items can be removed"
         items.remove(it)
     elif a.cmd == "move":
-        q = [x for x in items if x["status"] == "queued"]
-        it = next((x for x in q if x["id"] == a.id), None)
+        q = [e for e in items if e["status"] == "queued"]
+        it = next((e for e in q if e["id"] == a.id), None)
         assert it, f"{a.id}: only queued items can be moved"
-        j = q.index(it) + (-1 if a.direction == "up" else 1)
-        if 0 <= j < len(q):
-            i1, i2 = items.index(it), items.index(q[j])
+        n = q.index(it) + (-1 if a.direction == "up" else 1)
+        if 0 <= n < len(q):
+            i1, i2 = items.index(it), items.index(q[n])
             items[i1], items[i2] = items[i2], items[i1]
     elif a.cmd in ("pause", "unpause"):
         save(items, paused=a.cmd == "pause")

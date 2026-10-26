@@ -147,28 +147,28 @@ def main():
     adopted = []
     if "--resume" in sys.argv and MANIFEST.exists():
         exp_ids = json.loads(MANIFEST.read_text())["exp_ids"]
-        launched = {(int(sd), s, a): e for sd, d in exp_ids.items() if int(sd) in NEW_SEEDS
-                    for s, d2 in d.items() for a, e in d2.items()}
-        queue = [j for j in queue if j not in launched]
+        launched = {(int(sd), s, a): e_ for sd, d in exp_ids.items() if int(sd) in NEW_SEEDS
+                    for s, d2 in d.items() for a, e_ in d2.items()}
+        queue = [n for n in queue if n not in launched]
         live = live_pids()
-        adopted = [(live[e], WEIGHT[a]) for (sd, s, a), e in launched.items() if e in live]
+        adopted = [(live[e_], WEIGHT[a]) for (sd, s, a), e_ in launched.items() if e_ in live]
         print(f"=== resume: {len(launched)} launched, {len(adopted)} running, {len(queue)} to launch ===", flush=True)
     write_manifest(exp_ids)
     print(f"=== v4.3.1.6 campaign start {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(queue)} jobs (seeds {NEW_SEEDS}) ===", flush=True)
     active, failed, done = [], [], 0
     while queue or active or adopted:
-        adopted = [x for x in adopted if Path(f"/proc/{x[0]}").exists()]
+        adopted = [e for e in adopted if Path(f"/proc/{e[0]}").exists()]
         load = sum(w for *_, w in active) + sum(w for _, w in adopted)
-        i = 0
-        while i < len(queue):
-            sd, s, a = queue[i]
+        m = 0
+        while m < len(queue):
+            sd, s, a = queue[m]
             if load + WEIGHT[a] <= CAPACITY:
-                queue.pop(i)
+                queue.pop(m)
                 p, f = launch(sd, s, a, exp_ids)
                 active.append((p, f, f"seed{sd} {s}/{a}", WEIGHT[a]))
                 load += WEIGHT[a]
             else:
-                i += 1
+                m += 1
         still = []
         for p, f, label, w in active:
             ret = p.poll()

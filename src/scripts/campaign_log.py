@@ -109,16 +109,16 @@ class CampaignLog:
         foot = f"主机 {socket.gethostname()} · 日志目录 logs/{self.batch}/ · {ts()} · src/scripts/run_campaign.py"
         plain = "\n".join(lines) + "".join(f"\n\n== {t}\n{text_table(h, r)}" for t, h, r in tables) + (f"\n\n{pre}" if pre else "") + f"\n\n{foot}"
         html = (f"<html><head>{STYLE}</head><body><h2>{_html.escape(subject)}</h2>"
-                + "".join(f"<p>{_html.escape(x)}</p>" for x in lines)
+                + "".join(f"<p>{_html.escape(e)}</p>" for e in lines)
                 + "".join(f"<h3>{_html.escape(t)}</h3>{html_table(h, r)}" for t, h, r in tables)
                 + (f"<pre>{_html.escape(pre)}</pre>" if pre else "")
                 + f"<hr><p style='color:#98a1b0;font-size:12px'>{_html.escape(foot)}</p></body></html>")
         try:
             from shared.notify import send_notification
             ok = bool(send_notification(full, plain, html=html, attachments=[p for p in attachments if Path(p).is_file()]))
-        except Exception as e:                       # never let email break the campaign
+        except Exception as e_:                       # never let email break the campaign
             ok = False
-            self.event("mail", f"邮件发送异常：{e!r}", subject=full, ok=False)
+            self.event("mail", f"邮件发送异常：{e_!r}", subject=full, ok=False)
             return False
         self.event("mail", None, subject=full, ok=ok)
         if not ok:

@@ -123,8 +123,8 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
     def make_env(seed: int) -> Monitor:
         random.seed(seed)
         caps, reqs, _ = C.SCENARIOS[C.SCENARIO_IDX]
-        ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-        services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+        ecus = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
+        services = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
         return Monitor(EnvCls(ecus, services, scenarios=C.TRAIN_SCENARIOS, **env_kwargs()))
 
     # ── evaluation ───────────────────────────────────────────────────────────
@@ -134,8 +134,8 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
         rows = []
         for scenario in C.TEST_SCENARIOS:
             caps, reqs, _ = scenario
-            _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-            _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+            _ecus = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
+            _svcs = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
             best = None
             for _ in range(max(1, n_samples)):
                 env = EnvCls(_ecus, _svcs, scenarios=[scenario], **env_kwargs())
@@ -224,7 +224,7 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
         import torch
         torch.set_num_threads(C.TORCH_NUM_THREADS)
         n_envs = max(1, int(C.N_ENVS))
-        env = DummyVecEnv([functools.partial(make_env, C.SEED + i) for i in range(n_envs)])
+        env = DummyVecEnv([functools.partial(make_env, C.SEED + m) for m in range(n_envs)])
         print(f"  Using DummyVecEnv: n_envs={n_envs}")
         cb = Callback()
         model = model_cls(
@@ -257,9 +257,9 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
             w = csv.writer(f)
             w.writerow(["timestep", "episode_ar", "episode_success", "episode_valid_placed",
                         "episode_placed", "episode_reward"])
-            for i in range(len(cb.ts)):
-                w.writerow([cb.ts[i], round(cb.ars[i], 6), int(cb.success[i]),
-                            cb.valid_placed[i], cb.placed[i], round(cb.rewards[i], 6)])
+            for m in range(len(cb.ts)):
+                w.writerow([cb.ts[m], round(cb.ars[m], 6), int(cb.success[m]),
+                            cb.valid_placed[m], cb.placed[m], round(cb.rewards[m], 6)])
         print(f"  Saved -> {path}")
 
     def plot_training_curve(cb, ilp_ar, outdir, scenario_name):
@@ -272,9 +272,9 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
             (np.array(cb.conf, dtype=float), "darkorange", f"Privacy {viol_word} rate",
              f"privacy (conflict) {viol_word} rate"),
         ]
-        for ax, (y, color, ylabel, name) in zip(axes, series):
-            sm, off = moving_avg(y, C.SMOOTH_W)
-            ax.plot(ts, y, color=color, alpha=0.2, linewidth=0.8)
+        for ax, (c, color, ylabel, name) in zip(axes, series):
+            sm, off = moving_avg(c, C.SMOOTH_W)
+            ax.plot(ts, c, color=color, alpha=0.2, linewidth=0.8)
             ax.plot(ts[off:off + len(sm)], sm, color=color, linewidth=2,
                     label=f"{name} (smoothed w={C.SMOOTH_W})")
             ax.set_ylabel(ylabel, fontsize=11)

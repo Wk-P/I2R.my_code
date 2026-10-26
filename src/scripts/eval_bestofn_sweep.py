@@ -30,7 +30,7 @@ import run_all as RA
 
 def main():
     model_path = sys.argv[1]
-    ns = [int(x) for x in sys.argv[2:]] or [8, 16, 32, 64]
+    ns = [int(e) for e in sys.argv[2:]] or [8, 16, 32, 64]
 
     ecus, services, _, _ = load_scenario(C.YAML_CONFIG, C.SCENARIO_IDX, C.SCENARIOS)
     print(f"TRAIN_SEED={C.SEED}  test_scenarios={len(C.TEST_SCENARIOS)}  model={model_path}")

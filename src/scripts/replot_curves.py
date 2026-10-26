@@ -19,7 +19,7 @@ def one(d: Path):
     try:
         r = json.loads((d / "results.json").read_text())
         with open(d / "training_curve.csv") as f:
-            rows = [tuple(float(x) for x in row) for row in list(csv.reader(f))[1:]]
+            rows = [tuple(float(e) for e in row) for row in list(csv.reader(f))[1:]]
         tr, res = r["training"], r.get("resumed")
         start = int(res["at_step"]) if res else 0
         title = (f"{algo_label(r['algo'])} — {r['scenario'].upper()} — reward={r['reward_mode']} — {tr['total_steps']:,} steps"
@@ -27,8 +27,8 @@ def one(d: Path):
         plot_curve(rows, r["ilp"]["ar"], d / "training_curve.png", title, history=curve_history(d) if res else None,
                    x_max=tr["total_steps"])
         return None
-    except Exception as e:
-        return f"{d}: {e}"
+    except Exception as e_:
+        return f"{d}: {e_}"
 
 
 def main():

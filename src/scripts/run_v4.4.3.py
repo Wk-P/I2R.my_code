@@ -51,7 +51,7 @@ STEPS = 5_000_000
 REWARD, NORM, OBS, GAMMA = "ar_pen", "none", "base", 1.0
 PILOT = "--pilot" in sys.argv
 if "--seeds" in sys.argv:                              # e.g. --seeds 1  (later --seeds 2,3 adds to the manifest)
-    SEEDS = [int(x) for x in sys.argv[sys.argv.index("--seeds") + 1].split(",")]
+    SEEDS = [int(e) for e in sys.argv[sys.argv.index("--seeds") + 1].split(",")]
 # full run: the structure-aware model plus an MLP control with the same 5M budget (key mask_ppo_mlp)
 KEYS = {"mask_ppo": "graph", "mask_ppo_mlp": "mlp"}
 PILOT_MANIFEST = ROOT / "logs" / f"v{VERSION}_pilot" / "manifest.json"
@@ -138,17 +138,17 @@ def write_report(exp_ids):
     seed1 = {}                                            # seed-1 completed instances, for the common subset
     for job, opens, insts, n in out:
         if s1.get((job[0], job[2])) == job[4]:
-            seed1[(job[0], job[2])] = {x["k"]: x for x in insts}
+            seed1[(job[0], job[2])] = {e["k"]: e for e in insts}
     res = {}
     for job, opens, insts, n in out:
         lb, _, s = job[:3]
-        ar = float(np.mean([x["ar"] for x in insts])) if insts else None
-        ilp = float(np.mean([x["ilp"] for x in insts])) if insts else None
+        ar = float(np.mean([e["ar"] for e in insts])) if insts else None
+        ilp = float(np.mean([e["ilp"] for e in insts])) if insts else None
         res.setdefault((lb, s), []).append({
             "exit": 1 - len(insts) / n, "ar": ar, "ilp": ilp, "gap": None if ar is None else ilp - ar,
             "rel": None if ar is None else (ilp - ar) / ilp,
-            "act": float(np.mean([x["act"] for x in insts])) if insts else None,
-            "ilp_act": float(np.mean([x["ilp_act"] for x in insts])) if insts else None,
+            "act": float(np.mean([e["act"] for e in insts])) if insts else None,
+            "ilp_act": float(np.mean([e["ilp_act"] for e in insts])) if insts else None,
             "forced": sum(o["kind"] == "forced" for o in opens) / n})
 
     def ms(vals, f):
@@ -185,10 +185,10 @@ def write_report(exp_ids):
             if not st:
                 continue
             rg = reg.get(lb, {}).get(s)
-            lines.append("| " + " | ".join([lb, ms([x["exit"] for x in st], pc), ms([x["ar"] for x in st], f4),
-                                              ms([x["ilp"] for x in st], f4), ms([x["gap"] for x in st], f4),
-                                              ms([x["rel"] for x in st], pc), ms([x["act"] for x in st], f2),
-                                              ms([x["ilp_act"] for x in st], f2), ms([x["forced"] for x in st], f2),
+            lines.append("| " + " | ".join([lb, ms([e["exit"] for e in st], pc), ms([e["ar"] for e in st], f4),
+                                              ms([e["ilp"] for e in st], f4), ms([e["gap"] for e in st], f4),
+                                              ms([e["rel"] for e in st], pc), ms([e["act"] for e in st], f2),
+                                              ms([e["ilp_act"] for e in st], f2), ms([e["forced"] for e in st], f2),
                                               pc(rg["opt_rate_t"][0]) if rg else "—", pc(rg["opt_rate"]) if rg else "—"]) + " |")
         common = set.intersection(*[set(seed1[(lb, s)]) for lb, *_ in kinds if (lb, s) in seed1])
         lines += ["", f"共同完成实例上的 gap（种子 1，所有行都未 EXIT 的 {len(common)} 个实例，消除各自 EXIT 造成的选择差异）：", "",
@@ -196,7 +196,7 @@ def write_report(exp_ids):
         for lb, *_ in kinds:
             if (lb, s) in seed1 and common:
                 xs = [seed1[(lb, s)][k] for k in common]
-                ar, il = np.mean([x["ar"] for x in xs]), np.mean([x["ilp"] for x in xs])
+                ar, il = np.mean([e["ar"] for e in xs]), np.mean([e["ilp"] for e in xs])
                 lines.append(f"| {lb} | {f4(ar)} | {f4(il)} | {f4(il - ar)} | {pc((il - ar) / il)} |")
         rows = [(lb, reg[lb][s]) for lb, *_ in kinds if lb in reg and s in reg[lb]]
         if rows:
