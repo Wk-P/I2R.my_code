@@ -41,7 +41,7 @@ def train_lagrange_bc(device: str, n_envs: int = 1):
     import torch as _torch
     _torch.set_num_threads(C.TORCH_NUM_THREADS)
     sys.stdout.flush()
-    env_fns = [functools.partial(RA._make_lagrange_env, C.SEED + m) for m in range(n_envs)]
+    env_fns = [functools.partial(RA._make_lagrange_env, C.SEED + i) for i in range(n_envs)]
     env = DummyVecEnv(env_fns)
     print(f"  Using DummyVecEnv: n_envs={n_envs}")
     cb = RA.LagrangeCallback()

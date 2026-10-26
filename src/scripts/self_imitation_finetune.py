@@ -53,8 +53,8 @@ def collect_self_imitation_data(model, scenarios, n_samples):
     for sc in scenarios:
         caps, reqs, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
         M_sc = len(reqs)
-        ecus = [RA.ECU(f"ECU{m}", c) for m, c in enumerate(caps)]
-        svcs = [RA.SVC(f"SVC{m}", r) for m, r in enumerate(reqs)]
+        ecus = [RA.ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
+        svcs = [RA.SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
 
         for _attempt in range(n_samples):
             env = P4Env(ecus, svcs, scenarios=[sc])

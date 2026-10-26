@@ -62,8 +62,8 @@ def ilp_timing():
     return {r["scen"]: r for r in res}
 
 
-def sd(e):
-    return float(np.std(e, ddof=1)) if len(e) > 1 else 0.0
+def sd(x):
+    return float(np.std(x, ddof=1)) if len(x) > 1 else 0.0
 
 
 def aggregate(manifest, rows, ilp):

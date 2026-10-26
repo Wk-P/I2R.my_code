@@ -63,7 +63,7 @@ def main():
     for sc in ("lt", "eq", "gt"):
         rows = groups.get(sc, [])
         out[sc] = rows
-        for r in sorted(rows, key=lambda e: (e["steps"], e["train_count"])):
+        for r in sorted(rows, key=lambda x: (x["steps"], x["train_count"])):
             gap = r["ilp_ar"] - r["ar_mean"] if r["ar_mean"] is not None else None
             lines.append(
                 f"{sc:<10}{r['train_count']:<13}{r['steps']:<12}"

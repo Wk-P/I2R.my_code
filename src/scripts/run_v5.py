@@ -294,12 +294,12 @@ def gpu_nodes() -> dict[int, int]:
     out = subprocess.run(["nvidia-smi", "--query-gpu=index,pci.bus_id", "--format=csv,noheader"], capture_output=True, text=True).stdout
     nodes = {}
     for line in out.strip().splitlines():
-        m, bus = [e.strip() for e in line.split(",")]
+        i, bus = [x.strip() for x in line.split(",")]
         try:
             n = int(Path(f"/sys/bus/pci/devices/{bus[4:].lower()}/numa_node").read_text())
         except (OSError, ValueError):
             n = 0
-        nodes[int(m)] = max(n, 0)
+        nodes[int(i)] = max(n, 0)
     return nodes
 
 
@@ -331,10 +331,10 @@ def place(V, gpu: bool) -> tuple[int | None, int | None]:
     GPU's node; a CPU run to the node with the fewest active runs."""
     act = V["active_res"].values()
     if gpu:
-        g = min(V["gpu_node"], key=lambda m: (sum(1 for e in act if e[0] == m), m))
+        g = min(V["gpu_node"], key=lambda i: (sum(1 for x in act if x[0] == i), i))
         return g, V["gpu_node"][g]
     nodes = sorted(set(V["gpu_node"].values()) | {0})
-    return None, min(nodes, key=lambda n: (sum(1 for e in act if e[1] == n), n))
+    return None, min(nodes, key=lambda n: (sum(1 for x in act if x[1] == n), n))
 
 
 def new_exp_id():
@@ -482,9 +482,9 @@ def write_manifest(V, exp_ids):
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     runs = []
     for sd, s, k in V["plan_keys"]:
-        e_ = plan_entry(V, sd, s, k)
-        e_["exp_id"] = exp_ids.get(str(sd), {}).get(s, {}).get(k)
-        runs.append(e_)
+        e = plan_entry(V, sd, s, k)
+        e["exp_id"] = exp_ids.get(str(sd), {}).get(s, {}).get(k)
+        runs.append(e)
     if "refs" not in V:
         V["refs"] = manifest_references(V)
     sw = V["cfg"].get("lam_sweep")
@@ -501,8 +501,8 @@ def write_manifest(V, exp_ids):
                                "purpose": "smoke" if SMOKE else "main", "commit": commit, "results_space": RESULTS.name,
                                "driver_pid": os.getpid(), "created_at": V.setdefault("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
                                "title": {"zh": V["cfg"]["title"][0], "en": V["cfg"]["title"][1]},
-                               "RL_algorithm": [e for e in ("PPO", "DQN", "DDQN") if any(r["RL_algorithm"] == e for r in runs)],
-                               "strategies": [e for e in ("unconstraint", "lagrangian", "maskable", "repair") if any(r["strategy"] == e for r in runs)],
+                               "RL_algorithm": [x for x in ("PPO", "DQN", "DDQN") if any(r["RL_algorithm"] == x for r in runs)],
+                               "strategies": [x for x in ("unconstraint", "lagrangian", "maskable", "repair") if any(r["strategy"] == x for r in runs)],
                                "seeds": SEEDS, "scenarios": SCENARIOS, "params": params,
                                "runs": runs, "references": V["refs"], "exp_ids": exp_ids}, indent=2))
     tmp.replace(V["manifest"])
@@ -548,7 +548,7 @@ def ckpt_eval(job):
     _, train, test = split_instances(s, sd)
     if pool:
         p = json.loads((ROOT / POOL.format(scen=s)).read_text())
-        train = [p[m] for m in sorted(random.Random(0).sample(range(len(p)), 1600))]
+        train = [p[i] for i in sorted(random.Random(0).sample(range(len(p)), 1600))]
     model = model_class(learner, mech).load(str(files[0]), device="cpu")
     lam, lam_max = lagrange_lambda(RESULTS / s / algo / eid, mech, pat, step)
     (te, ex, cap, conf), (tr, ex_tr, *_) = _gap(model, test, learner, mech, lam, lam_max), _gap(model, train, learner, mech, lam, lam_max)
@@ -588,7 +588,7 @@ def policy_time(job):
     torch.set_num_threads(1)
     from paper_rl.env import PlacementEnv
     from paper_rl.train import model_class, split_algo, split_instances
-    m, algo, sd, s, eid = job
+    i, algo, sd, s, eid = job
     files = list((RESULTS / s / algo / eid).glob("model_*"))
     if not files:
         return job, None
@@ -624,9 +624,9 @@ def ilp_time(args):
     from paper_rl.data import load
     from shared.ilp_utils import solve_ilp_max_ar
     s, gi = args
-    e = load(s)["instances"][gi]
+    x = load(s)["instances"][gi]
     t0 = time.perf_counter()
-    solve_ilp_max_ar(e["ECUs"], e["SVCs"], e["conflict_sets"])
+    solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
     return s, gi, (time.perf_counter() - t0) * 1000
 
 
@@ -634,7 +634,7 @@ def time_bench(series):
     """{(series idx, scen): (model ms list, forward ms list, ILP ms list on the same instances)}; the ILP is solved
     once per instance of a scenario (union of the seeds' test splits), single-threaded CBC, model building included."""
     tidx = {(s, sd): test_index(s, sd) for s in SCENARIOS for sd in SEEDS}
-    jobs = [(m, algo, sd, s, eid) for m, (_, _, algo, _, pts) in enumerate(series) for sd, s, eid, pat, st in pts if pat == "model_*"]
+    jobs = [(i, algo, sd, s, eid) for i, (_, _, algo, _, pts) in enumerate(series) for sd, s, eid, pat, st in pts if pat == "model_*"]
     print(f"[report] timing {len(jobs)} models (1 thread each)", flush=True)
     with Pool(min(len(jobs), TIME_WORKERS)) as pool:
         pol = pool.map(policy_time, jobs)
@@ -643,11 +643,11 @@ def time_bench(series):
     with Pool(ILP_WORKERS) as pool:
         ilp = {(s, gi): ms for s, gi, ms in pool.map(ilp_time, todo, chunksize=4)}
     out = {}
-    for (m, algo, sd, s, eid), rows in pol:
+    for (i, algo, sd, s, eid), rows in pol:
         if rows is None:
             continue
-        m_, f, l = out.setdefault((m, s), ([], [], []))
-        m_ += [r[0] for r in rows]
+        m, f, l = out.setdefault((i, s), ([], [], []))
+        m += [r[0] for r in rows]
         f += [r[1] for r in rows]
         l += [ilp[(s, gi)] for gi in tidx[(s, sd)]]
     return out
@@ -685,28 +685,28 @@ def write_report_data(V, series, curve, reg, times, interim):
     """report_data.json next to report.md (docs/data_spec.md §3 rule 7): the report's numbers per run, for the panel.
     curves: one point per (run, checkpoint); timing: per (series, scenario) over the seeds; ILP once per scenario."""
     keys = list(V["cfg"]["variants"])
-    nan = lambda e: None if e is None or e != e else float(e)
+    nan = lambda x: None if x is None or x != x else float(x)
     pts = []
-    for m, (lz, le, algo, _, runs) in enumerate(series):
+    for i, (lz, le, algo, _, runs) in enumerate(series):
         for sd, s, eid, pat, st in runs:
-            c = curve.get((m, s, sd, st))
+            c = curve.get((i, s, sd, st))
             if c is None:
                 continue
             te, tr, ex, cap, conf, ex_tr = c
-            r = reg.get((keys[m], s, sd)) if m < len(keys) else None
-            pts.append({"series": m, "key": keys[m] if m < len(keys) else None, "label": {"zh": lz, "en": le},
+            r = reg.get((keys[i], s, sd)) if i < len(keys) else None
+            pts.append({"series": i, "key": keys[i] if i < len(keys) else None, "label": {"zh": lz, "en": le},
                         "algo": algo, "scenario": s, "seed": sd, "exp_id": eid, "step": st,
                         "test_gap": nan(te), "train_gap": nan(tr), "test_fail": nan(ex), "train_fail": nan(ex_tr),
                         "cap_viol": nan(cap), "priv_viol": nan(conf),
                         "regret_early": nan(r[0]) if r and st == STEPS else None,
                         "opt_rate_early": nan(r[1]) if r and st == STEPS else None})
     timing, ilp = [], {}
-    for (m, s), (m_, f, l) in times.items():
-        lz, le, algo = series[m][:3]
-        timing.append({"series": m, "key": keys[m] if m < len(keys) else None, "label": {"zh": lz, "en": le}, "algo": algo,
-                       "scenario": s, "mean_ms": float(np.mean(m_)), "median_ms": float(np.median(m_)),
-                       "p95_ms": float(np.percentile(m_, 95)), "forward_mean_ms": float(np.mean(f)),
-                       "speedup_mean": float(np.mean(l) / np.mean(m_)), "speedup_median": float(np.median(l) / np.median(m_))})
+    for (i, s), (m, f, l) in times.items():
+        lz, le, algo = series[i][:3]
+        timing.append({"series": i, "key": keys[i] if i < len(keys) else None, "label": {"zh": lz, "en": le}, "algo": algo,
+                       "scenario": s, "mean_ms": float(np.mean(m)), "median_ms": float(np.median(m)),
+                       "p95_ms": float(np.percentile(m, 95)), "forward_mean_ms": float(np.mean(f)),
+                       "speedup_mean": float(np.mean(l) / np.mean(m)), "speedup_median": float(np.median(l) / np.median(m))})
         ilp.setdefault(s, {"mean_ms": float(np.mean(l)), "median_ms": float(np.median(l)), "p95_ms": float(np.percentile(l, 95))})
     out = {"schema": 1, "batch": V["log_dir"].name, "version": V["version"], "interim": interim,
            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "steps": CKPTS + [STEPS], "early_steps": EARLY,
@@ -746,7 +746,7 @@ def write_report(V, exp_ids, interim: bool = False):
                                    for pat, st in [(f"ckpt_{c}_*", c) for c in CKPTS] + [("model_*", STEPS)]
                                    if exp_ids.get(str(sd), {}).get(s, {}).get(k)])
               for k, (algo, net, pool, lz, le, *_) in vs.items()] + references(V["version"])
-    jobs = [(m, algo, pool, *p) for m, (_, _, algo, pool, pts) in enumerate(series) for p in pts]
+    jobs = [(i, algo, pool, *p) for i, (_, _, algo, pool, pts) in enumerate(series) for p in pts]
     print(f"[report] learning-curve evaluation ({len(jobs)} models)", flush=True)
     with Pool(min(len(jobs), 36)) as pool:
         out = pool.map(ckpt_eval, jobs)
@@ -760,8 +760,8 @@ def write_report(V, exp_ids, interim: bool = False):
     done = lambda k, algo, sd: all((RESULTS / s / algo / exp_ids.get(str(sd), {}).get(s, {}).get(k, "-") / "results.json").exists()
                                    for s in SCENARIOS)
     todo = [(k, v[0], sd) for k, v in vs.items() for sd in SEEDS if v[0].startswith("mask_") and done(k, v[0], sd)]
-    for m, (k, algo, sd) in enumerate(todo, 1):
-        print(f"[report] regret {m}/{len(todo)} | seed {sd} {k}", flush=True)
+    for i, (k, algo, sd) in enumerate(todo, 1):
+        print(f"[report] regret {i}/{len(todo)} | seed {sd} {k}", flush=True)
         g = regret(V, k, algo, sd)
         for s in SCENARIOS:
             reg[(k, s, sd)] = (sum(g[s]["regret_t"][:EARLY]), float(np.mean(g[s]["opt_rate_t"][:EARLY])))
@@ -782,23 +782,23 @@ def write_report(V, exp_ids, interim: bool = False):
                 if dyn:
                     lamdyn.append((k, sd, s, cap, dyn))
     ms = lambda v, f: (lambda v: (f(np.mean(v)) + (f" ± {f(np.std(v, ddof=1))}" if len(v) > 1 else "")) if v else "—")(
-        [e for e in v if e == e])                    # NaN (no violation-free instance) is left out
+        [x for x in v if x == x])                    # NaN (no violation-free instance) is left out
     pc = lambda v: "—" if v != v else f"{100 * v:.1f}%"
     sl = lambda st: f"{st / 1e6:g}M"
     for lang in ("zh", "en"):
         zh = lang == "zh"
-        T = lambda z, e_: z if zh else e_
-        lab = lambda m: series[m][0] if zh else series[m][1]
+        T = lambda z, e: z if zh else e
+        lab = lambda i: series[i][0] if zh else series[i][1]
         L = [f"# v{V['version']} {T(*V['cfg']['title'])}", "",
              *([T("> **中间报告**：只包含已完成的阶段；其余组显示为 —，全部阶段完成后会被最终报告覆盖。",
                   "> **Interim report**: only the stages finished so far; the other groups show —. The final report replaces it."), ""]
                if interim else []),
              T(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/run_v5.py --version {V['version']}`。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/run_v5.py --version {V['version']}`."),
-             T(f"- 每个变体 {len(SEEDS)} 个种子（{', '.join(map(str, SEEDS))}）× {len(SCENARIOS)} 场景（{' / '.join(e.upper() for e in SCENARIOS)}）、各训练 {STEPS / 1e6:g}M 步，同一次训练在 "
+             T(f"- 每个变体 {len(SEEDS)} 个种子（{', '.join(map(str, SEEDS))}）× {len(SCENARIOS)} 场景（{' / '.join(x.upper() for x in SCENARIOS)}）、各训练 {STEPS / 1e6:g}M 步，同一次训练在 "
                f"{' / '.join(f'{c / 1e6:g}M' for c in CKPTS) or '—'} 存 checkpoint；ar_pen 奖励、γ = 1、不提前结束、EXIT 只用于 Maskable、需求降序；"
                "PPO / DQN 超参取自 `paper_rl/config.py`；结构感知网络（Transformer）在 GPU 上训练。5 万实例 = 经 ILP 验证的实例池（`results/sup_diag/<场景>.json`）。",
-               f"- Every variant: {len(SEEDS)} seed(s) ({', '.join(map(str, SEEDS))}) × {len(SCENARIOS)} scenario(s) ({' / '.join(e.upper() for e in SCENARIOS)}), {STEPS / 1e6:g}M steps each, checkpoints of the same run at "
+               f"- Every variant: {len(SEEDS)} seed(s) ({', '.join(map(str, SEEDS))}) × {len(SCENARIOS)} scenario(s) ({' / '.join(x.upper() for x in SCENARIOS)}), {STEPS / 1e6:g}M steps each, checkpoints of the same run at "
                f"{' / '.join(f'{c / 1e6:g}M' for c in CKPTS) or '—'}; ar_pen reward, γ = 1, full episode, EXIT for Maskable only, descending demand; "
                "PPO / DQN hyper-parameters from `paper_rl/config.py`; structure-aware network (Transformer) trained on GPU. "
                "50k instances = the ILP-verified pool (`results/sup_diag/<scenario>.json`)."),
@@ -840,29 +840,29 @@ def write_report(V, exp_ids, interim: bool = False):
                 L.append("")
         L += [T("## 学习曲线：测试集相对 gap", "## Learning curve: test relative gap"), ""]
         for s in SCENARIOS:
-            L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(m) for m in range(len(series))) + " |",
+            L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(i) for i in range(len(series))) + " |",
                   "|---|" + "---|" * len(series)]
             for st in steps:
-                L.append(f"| {sl(st)} | " + " | ".join(ms([curve[(m, s, sd, st)][0] for sd in SEEDS if (m, s, sd, st) in curve], pc)
-                                                        for m in range(len(series))) + " |")
+                L.append(f"| {sl(st)} | " + " | ".join(ms([curve[(i, s, sd, st)][0] for sd in SEEDS if (i, s, sd, st) in curve], pc)
+                                                        for i in range(len(series))) + " |")
             L.append("")
         L += [T("## 学习曲线：三场景平均（每个种子先对三场景取平均）", "## Learning curve: mean over the three scenarios (per seed first)"), "",
-              "| " + T("步数", "Steps") + " | " + " | ".join(lab(m) for m in range(len(series))) + " |", "|---|" + "---|" * len(series)]
+              "| " + T("步数", "Steps") + " | " + " | ".join(lab(i) for i in range(len(series))) + " |", "|---|" + "---|" * len(series)]
         for st in steps:
             cells = []
-            for m in range(len(series)):
-                v = [np.mean([curve[(m, s, sd, st)][0] for s in SCENARIOS]) for sd in SEEDS if all((m, s, sd, st) in curve for s in SCENARIOS)]
+            for i in range(len(series)):
+                v = [np.mean([curve[(i, s, sd, st)][0] for s in SCENARIOS]) for sd in SEEDS if all((i, s, sd, st) in curve for s in SCENARIOS)]
                 cells.append(ms(v, pc))
             L.append(f"| {sl(st)} | " + " | ".join(cells) + " |")
         L += ["", T("## 学习曲线：测试集未通过率（EXIT 或任一违约）", "## Learning curve: test failure rate (EXIT or any violation)"), "",
               T("gap 只在未通过率之外的实例（无 EXIT、无违约）上计算；未通过率高时，gap 只反映容易的那部分实例。",
                 "The gap is computed on the remaining instances (no EXIT, no violation); with a high failure rate it covers only the easier instances."), ""]
         for s in SCENARIOS:
-            L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(m) for m in range(len(series))) + " |",
+            L += [f"### {s.upper()}", "", "| " + T("步数", "Steps") + " | " + " | ".join(lab(i) for i in range(len(series))) + " |",
                   "|---|" + "---|" * len(series)]
             for st in steps:
-                L.append(f"| {sl(st)} | " + " | ".join(ms([curve[(m, s, sd, st)][2] for sd in SEEDS if (m, s, sd, st) in curve], pc)
-                                                        for m in range(len(series))) + " |")
+                L.append(f"| {sl(st)} | " + " | ".join(ms([curve[(i, s, sd, st)][2] for sd in SEEDS if (i, s, sd, st) in curve], pc)
+                                                        for i in range(len(series))) + " |")
             L.append("")
         L += ["", T(f"## {sl(STEPS)}：测试集与训练集 gap、违约、前几步决策", f"## {sl(STEPS)}: test and training-set gap, violations, early decisions"), "",
               T(f"| 场景 | 模型 | 测试集相对 gap | 训练集相对 gap | 测试未通过率（EXIT / 违约） | 训练集未通过率 | 容量违约率 | 隐私违约率 | 第 1–{EARLY} 步 regret | 第 1–{EARLY} 步选中最优 |",
@@ -870,20 +870,20 @@ def write_report(V, exp_ids, interim: bool = False):
               "|---|---|---|---|---|---|---|---|---|---|"]
         keys = list(vs)
         for s in SCENARIOS:
-            for m in range(len(series)):
-                c = [curve[(m, s, sd, STEPS)] for sd in SEEDS if (m, s, sd, STEPS) in curve]
-                r = [reg[(keys[m], s, sd)] for sd in SEEDS if m < len(keys) and (keys[m], s, sd) in reg]
-                L.append(f"| {s.upper()} | {lab(m)} | {ms([e[0] for e in c], pc)} | {ms([e[1] for e in c], pc)} | {ms([e[2] for e in c], pc)} | "
-                         f"{ms([e[5] for e in c], pc)} | {ms([e[3] for e in c], pc)} | {ms([e[4] for e in c], pc)} | "
-                         f"{ms([e[0] for e in r], lambda v: f'{v:.4f}')} | {ms([e[1] for e in r], pc)} |")
+            for i in range(len(series)):
+                c = [curve[(i, s, sd, STEPS)] for sd in SEEDS if (i, s, sd, STEPS) in curve]
+                r = [reg[(keys[i], s, sd)] for sd in SEEDS if i < len(keys) and (keys[i], s, sd) in reg]
+                L.append(f"| {s.upper()} | {lab(i)} | {ms([x[0] for x in c], pc)} | {ms([x[1] for x in c], pc)} | {ms([x[2] for x in c], pc)} | "
+                         f"{ms([x[5] for x in c], pc)} | {ms([x[3] for x in c], pc)} | {ms([x[4] for x in c], pc)} | "
+                         f"{ms([x[0] for x in r], lambda v: f'{v:.4f}')} | {ms([x[1] for x in r], pc)} |")
         L += ["", T("regret 按合法 ECU 之间的最优差距定义，只适用于 Maskable；其余机制可能执行违约动作，记为 —。",
                     "Regret is defined over the legal ECUs, i.e. for Maskable only; the other mechanisms may execute violating actions (—)."), ""]
         L += ["", T(f"## 逐种子测试集 gap（{sl(STEPS)}）", f"## Test gap per seed ({sl(STEPS)})"), "",   # columns = this batch's seeds
               T("| 场景 | 模型 | ", "| Scenario | Model | ") + " | ".join(T(f"种子 {sd}", f"Seed {sd}") for sd in SEEDS) + " |",
               "|---|---|" + "---|" * len(SEEDS)]
         for s in SCENARIOS:
-            for m in range(len(series)):
-                L.append(f"| {s.upper()} | {lab(m)} | " + " | ".join(pc(curve[(m, s, sd, STEPS)][0]) if (m, s, sd, STEPS) in curve else "—"
+            for i in range(len(series)):
+                L.append(f"| {s.upper()} | {lab(i)} | " + " | ".join(pc(curve[(i, s, sd, STEPS)][0]) if (i, s, sd, STEPS) in curve else "—"
                                                                     for sd in SEEDS) + " |")
         L.append("")
         if times:
@@ -899,15 +899,15 @@ def write_report(V, exp_ids, interim: bool = False):
                       T("| 方法 | 平均 ms | 中位数 ms | P95 ms | 仅前向 平均 ms | 加速比（平均） | 加速比（中位数） |",
                         "| Method | Mean ms | Median ms | P95 ms | Forward only, mean ms | Speed-up (mean) | Speed-up (median) |"),
                       "|---|---|---|---|---|---|---|"]
-                ilp_all = next((v[2] for (m, s2), v in times.items() if s2 == s), None)
+                ilp_all = next((v[2] for (i, s2), v in times.items() if s2 == s), None)
                 if ilp_all:
                     L.append(f"| ILP | {np.mean(ilp_all):.1f} | {q(ilp_all, 50):.1f} | {q(ilp_all, 95):.1f} | — | — | — |")
-                for m in range(len(series)):
-                    if (m, s) not in times:
+                for i in range(len(series)):
+                    if (i, s) not in times:
                         continue
-                    m_, f, l = times[(m, s)]
-                    L.append(f"| {lab(m)} | {np.mean(m_):.1f} | {q(m_, 50):.1f} | {q(m_, 95):.1f} | {np.mean(f):.1f} | "
-                             f"{np.mean(l) / np.mean(m_):.1f}× | {q(l, 50) / q(m_, 50):.1f}× |")
+                    m, f, l = times[(i, s)]
+                    L.append(f"| {lab(i)} | {np.mean(m):.1f} | {q(m, 50):.1f} | {q(m, 95):.1f} | {np.mean(f):.1f} | "
+                             f"{np.mean(l) / np.mean(m):.1f}× | {q(l, 50) / q(m, 50):.1f}× |")
                 L.append("")
         p = V["report"] if zh else V["report"].with_suffix(".en.md")
         p.write_text("\n".join(L))
@@ -953,14 +953,14 @@ def write_lam_sweep(V, learner, rows, override=None) -> float:
     sw = dict(V["cfg"]["lam_sweep"], algo=V["cfg"]["lam_sweep"]["algos"][learner])
     values = sw["values"]
     cell = {(r["lambda_max"], r["scenario"]): r for r in rows}
-    nn = lambda e: float("nan") if e is None else e
+    nn = lambda x: float("nan") if x is None else x
     eff = {v: float(np.mean([nn(cell[(v, s)]["eff_gap"]) for s in SCENARIOS])) for v in values}
     free = {v: float(np.mean([nn(cell[(v, s)]["viol_free"]) for s in SCENARIOS])) for v in values}
     rule = select_lam_max(values, eff, free)
     best = float(override) if override else rule
-    pc = lambda e: "—" if e is None or e != e else f"{100 * e:.1f}%"
+    pc = lambda x: "—" if x is None or x != x else f"{100 * x:.1f}%"
     for zh in (True, False):
-        T = lambda z, e_: z if zh else e_
+        T = lambda z, e: z if zh else e
         L = [f"# v{V['version']} " + T(f"λ_max 扫描（{learner.upper()}）", f"λ_max sweep ({learner.upper()})"), "",
              T(f"- {sw['algo']}、种子 {SEEDS[0]}、{sw['steps'] / 1e6:g}M 步，λ_max ∈ {{{', '.join(f'{v:g}' for v in values)}}}；"
                "测试集 400 实例确定性评估。",
@@ -982,11 +982,11 @@ def write_lam_sweep(V, learner, rows, override=None) -> float:
                                                f"{nn(cell[(v, s)]['final_lambda']):.3f}" for s in SCENARIOS)
                      + f" | {pc(eff[v])} | {pc(free[v])} |")
         (V["out"] / (f"lam_sweep_{learner}.md" if zh else f"lam_sweep_{learner}.en.md")).write_text("\n".join(L) + "\n")
-    nan = lambda e: None if e is None or e != e else float(e)
+    nan = lambda x: None if x is None or x != x else float(x)
     (V["out"] / f"lam_sweep_{learner}.json").write_text(json.dumps(   # for the panel (docs/data_spec.md §2 rule 6)
         {"schema": 2, "learner": learner, "RL_algorithm": learner.upper(), "algo": sw["algo"], "steps": sw["steps"], "values": values,
          "chosen": best, "rule_choice": rule, "override": bool(override), "tie_pp": 100 * LAM_TIE,
-         "score": {f"{v:g}": nan(e) for v, e in eff.items()}, "viol_free_mean": {f"{v:g}": nan(e) for v, e in free.items()},
+         "score": {f"{v:g}": nan(x) for v, x in eff.items()}, "viol_free_mean": {f"{v:g}": nan(x) for v, x in free.items()},
          "rows": rows}, indent=1))
     print(f"[{time.strftime('%H:%M:%S')}] lambda_max sweep {learner}: " + ", ".join(f"{v:g} -> {100 * eff[v]:.2f}% / free {100 * free[v]:.1f}%" for v in values)
           + f" | chosen {best:g}", flush=True)
@@ -1000,14 +1000,14 @@ def choose_lam_max(V, exp_ids, learner) -> float:
     jobs = [(sw["algo"], sd, s, exp_ids[str(sd)][s][k]) for k in keys.values() for sd in SEEDS for s in SCENARIOS]
     with Pool(min(len(jobs), 18)) as pool:
         res = dict(pool.map(sweep_eval, jobs))
-    nan = lambda e: None if e != e else float(e)
+    nan = lambda x: None if x != x else float(x)
     rows = []
     for v, k in keys.items():
         for sd in SEEDS:
             for s in SCENARIOS:
                 eid = exp_ids[str(sd)][s][k]
-                e_, f, g, lam = res[(sw["algo"], sd, s, eid)]
-                rows.append({"lambda_max": v, "scenario": s, "seed": sd, "exp_id": eid, "eff_gap": nan(e_), "viol_free": nan(f),
+                e, f, g, lam = res[(sw["algo"], sd, s, eid)]
+                rows.append({"lambda_max": v, "scenario": s, "seed": sd, "exp_id": eid, "eff_gap": nan(e), "viol_free": nan(f),
                              "gap": nan(g), "final_lambda": nan(lam)})
     override = os.environ.get(f"V5_LAM_MAX_{learner.upper()}") or os.environ.get("V5_LAM_MAX")   # per learner, or all
     return write_lam_sweep(V, learner, rows, override)
@@ -1135,7 +1135,7 @@ def main():
     if stages:                                      # v5.0.2: one stage after the other
         learner = lambda r: V["cfg"]["variants"][r[2]][0].split("_")[-1]
         plan = [(st, [r for r in runs if learner(r) in st["learners"]]) for st in stages]
-        assert sum(len(e) for _, e in plan) == len(runs), "every run must belong to a stage"
+        assert sum(len(x) for _, x in plan) == len(runs), "every run must belong to a stage"
     else:
         plan = [({"name": "all", "parallel": V["cfg"].get("parallel"), "mps": V["cfg"].get("mps", V["mps"])}, runs)]
     failed = []

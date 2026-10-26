@@ -41,27 +41,27 @@ def load(version):
             exit_n=round(a.get("exit_rate", 0.0) * n),
             cap_tot=a["cap_viol_total"], conf_tot=a["conflict_viol_total"]))
     for v in data.values():
-        v.sort(key=lambda e: e["seed"])
+        v.sort(key=lambda x: x["seed"])
     return data
 
 
 def strict(v):
-    return all(e["cap_tot"] == 0 and e["conf_tot"] == 0 and e["exit_n"] == 0 for e in v)
+    return all(x["cap_tot"] == 0 and x["conf_tot"] == 0 and x["exit_n"] == 0 for x in v)
 
 
-def pct(e):
-    return f"{100 * e:.3f}%"
+def pct(x):
+    return f"{100 * x:.3f}%"
 
 
 def cell(v, key):
-    xs = [e[key] for e in v]
+    xs = [x[key] for x in v]
     return pct(st.mean(xs)) + (f" ± {pct(st.stdev(xs))}" if len(xs) > 1 else "")
 
 
 def build(version, data, lang):
     zh = lang == "zh"
     names = NAME[version][lang]
-    T = (lambda z, e_: z if zh else e_)
+    T = (lambda z, e: z if zh else e)
     L = [f"# {version} " + T("严格筛选报告", "strict report"), ""]
     L.append(T("20M 步，图网络，每个种子 400 个测试实例（测试集随种子划分，故各种子 ILP AR 略有不同），最终模型确定性评估。"
                "gap = 1 − AR / ILP AR，AR 只计合法放置。Mask / Repair 种子 1–3，Lagrangian 与无约束行种子 2–3。"
@@ -83,8 +83,8 @@ def build(version, data, lang):
     L.append("| " + T("场景 | 通过的组合（gap 均值 ± 种子间标准差）", "Scenario | Passing combinations (gap mean ± std over seeds)") + " |")
     L.append("|---|---|")
     for s in SCENS:
-        ok = [(st.mean(e["gap"] for e in data[(m_, s, l)]), names[m], l, data[(m_, s, l)])
-              for m, m_ in enumerate(MECHS) for l in LEARNERS if strict(data[(m_, s, l)])]
+        ok = [(st.mean(x["gap"] for x in data[(m, s, l)]), names[i], l, data[(m, s, l)])
+              for i, m in enumerate(MECHS) for l in LEARNERS if strict(data[(m, s, l)])]
         ok.sort(key=lambda t: t[0])
         txt = " · ".join(f"{'**' if k == 0 else ''}{n} {l.upper()} {cell(v, 'gap')}{'**' if k == 0 else ''}"
                          for k, (_, n, l, v) in enumerate(ok)) or T("无", "none")
@@ -95,12 +95,12 @@ def build(version, data, lang):
                "required and EXIT is allowed (EXIT instances / total instances, summed over seeds, in brackets):"))
     L.append("")
     for s in SCENS:
-        extra = [(st.mean(e["gap"] for e in data[(m_, s, l)]), names[m], l, data[(m_, s, l)])
-                 for m, m_ in enumerate(MECHS) for l in LEARNERS
-                 if not strict(data[(m_, s, l)]) and all(e["cap_tot"] == 0 and e["conf_tot"] == 0 for e in data[(m_, s, l)])]
+        extra = [(st.mean(x["gap"] for x in data[(m, s, l)]), names[i], l, data[(m, s, l)])
+                 for i, m in enumerate(MECHS) for l in LEARNERS
+                 if not strict(data[(m, s, l)]) and all(x["cap_tot"] == 0 and x["conf_tot"] == 0 for x in data[(m, s, l)])]
         extra.sort(key=lambda t: t[0])
-        txt = " · ".join(f"{n} {l.upper()} {cell(v, 'gap')}（EXIT {sum(e['exit_n'] for e in v)} / {sum(e['n'] for e in v)}）" if zh else
-                         f"{n} {l.upper()} {cell(v, 'gap')} (EXIT {sum(e['exit_n'] for e in v)} / {sum(e['n'] for e in v)})" for _, n, l, v in extra)
+        txt = " · ".join(f"{n} {l.upper()} {cell(v, 'gap')}（EXIT {sum(x['exit_n'] for x in v)} / {sum(x['n'] for x in v)}）" if zh else
+                         f"{n} {l.upper()} {cell(v, 'gap')} (EXIT {sum(x['exit_n'] for x in v)} / {sum(x['n'] for x in v)})" for _, n, l, v in extra)
         L.append(f"- {s.upper()}: " + (txt or T("无", "none")))
     L.append("")
 
@@ -113,8 +113,8 @@ def build(version, data, lang):
         L.append("")
         L.append("| " + T("机制", "Mechanism") + " | " + " | ".join(f"{s.upper()} {l.upper()}" for s in SCENS for l in LEARNERS) + " |")
         L.append("|---" * (1 + len(SCENS) * len(LEARNERS)) + "|")
-        for m, m_ in enumerate(MECHS):
-            L.append(f"| {names[m]} | " + " | ".join(cell(data[(m_, s, l)], key) for s in SCENS for l in LEARNERS) + " |")
+        for i, m in enumerate(MECHS):
+            L.append(f"| {names[i]} | " + " | ".join(cell(data[(m, s, l)], key) for s in SCENS for l in LEARNERS) + " |")
         L.append("")
 
     L.append("## " + T("逐 run 明细", "Per run"))
@@ -127,14 +127,14 @@ def build(version, data, lang):
                        "Mechanism | Scen | Algo | Seed | ILP AR | AR | gap | Cap viol instances / placements | "
                        "Privacy viol instances / placements | EXIT instances / total | Strict pass") + " |")
     L.append("|---" * 11 + "|")
-    for m, m_ in enumerate(MECHS):
+    for i, m in enumerate(MECHS):
         for s in SCENS:
             for l in LEARNERS:
-                for e in data[(m_, s, l)]:
-                    ok = e["cap_tot"] == 0 and e["conf_tot"] == 0 and e["exit_n"] == 0
-                    L.append(f"| {names[m]} | {s.upper()} | {l.upper()} | {e['seed']} | {e['ilp']:.6f} | {e['ar']:.6f} | "
-                             f"{pct(e['gap'])} | {e['cap_n']} / {e['cap_tot']} | {e['conf_n']} / {e['conf_tot']} | "
-                             f"{e['exit_n']} / {e['n']} | {'✓' if ok else '✗'} |")
+                for x in data[(m, s, l)]:
+                    ok = x["cap_tot"] == 0 and x["conf_tot"] == 0 and x["exit_n"] == 0
+                    L.append(f"| {names[i]} | {s.upper()} | {l.upper()} | {x['seed']} | {x['ilp']:.6f} | {x['ar']:.6f} | "
+                             f"{pct(x['gap'])} | {x['cap_n']} / {x['cap_tot']} | {x['conf_n']} / {x['conf_tot']} | "
+                             f"{x['exit_n']} / {x['n']} | {'✓' if ok else '✗'} |")
     L.append("")
     return "\n".join(L)
 

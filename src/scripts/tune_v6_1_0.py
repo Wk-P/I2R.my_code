@@ -78,7 +78,7 @@ def value(rows: list[dict]) -> float:
 
 def read_jsonl(path: Path) -> list[dict]:
     try:
-        return [json.loads(e) for e in path.read_text().splitlines() if e.strip()]
+        return [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
     except OSError:
         return []
 

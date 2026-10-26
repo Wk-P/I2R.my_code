@@ -67,8 +67,8 @@ def style_axis(ax):
     ax.set_axisbelow(True)
 
 
-def bar_with_labels(ax, e, values, errs, colors, fmt="{:.3f}", y_range=None, labels_inside=False):
-    bars = ax.bar(e, values, yerr=errs, color=colors, width=0.62,
+def bar_with_labels(ax, x, values, errs, colors, fmt="{:.3f}", y_range=None, labels_inside=False):
+    bars = ax.bar(x, values, yerr=errs, color=colors, width=0.62,
                    capsize=3, error_kw={"ecolor": TEXT_SECONDARY, "linewidth": 1.2}, zorder=3)
     if labels_inside:
         # AR bars can sit close to the ILP reference line -- an above-bar label
@@ -96,7 +96,7 @@ def make_scenario_figure(scenario: str, data: dict, out_path: Path):
     cap_v = [data["algos"][a]["cap_viol_mean"] for a in algos]
     conf_v = [data["algos"][a]["conflict_viol_mean"] for a in algos]
     colors = [ALGO_COLORS[a] for a in algos]
-    e = np.arange(len(algos))
+    x = np.arange(len(algos))
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.6))
     fig.patch.set_facecolor("#fcfcfb")
@@ -107,11 +107,11 @@ def make_scenario_figure(scenario: str, data: dict, out_path: Path):
     style_axis(ax)
     ilp = data["ilp_ar"]
     y_top = max(ar + [ilp]) * 1.20
-    bar_with_labels(ax, e, ar, ar_err, colors, y_range=y_top, labels_inside=True)
+    bar_with_labels(ax, x, ar, ar_err, colors, y_range=y_top, labels_inside=True)
     ax.axhline(ilp, color=TEXT_PRIMARY, linestyle="--", linewidth=1.4, zorder=4)
     ax.text(0.0, ilp + y_top * 0.02, f"ILP最优 {ilp:.3f}", fontsize=8.5,
             color=TEXT_PRIMARY, ha="left", va="bottom")
-    ax.set_xticks(e)
+    ax.set_xticks(x)
     ax.set_xticklabels([ALGO_LABELS[a] for a in algos], fontsize=8, rotation=20, ha="right")
     ax.set_ylim(0, y_top)
     ax.set_title("资源利用率 AR（均值±标准差）", fontsize=11, color=TEXT_PRIMARY, pad=10)
@@ -120,8 +120,8 @@ def make_scenario_figure(scenario: str, data: dict, out_path: Path):
     ax = axes[1]
     ax.set_facecolor("#fcfcfb")
     style_axis(ax)
-    bar_with_labels(ax, e, succ, succ_err, colors, fmt="{:.3f}")
-    ax.set_xticks(e)
+    bar_with_labels(ax, x, succ, succ_err, colors, fmt="{:.3f}")
+    ax.set_xticks(x)
     ax.set_xticklabels([ALGO_LABELS[a] for a in algos], fontsize=8, rotation=20, ha="right")
     ax.set_ylim(0, 1.18)
     ax.set_title("Success Rate（均值±标准差）", fontsize=11, color=TEXT_PRIMARY, pad=10)
@@ -131,12 +131,12 @@ def make_scenario_figure(scenario: str, data: dict, out_path: Path):
     ax.set_facecolor("#fcfcfb")
     style_axis(ax)
     w = 0.35
-    b1 = ax.bar(e - w / 2, cap_v, width=w, color=VIOL_COLORS["cap"], zorder=3, label="容量违规率")
-    b2 = ax.bar(e + w / 2, conf_v, width=w, color=VIOL_COLORS["conflict"], zorder=3, label="冲突违规率")
+    b1 = ax.bar(x - w / 2, cap_v, width=w, color=VIOL_COLORS["cap"], zorder=3, label="容量违规率")
+    b2 = ax.bar(x + w / 2, conf_v, width=w, color=VIOL_COLORS["conflict"], zorder=3, label="冲突违规率")
     for bar, v in zip(list(b1) + list(b2), cap_v + conf_v):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
                 f"{v:.2f}", ha="center", va="bottom", fontsize=7.5, color=TEXT_PRIMARY)
-    ax.set_xticks(e)
+    ax.set_xticks(x)
     ax.set_xticklabels([ALGO_LABELS[a] for a in algos], fontsize=8, rotation=20, ha="right")
     ax.set_ylim(0, 1.15)
     ax.legend(frameon=False, fontsize=8.5, loc="upper right")

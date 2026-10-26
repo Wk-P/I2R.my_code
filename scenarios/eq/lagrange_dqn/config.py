@@ -46,8 +46,8 @@ _rng = _random.Random(SEED)
 _idxs = list(range(len(SCENARIOS)))
 _rng.shuffle(_idxs)
 _n_train = int(0.8 * len(SCENARIOS))
-TRAIN_SCENARIOS = [SCENARIOS[m] for m in _idxs[:_n_train]]
-TEST_SCENARIOS  = [SCENARIOS[m] for m in _idxs[_n_train:]]
+TRAIN_SCENARIOS = [SCENARIOS[i] for i in _idxs[:_n_train]]
+TEST_SCENARIOS  = [SCENARIOS[i] for i in _idxs[_n_train:]]
 
 DEVICE      = "auto"
 N_ENVS      = 12

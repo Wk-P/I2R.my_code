@@ -47,12 +47,12 @@ def need(cond, msg):
 def episode(env, inst, mech, policy, rng, lam):
     """One episode with independent recomputation; returns a dict of what happened."""
     caps, dem = list(inst["ECUs"]), list(inst["SVCs"])
-    n_, m_ = len(caps), len(dem)
-    order = sorted(range(m_), key=lambda m: -dem[m])
+    n, m = len(caps), len(dem)
+    order = sorted(range(m), key=lambda i: -dem[i])
     sets = [set(s) for s in inst["conflict_sets"]]
     conflicts = lambda a, b: any(a in s and b in s for s in sets)
     rem = [float(c) for c in caps]
-    hosted = [set() for _ in range(n_)]
+    hosted = [set() for _ in range(n)]
     legal_ru, legal_e, m_v = 0.0, set(), 0
     n_cap = n_conf = 0
     if mech == "lagrange":
@@ -61,29 +61,29 @@ def episode(env, inst, mech, policy, rng, lam):
     env.reset()
     need(list(env.order) == order, f"order {env.order} != descending demand {order}")
     rewards, dead_steps, exited, steps = [], 0, False, 0
-    for t in range(m_):
+    for t in range(m):
         s = order[t]
-        feas = [rem[n] >= dem[s] and not any(conflicts(s, h) for h in hosted[n]) for n in range(n_)]
+        feas = [rem[j] >= dem[s] and not any(conflicts(s, h) for h in hosted[j]) for j in range(n)]
         if mech == "mask":
             mask = env.action_masks()
-            need(len(mask) == n_ + 1, f"mask length {len(mask)} != N + 1 {n_ + 1} (Maskable must have EXIT)")
+            need(len(mask) == n + 1, f"mask length {len(mask)} != N + 1 {n + 1} (Maskable must have EXIT)")
             need(list(mask) == feas + [not any(feas)], f"t={t}: mask {list(mask)} != feasible {feas} + EXIT")
             a = int(rng.choice(np.flatnonzero(mask)))
         else:
-            a = policy(feas, rng, n_)
+            a = policy(feas, rng, n)
         steps += 1
-        if mech == "mask" and a == n_:                                  # EXIT
+        if mech == "mask" and a == n:                                  # EXIT
             dead_steps += 1
             _, r, done, trunc, info = env.step(a)
-            exp_r = m_v / m_ - 1.0
+            exp_r = m_v / m - 1.0
             need(done and not trunc and info["exited"], f"t={t}: EXIT must end the episode")
             need(abs(r - exp_r) < 1e-5, f"t={t} EXIT: reward {r} != M_v/M - 1 = {exp_r}")
             rewards.append(r)
             exited = True
             break
         if mech == "repair" and not feas[a] and any(feas):
-            cand = [n for n in range(n_) if feas[n]]
-            want = max(cand, key=lambda n: (np.float32(dem[s]) / np.float32(caps[n]), -cand.index(n)))
+            cand = [j for j in range(n) if feas[j]]
+            want = max(cand, key=lambda j: (np.float32(dem[s]) / np.float32(caps[j]), -cand.index(j)))
         else:
             want = a
         dead_steps += not any(feas)
@@ -99,12 +99,12 @@ def episode(env, inst, mech, policy, rng, lam):
             m_v += 1
             legal_ru += dem[s] / caps[want]
             legal_e.add(want)
-        need(done == (t == m_ - 1), f"t={t}: done={done} (full episode must have exactly M={m_} steps)")
+        need(done == (t == m - 1), f"t={t}: done={done} (full episode must have exactly M={m} steps)")
         need(not trunc, "truncated")
         need(bool(info["cap_violated"]) == cv and bool(info["conflict_violated"]) == fv,
              f"t={t}: step violation flags {info['cap_violated']},{info['conflict_violated']} != {cv},{fv}")
         if done:                                    # ar_pen terminal, no factor M
-            exp_r = legal_ru / len(legal_e) if m_v == m_ else m_v / m_ - 1.0
+            exp_r = legal_ru / len(legal_e) if m_v == m else m_v / m - 1.0
         else:
             exp_r = 0.0
         if mech == "lagrange":
@@ -123,7 +123,7 @@ def episode(env, inst, mech, policy, rng, lam):
         need(n_cap == 0 and n_conf == 0, "Maskable placed a violating service (EXIT must take the dead end)")
         need(exited == (dead_steps > 0), "Maskable reached a dead end without EXIT")
     else:
-        need(steps == m_, f"{mech}: {steps} steps != M")
+        need(steps == m, f"{mech}: {steps} steps != M")
     if mech == "repair":
         need(clean or dead_steps > 0, "Repair violated with a feasible ECU available")
     return {"clean": clean, "ar": ar, "ar_star": inst["ar_star"], "ret": float(sum(rewards)), "cap": n_cap, "conf": n_conf,
@@ -145,10 +145,10 @@ def check_dual():
         cb.model = types.SimpleNamespace(get_env=lambda: VE())   # SB3: training_env is model.get_env()
         cb.num_timesteps = 0
         lams = []
-        for n in seq:
-            cb._step_lambda(n, n)
+        for j in seq:
+            cb._step_lambda(j, j)
             lams.append(round(cb.lam, 6))
-        need(all(e >= 0 for e in lams), "lambda < 0")
+        need(all(x >= 0 for x in lams), "lambda < 0")
         out[name] = lams
     need(out["J>d"][0] > 0.001 and all(b > a for a, b in zip(out["J>d"], out["J>d"][1:])), "lambda must rise while J_C > d")
     return out
@@ -162,8 +162,8 @@ def main():
     from paper_rl.env import PlacementEnv
     rng = random.Random(0)
     nrng = np.random.default_rng(0)
-    policies = {"random": lambda f, r, n_: int(r.integers(n_)),
-                "feasible-first": lambda f, r, n_: int(r.choice([n for n in range(n_) if f[n]] or list(range(n_))))}
+    policies = {"random": lambda f, r, n: int(r.integers(n)),
+                "feasible-first": lambda f, r, n: int(r.choice([j for j in range(n) if f[j]] or list(range(n))))}
     summary, total = {}, 0
     for scen in ("eq", "gt", "lt"):
         pool = json.loads((ROOT / POOL.format(scen=scen)).read_text())
@@ -173,7 +173,7 @@ def main():
                                lam_max=float("inf"))
             need(env.action_space.n == env.N + (mech == "mask"), "action space must be N (+ EXIT for Maskable only)")
             for pname, pol in policies.items():
-                res = [episode(env, e, mech, pol, nrng, 0.7) for e in insts]
+                res = [episode(env, x, mech, pol, nrng, 0.7) for x in insts]
                 total += len(res)
                 summary[f"{scen}/{mech}/{pname}"] = {
                     "episodes": len(res), "violation_free": float(np.mean([r["clean"] for r in res])),

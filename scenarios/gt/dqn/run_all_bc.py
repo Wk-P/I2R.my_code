@@ -44,7 +44,7 @@ def train_dqn_bc(ecus, services, device: str):
     sys.stdout.flush()
     n_envs = max(1, int(C.N_ENVS))
     env = DummyVecEnv(
-        [functools.partial(RA._make_dqn_env, C.SEED + m) for m in range(n_envs)],
+        [functools.partial(RA._make_dqn_env, C.SEED + i) for i in range(n_envs)],
     )
     print(f"  Using DummyVecEnv: n_envs={n_envs}")
     cb = RA.DQNCallback()

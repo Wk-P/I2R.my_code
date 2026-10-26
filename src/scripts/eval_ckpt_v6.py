@@ -76,7 +76,7 @@ def pct(v):
 
 def build(rows, lang, minutes):
     zh = lang == "zh"
-    T = (lambda z, e_: z if zh else e_)
+    T = (lambda z, e: z if zh else e)
     L = ["# v6.0.3 " + T("checkpoint 测试评估", "checkpoint test evaluation"), ""]
     L.append(T(f"- 生成时间 {time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/eval_ckpt_v6.py`；耗时 {minutes:.1f} 分钟；不训练。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/eval_ckpt_v6.py`; took {minutes:.1f} min; no training."))
@@ -100,7 +100,7 @@ def build(rows, lang, minutes):
                     continue
                 cell = lambda step, k: (lambda xs: pct(st.mean(xs)) + (f" ± {pct(st.stdev(xs))}" if len(xs) > 1 else ""))(
                     [r["points"][str(step)][k] for r in g])
-                L.append(f"| {NAME[(m, v)]} | {l.upper()} | " + " | ".join(cell(e, "gap") for e in STEPS + [20_000_000]) + " | "
+                L.append(f"| {NAME[(m, v)]} | {l.upper()} | " + " | ".join(cell(x, "gap") for x in STEPS + [20_000_000]) + " | "
                          + " | ".join(cell(20_000_000, k) for k in ("cap", "conf", "exit")) + " |")
         L.append("")
     return "\n".join(L)
@@ -117,10 +117,10 @@ def main():
     print(f"{len(rs)} runs, {len(tasks)} checkpoint evaluations", flush=True)
     pts = {}
     with Pool(a.workers) as pool:
-        for m, (eid, step, p) in enumerate(pool.imap_unordered(eval_ckpt, tasks), 1):
+        for i, (eid, step, p) in enumerate(pool.imap_unordered(eval_ckpt, tasks), 1):
             pts.setdefault(eid, {})[str(step)] = p
-            if m % 20 == 0 or m == len(tasks):
-                print(f"[ckpt] {m}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
+            if i % 20 == 0 or i == len(tasks):
+                print(f"[ckpt] {i}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
     rows = []
     for r in rs:
         res = r["res"]

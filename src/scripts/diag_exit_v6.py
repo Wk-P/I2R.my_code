@@ -75,13 +75,13 @@ def replay(run):
 def analyse(args):
     """t_inf / t_cheap / t_exit and the blocking cause at the EXIT for one EXIT trajectory."""
     from shared.ilp_utils import solve_ilp_max_ar
-    e, steps = args
-    caps, reqs, sets = e["ECUs"], e["SVCs"], e["conflict_sets"]
-    n_, m_ = len(caps), len(reqs)
-    partners = [set() for _ in range(m_)]
+    x, steps = args
+    caps, reqs, sets = x["ECUs"], x["SVCs"], x["conflict_sets"]
+    n, m = len(caps), len(reqs)
+    partners = [set() for _ in range(m)]
     for s in sets:
-        for m in s:
-            partners[m] |= set(s) - {m}
+        for i in s:
+            partners[i] |= set(s) - {i}
 
     def feasible_ilp(t):
         r = solve_ilp_max_ar(caps, reqs, sets, max_iter=1, fixed=dict(steps[:t]))
@@ -90,13 +90,13 @@ def analyse(args):
     def blocked(t):
         """per unplaced service: per ECU (cap_blocked, conf_blocked) after the first t placements"""
         rem = list(caps)
-        hosted = [set() for _ in range(n_)]
-        for m, n in steps[:t]:
-            rem[n] -= reqs[m]
-            hosted[n].add(m)
-        placed = {m for m, _ in steps[:t]}
-        return {m: [(rem[n] < reqs[m], bool(partners[m] & hosted[n])) for n in range(n_)]
-                for m in range(m_) if m not in placed}
+        hosted = [set() for _ in range(n)]
+        for i, j in steps[:t]:
+            rem[j] -= reqs[i]
+            hosted[j].add(i)
+        placed = {i for i, _ in steps[:t]}
+        return {i: [(rem[j] < reqs[i], bool(partners[i] & hosted[j])) for j in range(n)]
+                for i in range(m) if i not in placed}
 
     t_exit = len(steps)
     assert feasible_ilp(0), "instance must be ILP-feasible"
@@ -104,11 +104,11 @@ def analyse(args):
     t_inf = next(t for t in range(1, t_exit + 1) if not feasible_ilp(t))
     t_cheap = next(t for t in range(t_exit + 1) if any(not any(not c and not f for c, f in b) for b in blocked(t).values()))
     nxt = blocked(t_exit)
-    svc = next(m for m in nxt if not any(not c and not f for c, f in nxt[m]))
+    svc = next(i for i in nxt if not any(not c and not f for c, f in nxt[i]))
     cause = nxt[svc]
-    return dict(t_inf=t_inf, t_cheap=t_cheap, t_exit=t_exit, M=m_,
+    return dict(t_inf=t_inf, t_cheap=t_cheap, t_exit=t_exit, M=m,
                 cap_only=sum(c and not f for c, f in cause), conf_only=sum(f and not c for c, f in cause),
-                both=sum(c and f for c, f in cause), N=n_)
+                both=sum(c and f for c, f in cause), N=n)
 
 
 def pct(v):
@@ -220,7 +220,7 @@ def main():
                 tasks.append((test[e["k"]], e["steps"]))
                 info.append(dict(scen=run["scen"], learner=run["learner"], seed=run["seed"], k=e["k"]))
         print(f"{len(tasks)} EXIT instances to analyse", flush=True)
-        rows = [{**m, **r} for m, r in zip(info, pool.map(analyse, tasks, chunksize=1))]
+        rows = [{**i, **r} for i, r in zip(info, pool.map(analyse, tasks, chunksize=1))]
     minutes = (time.time() - t0) / 60
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "exit_diag.json").write_text(json.dumps(rows, indent=1))

@@ -39,7 +39,7 @@ def test_split(scen, version, seed):
     inst = load(scen, version)["instances"]
     idx = list(range(len(inst)))
     random.Random(seed).shuffle(idx)                   # same as paper_rl.train.split_instances
-    return [inst[m] for m in idx[int(0.8 * len(inst)):]]
+    return [inst[i] for i in idx[int(0.8 * len(inst)):]]
 
 
 def replay(job):
@@ -53,8 +53,8 @@ def replay(job):
     seed = job[6] if len(job) > 6 else SEED                   # v4.4.5: test split of the run's own training seed
     mech, learner = split_algo(algo)
     test = test_split(scen, version, seed)
-    n_, m_ = len(test[0]["ECUs"]), len(test[0]["SVCs"])
-    predict, obs_mode = load_policy(scen, algo, exp_id, pattern, n_, m_)   # v4.4.3: any policy / observation
+    n, m = len(test[0]["ECUs"]), len(test[0]["SVCs"])
+    predict, obs_mode = load_policy(scen, algo, exp_id, pattern, n, m)   # v4.4.3: any policy / observation
     env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode,
                        **env_order(scen, algo, exp_id))
     opens, insts = [], []
@@ -65,16 +65,16 @@ def replay(job):
         while not done:
             a = predict(obs, env.action_masks())
             if a < env.N:
-                m = env.t
-                active = [n for n in range(env.N) if env.hosted[n]]
+                i = env.t
+                active = [j for j in range(env.N) if env.hosted[j]]
                 if a not in active:
-                    feas = env._feasible(m)
-                    inactive_ok = [n for n in range(env.N) if feas[n] and n not in active]
-                    u = float(env.req[m] / env.cap[a])
-                    u_best = max(float(env.req[m] / env.cap[n]) for n in inactive_ok)
-                    kind = "first" if not active else ("voluntary" if any(feas[n] for n in active) else "forced")
+                    feas = env._feasible(i)
+                    inactive_ok = [j for j in range(env.N) if feas[j] and j not in active]
+                    u = float(env.req[i] / env.cap[a])
+                    u_best = max(float(env.req[i] / env.cap[j]) for j in inactive_ok)
+                    kind = "first" if not active else ("voluntary" if any(feas[j] for j in active) else "forced")
                     # forced: did some active ECU have room but a privacy conflict?
-                    room = any(env.remaining[n] >= env.req[m] for n in active)
+                    room = any(env.remaining[j] >= env.req[i] for j in active)
                     opens.append({"kind": kind, "u": u, "u_best": u_best, "du": u_best - u, "room": room})
                     n_vol += kind == "voluntary"
                     sum_du += u_best - u
@@ -82,16 +82,16 @@ def replay(job):
         if not info["exited"]:
             ilp = test[k]["ar_star"]
             insts.append({"ar": info["ar"], "ilp": ilp, "gap": ilp - info["ar"], "rel": (ilp - info["ar"]) / ilp,
-                          "act": len([n for n in range(env.N) if env.hosted[n]]), "ilp_act": test[k]["ilp_active_ecus"],
+                          "act": len([j for j in range(env.N) if env.hosted[j]]), "ilp_act": test[k]["ilp_active_ecus"],
                           "n_vol": n_vol, "sum_du": sum_du, "k": k})
     return job, opens, insts, len(test)
 
 
-def spearman(e, c):
+def spearman(x, y):
     from scipy.stats import spearmanr
-    if len(set(e)) < 2 or len(set(c)) < 2:
+    if len(set(x)) < 2 or len(set(y)) < 2:
         return "—"
-    r, p = spearmanr(e, c)
+    r, p = spearmanr(x, y)
     return f"{r:+.2f}（p={p:.1g}）"
 
 
@@ -132,7 +132,7 @@ def main():
                          f"{pc(1 - np.mean([o['room'] for o in frc]))} | {m(frc, 'u')} | {m(frc, 'u_best')} | {m(frc, 'du')} | "
                          f"{m(fst, 'du')} | {m(vol, 'du')} |")
             if insts:
-                g = lambda key: [e[key] for e in insts]
+                g = lambda key: [x[key] for x in insts]
                 extra = np.array(g("act")) - np.array(g("ilp_act"))
                 rows2.append(f"| {scen.upper()} | {len(insts)}/{n} | {np.mean(g('act')):.2f} | {np.mean(g('ilp_act')):.2f} | "
                              f"{np.mean(extra):+.2f} | {pc(np.mean(np.array(g('n_vol')) > 0))} | {f4(np.mean(g('gap')))} | "

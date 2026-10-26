@@ -63,8 +63,8 @@ def same_run(a: Path, b: Path) -> tuple[bool, str]:
     ra = list(csv.reader(open(a / "training_curve.csv")))
     rb = list(csv.reader(open(b / "training_curve.csv")))
     w = min(len(ra[0]), len(rb[0]))
-    if len(ra) != len(rb) or any(e[:w] != c[:w] for e, c in zip(ra, rb)):
-        k = next((m for m, (e, c) in enumerate(zip(ra, rb)) if e[:w] != c[:w]), min(len(ra), len(rb)))
+    if len(ra) != len(rb) or any(x[:w] != y[:w] for x, y in zip(ra, rb)):
+        k = next((i for i, (x, y) in enumerate(zip(ra, rb)) if x[:w] != y[:w]), min(len(ra), len(rb)))
         return False, f"training_curve.csv differs from row {k} ({len(ra)} vs {len(rb)} rows)"
     res = json.loads((a / "results.json").read_text())
     from paper_rl.train import split_algo
@@ -168,7 +168,7 @@ def speed(a):
         if mps:
             v5.mps_stop()
         r = [rate(log, a.steps // 2) for log, _ in procs]
-        r = [e for e in r if e]
+        r = [x for x in r if x]
         rows.append((name, numa, mps, extra, sum(r) / len(r), sum(r)))
         print(f"[speed] {name}: {sum(r) / len(r):.0f} steps/s per run, {sum(r):.0f} in total", flush=True)
     base = rows[0][5]

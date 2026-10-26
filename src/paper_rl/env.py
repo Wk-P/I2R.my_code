@@ -99,15 +99,15 @@ ORDERS = ("desc", "asc", "random")
 def service_order(inst: dict, mode: str = "desc", seed: int = 0) -> list[int]:
     """Placement order of the services (v4.4.7): desc / asc demand (stable), or a fixed random
     permutation per instance (seeded by the instance content and `seed`)."""
-    m_ = len(inst["SVCs"])
+    m = len(inst["SVCs"])
     if mode == "desc":
-        return sorted(range(m_), key=lambda m: -inst["SVCs"][m])
+        return sorted(range(m), key=lambda i: -inst["SVCs"][i])
     if mode == "asc":
-        return sorted(range(m_), key=lambda m: inst["SVCs"][m])
+        return sorted(range(m), key=lambda i: inst["SVCs"][i])
     import hashlib
     import json
     key = json.dumps([inst["ECUs"], inst["SVCs"], inst["conflict_sets"], seed]).encode()
-    return [int(m) for m in np.random.default_rng(int.from_bytes(hashlib.sha256(key).digest()[:8], "little")).permutation(m_)]
+    return [int(i) for i in np.random.default_rng(int.from_bytes(hashlib.sha256(key).digest()[:8], "little")).permutation(m)]
 
 
 OBS_MODES = ("base", "conflict", "feas", "raw")   # raw: v4.4.3, state for src/paper_rl/graph_net
@@ -211,14 +211,14 @@ class PlacementEnv(gym.Env):
         self.order = order                                  # placement position -> original service index
         pos = {old: new for new, old in enumerate(order)}
         self.cap = np.array(inst["ECUs"], dtype=np.float32)
-        self.req = np.array([inst["SVCs"][m] for m in order], dtype=np.float32)
-        self.sets = [frozenset(pos[m] for m in s) for s in inst["conflict_sets"]]
-        self.partners = [set().union(*(s for s in self.sets if m in s)) - {m} if any(m in s for s in self.sets)
-                         else set() for m in range(self.M)]
+        self.req = np.array([inst["SVCs"][i] for i in order], dtype=np.float32)
+        self.sets = [frozenset(pos[i] for i in s) for s in inst["conflict_sets"]]
+        self.partners = [set().union(*(s for s in self.sets if i in s)) - {i} if any(i in s for s in self.sets)
+                         else set() for i in range(self.M)]
         self.max_cap = float(self.cap.max())
         adj = np.zeros((self.M, self.M), dtype=np.float32)
-        for m, ps in enumerate(self.partners):
-            adj[m, list(ps)] = 1.0
+        for i, ps in enumerate(self.partners):
+            adj[i, list(ps)] = 1.0
         self.conflict_pairs = adj[self._pairs]           # raw conflict graph, upper triangle
         self._adj_flat = adj.ravel()                     # v5.0.0: raw observation parts, built once per episode
         self._assign = np.zeros(self.M, dtype=np.float32)   # ECU + 1 of every placed service, updated on placement
@@ -240,12 +240,12 @@ class PlacementEnv(gym.Env):
         return self._obs(), {}
 
     # ── constraints ─────────────────────────────────────────────────────────
-    def _conflict(self, n: int, m: int) -> bool:
-        return bool(self.partners[m] & self.hosted[n])
+    def _conflict(self, j: int, i: int) -> bool:
+        return bool(self.partners[i] & self.hosted[j])
 
-    def _feasible(self, m: int) -> np.ndarray:
-        return np.array([self.remaining[n] >= self.req[m] and not self._conflict(n, m)
-                         for n in range(self.N)], dtype=bool)
+    def _feasible(self, i: int) -> np.ndarray:
+        return np.array([self.remaining[j] >= self.req[i] and not self._conflict(j, i)
+                         for j in range(self.N)], dtype=bool)
 
     def action_masks(self) -> np.ndarray:
         if self.t >= self.M or self.mechanism != "mask":
@@ -289,12 +289,12 @@ class PlacementEnv(gym.Env):
         allowance (3N) | per service: demand if unplaced, placed flag, feasible-ECU share,
         conflicts with other unplaced services / M (4M) | (service, ECU) feasibility = the
         action mask (M x N, read by MaskableDQN) | lambda (1)."""
-        n_, m, mc = self.N, self.M, self.max_cap
+        n, m, mc = self.N, self.M, self.max_cap
         total_cap = float(self.cap.sum())
         un = ~self.placed
         F = self._joint_feasible()
-        allowed = np.array([1.0 - len(set().union(*(self.partners[h] for h in self.hosted[n])) - self.hosted[n]) / m
-                            if self.hosted[n] else 1.0 for n in range(n_)], dtype=np.float32)
+        allowed = np.array([1.0 - len(set().union(*(self.partners[h] for h in self.hosted[j])) - self.hosted[j]) / m
+                            if self.hosted[j] else 1.0 for j in range(n)], dtype=np.float32)
         conf = np.array([len(self.partners[k] & set(np.flatnonzero(un))) / m if un[k] else 0.0
                          for k in range(m)], dtype=np.float32)
         lam_norm = self._lam_obs() if self.mechanism == "lagrange" else 0.0
@@ -312,29 +312,29 @@ class PlacementEnv(gym.Env):
             return self._obs_joint()
         if self.obs_mode == "raw":
             return self._raw_obs()
-        n_, m_, mc = self.N, self.M, self.max_cap
+        n, m, mc = self.N, self.M, self.max_cap
         total_cap = float(self.cap.sum())
-        if self.t < m_:
-            m = self.t
-            feas = self._feasible(m)
-            conflict = np.array([self._conflict(n, m) for n in range(n_)], dtype=np.float32)
-            head = [self.req[m] / mc, feas.mean()]
+        if self.t < m:
+            i = self.t
+            feas = self._feasible(i)
+            conflict = np.array([self._conflict(j, i) for j in range(n)], dtype=np.float32)
+            head = [self.req[i] / mc, feas.mean()]
         else:
-            feas = np.zeros(n_, dtype=bool)
-            conflict = np.zeros(n_, dtype=np.float32)
+            feas = np.zeros(n, dtype=bool)
+            conflict = np.zeros(n, dtype=np.float32)
             head = [0.0, 0.0]
-        rem_svcs = np.where(np.arange(m_) >= self.t, self.req / mc, 0.0)
-        svc_valid = np.zeros(m_, dtype=np.float32)
-        for k in range(self.t, m_):
+        rem_svcs = np.where(np.arange(m) >= self.t, self.req / mc, 0.0)
+        svc_valid = np.zeros(m, dtype=np.float32)
+        for k in range(self.t, m):
             svc_valid[k] = self._feasible(k).mean()
-        allowed = np.array([1.0 - len(set().union(*(self.partners[h] for h in self.hosted[n])) - self.hosted[n]) / m_
-                            if self.hosted[n] else 1.0 for n in range(n_)], dtype=np.float32)
+        allowed = np.array([1.0 - len(set().union(*(self.partners[h] for h in self.hosted[j])) - self.hosted[j]) / m
+                            if self.hosted[j] else 1.0 for j in range(n)], dtype=np.float32)
         lam_norm = self._lam_obs() if self.mechanism == "lagrange" else 0.0
         return np.concatenate([
             [head[0], self.ar,
              np.clip(self.remaining, 0, None).sum() / total_cap,
              self.req[self.t:].sum() / total_cap,
-             head[1], (m_ - self.t) / m_],
+             head[1], (m - self.t) / m],
             self.cap / mc,
             np.clip(self.remaining / mc, -1.0, 1.0),
             conflict,
@@ -380,8 +380,8 @@ class PlacementEnv(gym.Env):
         conflict and both are still unplaced (current service included), else 0."""
         if self.obs_mode != "conflict":
             return np.zeros(0, dtype=np.float32)
-        m, n = self._pairs
-        return self.conflict_pairs * ((m >= self.t) & (n >= self.t))
+        i, j = self._pairs
+        return self.conflict_pairs * ((i >= self.t) & (j >= self.t))
 
     # ── step ────────────────────────────────────────────────────────────────
     def _fail_reward(self) -> float:
@@ -418,7 +418,7 @@ class PlacementEnv(gym.Env):
         return r
 
     def step(self, action: int):
-        m, a = self.t, int(action)
+        i, a = self.t, int(action)
         ar0 = self.ar
         directional = self.reward_mode == "directional"
         n_place = self.M * self.N if self.joint else self.N
@@ -426,13 +426,13 @@ class PlacementEnv(gym.Env):
             self.exited = True
             return self._obs(), float(self._tel(self._fail_reward(), True, ar0)), True, False, self._info()
         if self.joint:
-            m, a = divmod(a, self.N)
-            assert not self.placed[m], "service already placed"
+            i, a = divmod(a, self.N)
+            assert not self.placed[i], "service already placed"
 
-        if self.full_episode and self.mechanism == "mask" and not self._feasible(m).any():
+        if self.full_episode and self.mechanism == "mask" and not self._feasible(i).any():
             self.dead_end = True                          # all-True mask: placement will violate
         if self.mechanism == "repair":
-            feas = self._feasible(m)
+            feas = self._feasible(i)
             if not feas[a]:
                 if not feas.any() and self.full_episode:  # nothing to repair to: keep the action
                     self.dead_end = True
@@ -442,23 +442,23 @@ class PlacementEnv(gym.Env):
                     return self._obs(), r, True, False, self._info()
                 if feas.any():
                     cand = np.flatnonzero(feas)
-                    a = int(cand[np.argmax(self.req[m] / self.cap[cand])])
+                    a = int(cand[np.argmax(self.req[i] / self.cap[cand])])
                     self.repairs += 1
 
-        cap_v = bool(self.remaining[a] < self.req[m])
-        conf_v = self._conflict(a, m)
+        cap_v = bool(self.remaining[a] < self.req[i])
+        conf_v = self._conflict(a, i)
         self.cap_violations += cap_v
         self.conflict_violations += conf_v
-        self.remaining[a] -= self.req[m]
-        self.hosted[a].add(m)
-        self._assign[m] = a + 1
-        self.exec_ru += float(self.req[m] / self.cap[a])
+        self.remaining[a] -= self.req[i]
+        self.hosted[a].add(i)
+        self._assign[i] = a + 1
+        self.exec_ru += float(self.req[i] / self.cap[a])
         self.exec_ecus.add(a)
         if not (cap_v or conf_v):
             self.valid_placed += 1
-            self.legal_ru += float(self.req[m] / self.cap[a])
+            self.legal_ru += float(self.req[i] / self.cap[a])
             self.legal_ecus.add(a)
-        self.placed[m] = True
+        self.placed[i] = True
         self.t += 1
         done = self.t >= self.M
         success = done and self.valid_placed == self.M

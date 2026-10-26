@@ -23,7 +23,7 @@ def _environ(pid: int) -> dict:
         raw = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
     except OSError:
         return {}
-    return {k.decode(errors="ignore"): v.decode(errors="ignore") for k, _, v in (e.partition(b"=") for e in raw) if k}
+    return {k.decode(errors="ignore"): v.decode(errors="ignore") for k, _, v in (x.partition(b"=") for x in raw) if k}
 
 
 def _arg(tokens: list[str], flag: str) -> str | None:
@@ -69,9 +69,9 @@ def processes() -> list[dict]:
                          mps=bool(env.get("CUDA_MPS_PIPE_DIRECTORY")))
                 if p["batch"] and p["exp_id"]:
                     p["live"] = run_live(p["batch"], p["exp_id"])
-                p["label"] = " · ".join(e for e in (p["batch"], (p["scenario"] or "").upper(), p["key"] or p["algo"]) if e)
+                p["label"] = " · ".join(x for x in (p["batch"], (p["scenario"] or "").upper(), p["key"] or p["algo"]) if x)
             else:
-                at = next((m for m, e in enumerate(tok) if e.endswith(".py") or e == "-m"), None)
+                at = next((i for i, x in enumerate(tok) if x.endswith(".py") or x == "-m"), None)
                 if at is None:
                     p["label"] = cmd[:80]
                 else:
@@ -184,7 +184,7 @@ def report_stage(batch: str) -> dict | None:
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:
         return None
-    done = max((m for m, l in enumerate(lines) if l.startswith("=== done")), default=None)
+    done = max((i for i, l in enumerate(lines) if l.startswith("=== done")), default=None)
     if done is None:
         return None
     after = lines[done + 1:]
@@ -218,9 +218,9 @@ def _smi(args: list[str]) -> str:
         return ""
 
 
-def _num(e):
+def _num(x):
     try:
-        return float(e)
+        return float(x)
     except ValueError:
         return None
 
@@ -228,7 +228,7 @@ def _num(e):
 def gpus() -> list[dict]:
     out, by_uuid = [], {}
     for line in _smi([f"--query-gpu={','.join(GPU_FIELDS)}", "--format=csv,noheader,nounits"]).strip().splitlines():
-        f = [e.strip() for e in line.split(",")]
+        f = [x.strip() for x in line.split(",")]
         if len(f) != len(GPU_FIELDS):
             continue
         r = dict(zip(GPU_FIELDS, f))
@@ -239,7 +239,7 @@ def gpus() -> list[dict]:
         out.append(g)
         by_uuid[r["uuid"]] = g
     for line in _smi(["--query-compute-apps=gpu_uuid,pid", "--format=csv,noheader,nounits"]).strip().splitlines():
-        f = [e.strip() for e in line.split(",")]
+        f = [x.strip() for x in line.split(",")]
         if len(f) == 2 and f[0] in by_uuid and f[1].isdigit():
             by_uuid[f[0]]["procs"] += 1
             by_uuid[f[0]]["pids"].append(int(f[1]))
@@ -291,7 +291,7 @@ def _cpu_times() -> tuple[int, int] | None:
     line = (_read(Path("/proc/stat")) or "").splitlines()[0:1]
     if not line:
         return None
-    f = [int(e) for e in line[0].split()[1:]]
+    f = [int(x) for x in line[0].split()[1:]]
     idle = f[3] + (f[4] if len(f) > 4 else 0)
     return sum(f), idle
 
@@ -310,7 +310,7 @@ def cpu_sample() -> dict:
         out["util"] = round(100 * (1 - di / dt), 1) if dt > 0 else None
     if t:
         _cpu_prev["times"] = t
-    freqs = [int(e) for p in Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq/scaling_cur_freq") if (e := _read(p))]
+    freqs = [int(x) for p in Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq/scaling_cur_freq") if (x := _read(p))]
     if freqs:
         out["freq"] = round(sum(freqs) / len(freqs) / 1000)
         out["freq_max"] = round(int(_read(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")) or 0) / 1000) or None
@@ -323,16 +323,16 @@ def cpu_sample() -> dict:
                         out["temps"].append({"name": _read(lab), "c": int(v) / 1000})
     readable = True
     for d in _rapl_domains():
-        e_ = _read(d / "energy_uj")
+        e = _read(d / "energy_uj")
         name = _read(d / "name") or d.name
-        if e_ is None:
+        if e is None:
             readable = False
             continue
-        key, e_ = f"rapl:{d.name}", int(e_)
+        key, e = f"rapl:{d.name}", int(e)
         prev = _cpu_prev.get(key)
-        _cpu_prev[key] = (e_, now)
+        _cpu_prev[key] = (e, now)
         if prev and now > prev[1]:
-            de = e_ - prev[0]
+            de = e - prev[0]
             if de < 0:                                   # counter wrapped
                 de += int(_read(d / "max_energy_range_uj") or 0)
             out["power"].append({"name": name if ":" not in d.name[11:] else f"{name} {d.name.split(':')[1]}", "w": round(de / 1e6 / (now - prev[1]), 1)})
@@ -352,7 +352,7 @@ def _sampler():
                     "clocks_event_reasons.active", "--format=csv,noheader,nounits"])
         row = []
         for line in out.strip().splitlines():
-            f = [e.strip() for e in line.split(",")]
+            f = [x.strip() for x in line.split(",")]
             if len(f) == 8:
                 row.append({"i": int(f[0]), "util": _num(f[1]), "temp": _num(f[2]), "power": _num(f[3]), "mem": _num(f[4]),
                             "clock": _num(f[5]), "max": _num(f[6]), "thr": [t["bit"] for t in _throttle(f[7])]})

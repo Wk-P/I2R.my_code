@@ -110,8 +110,8 @@ class LagrangeEnv(gym.Env):
     def _init_conflict_sets(self, K: int = 10) -> list[set]:
         sets = []
         for _ in range(K):
-            n = random.randint(2, self.M)
-            sets.append(set(random.sample(range(self.M), n)))
+            j = random.randint(2, self.M)
+            sets.append(set(random.sample(range(self.M), j)))
         return sets
 
     def _has_conflict(self, ecu_idx: int, svc_idx: int) -> bool:
@@ -139,8 +139,8 @@ class LagrangeEnv(gym.Env):
         if self._scenarios is not None:
             caps, reqs, _cs = random.choice(self._scenarios)
             self._sc = (caps, reqs, _cs)
-            self.ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
-            self.services = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
+            self.ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
+            self.services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
             self.initial_vms = np.array([e.capacity for e in self.ecus], dtype=np.float32)
             self.conflict_sets = [set(s) for s in _cs]
         else:
@@ -148,8 +148,8 @@ class LagrangeEnv(gym.Env):
 
         # Sort services descending by requirement (FFD order).
         # Remap conflict_set indices so self._step always indexes sorted services.
-        sort_idx = sorted(range(self.M), key=lambda m: -self.services[m].requirement)
-        self.services = [self.services[m] for m in sort_idx]
+        sort_idx = sorted(range(self.M), key=lambda i: -self.services[i].requirement)
+        self.services = [self.services[i] for i in sort_idx]
         inv_perm = [0] * self.M
         for new_i, old_i in enumerate(sort_idx):
             inv_perm[old_i] = new_i
@@ -187,7 +187,7 @@ class LagrangeEnv(gym.Env):
             svc = self.services[self._step]
             service_demand_norm = np.float32(svc.requirement / max_cap)
             conflict_flag = np.array(
-                [float(self._has_conflict(n, self._step)) for n in range(self.N)],
+                [float(self._has_conflict(j, self._step)) for j in range(self.N)],
                 dtype=np.float32,
             )
             valid_flag = (self.remaining_vms >= svc.requirement).astype(np.float32)
@@ -210,11 +210,11 @@ class LagrangeEnv(gym.Env):
         lambda_norm = np.float32(self.lambda_val / self.lambda_max)
 
         svc_valid_ecus = np.zeros(self.M, dtype=np.float32)
-        for m in range(self._step, self.M):
-            svc_valid_ecus[m] = sum(
-                1 for n in range(self.N)
-                if self.remaining_vms[n] >= self.services[m].requirement
-                and not self._has_conflict(n, m)
+        for i in range(self._step, self.M):
+            svc_valid_ecus[i] = sum(
+                1 for j in range(self.N)
+                if self.remaining_vms[j] >= self.services[i].requirement
+                and not self._has_conflict(j, i)
             ) / self.N
 
         return np.concatenate([
@@ -331,8 +331,8 @@ LagrangeEnv.step = directional_step(LagrangeEnv.step)
 if __name__ == "__main__":
     random.seed(42)
     N, M = 7, 4
-    ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(random.sample(range(50, 200, 5), N))]
-    services = [SVC(f"SVC{m}", req) for m, req in enumerate(random.sample(range(10, 100, 5), M))]
+    ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(random.sample(range(50, 200, 5), N))]
+    services = [SVC(f"SVC{i}", req) for i, req in enumerate(random.sample(range(10, 100, 5), M))]
 
     env = LagrangeEnv(ecus, services, lambda_init=1.0)
     obs, _ = env.reset()

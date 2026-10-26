@@ -50,8 +50,8 @@ _n_train_default = int(0.8 * len(SCENARIOS))
 # different counts stay comparable against the same held-out set.
 _n_train = int(os.environ.get("TRAIN_SCENARIO_COUNT", _n_train_default))
 _n_train = min(_n_train, _n_train_default)
-TRAIN_SCENARIOS = [SCENARIOS[m] for m in _idxs[:_n_train]]
-TEST_SCENARIOS  = [SCENARIOS[m] for m in _idxs[_n_train_default:]]
+TRAIN_SCENARIOS = [SCENARIOS[i] for i in _idxs[:_n_train]]
+TEST_SCENARIOS  = [SCENARIOS[i] for i in _idxs[_n_train_default:]]
 
 DEVICE      = "auto"
 N_ENVS      = 40

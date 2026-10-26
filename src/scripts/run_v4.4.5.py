@@ -111,9 +111,9 @@ def write_report(exp_ids):
     res, done = {}, {}
     for job, opens, insts, n in out:
         lb, s = job[0], job[2]
-        done[(lb, s)] = {e["k"]: e for e in insts}
-        ar, ilp = np.mean([e["ar"] for e in insts]), np.mean([e["ilp"] for e in insts])
-        act, ilp_act = np.mean([e["act"] for e in insts]), np.mean([e["ilp_act"] for e in insts])
+        done[(lb, s)] = {x["k"]: x for x in insts}
+        ar, ilp = np.mean([x["ar"] for x in insts]), np.mean([x["ilp"] for x in insts])
+        act, ilp_act = np.mean([x["act"] for x in insts]), np.mean([x["ilp_act"] for x in insts])
         res[(lb, s)] = {"exit": 1 - len(insts) / n, "ar": ar, "ilp": ilp, "gap": ilp - ar, "rel": (ilp - ar) / ilp,
                         "act": act, "dact": act - ilp_act, "forced": sum(o["kind"] == "forced" for o in opens) / n}
 
@@ -148,7 +148,7 @@ def write_report(exp_ids):
         lines += ["", f"共同完成实例上的相对 gap（三行都未 EXIT 的 {len(common)} 个实例）：", "", "| 模型 | AR | ILP AR | 相对 gap |", "|---|---|---|---|"]
         for lb, *_ in kinds:
             xs = [done[(lb, s)][k] for k in common]
-            ar, il = np.mean([e["ar"] for e in xs]), np.mean([e["ilp"] for e in xs])
+            ar, il = np.mean([x["ar"] for x in xs]), np.mean([x["ilp"] for x in xs])
             lines.append(f"| {lb} | {f4(ar)} | {f4(il)} | {pc((il - ar) / il)} |")
         m = len(reg[kinds[0][0]][s]["opt_rate_t"])
         head = "| 模型 | " + " | ".join(f"第 {t + 1} 步" for t in range(m)) + " |"

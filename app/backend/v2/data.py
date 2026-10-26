@@ -86,9 +86,9 @@ def normalize(man: dict) -> dict:
                                                       "checkpoints", "data", "reward", "gamma", "full_episode", "exit_action",
                                                       "algos", "seeds", "scenarios")}
     out.update(RL_algorithm=[a for a in RL_ALGORITHMS if any(r["RL_algorithm"] == a for r in runs)],
-               strategies=[e for e in STRATEGIES if any(r["strategy"] == e for r in runs)],
+               strategies=[x for x in STRATEGIES if any(r["strategy"] == x for r in runs)],
                seeds=sorted({r["seed"] for r in runs if r["seed"] is not None}),
-               scenarios=[e for e in SCENARIOS if any(r["scenario"] == e for r in runs)],
+               scenarios=[x for x in SCENARIOS if any(r["scenario"] == x for r in runs)],
                params=params, runs=runs)
     return out
 
@@ -190,8 +190,8 @@ def _trace_compute(path: str, points: int, window: int) -> dict:
         cn = np.concatenate([[0], np.cumsum(ok)])                          # episodes, NaN skipped
         cnt = cn[idx + 1] - cn[lo]
         avg = np.where(cnt > 0, (cs[idx + 1] - cs[lo]) / np.maximum(cnt, 1), np.nan)
-        out[name] = [None if e != e else round(float(e), 6) for e in avg]
-    return {"n_episodes": int(n), "window": window, "step": [int(e) for e in df["timestep"].to_numpy()[idx]], "series": out}
+        out[name] = [None if x != x else round(float(x), 6) for x in avg]
+    return {"n_episodes": int(n), "window": window, "step": [int(x) for x in df["timestep"].to_numpy()[idx]], "series": out}
 
 
 def trace(rdir: Path, points: int = 400, window: int = 1000) -> dict | None:
@@ -248,7 +248,7 @@ def report_dir(batch: str, man: dict) -> Path | None:
 def batch_logs(batch: str, man: dict) -> list[Path]:
     """Logs of a non-training batch: the manifest's "logs" (paths under logs/), else logs/<batch>/*.log."""
     if man.get("logs"):
-        ps = [(ROOT / e).resolve() for e in man["logs"]]
+        ps = [(ROOT / x).resolve() for x in man["logs"]]
         return [p for p in ps if p.is_file() and p.is_relative_to(LOGS)]
     return sorted((LOGS / batch).glob("*.log"))
 

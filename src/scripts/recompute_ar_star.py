@@ -20,8 +20,8 @@ from paper_rl.data import data_dir
 from shared.ilp_utils import solve_ilp_max_ar
 
 
-def one(e):
-    r = solve_ilp_max_ar(e["ECUs"], e["SVCs"], e["conflict_sets"])
+def one(x):
+    r = solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
     assert r["status"] == "Optimal", r["status"]
     return round(float(r["avg_utilization"]), 6), r["active_ecus"]
 
@@ -35,12 +35,12 @@ if __name__ == "__main__":
             print(f"{scen}: already recomputed"); continue
         with Pool(48) as pool:
             res = pool.map(one, d["instances"], chunksize=4)
-        for e, (ar, act) in zip(d["instances"], res):
-            e["ar_star_total_util"] = e.pop("ar_star")
-            e["ilp_active_ecus_total_util"] = e.pop("ilp_active_ecus")
-            e["ar_star"], e["ilp_active_ecus"] = ar, act
+        for x, (ar, act) in zip(d["instances"], res):
+            x["ar_star_total_util"] = x.pop("ar_star")
+            x["ilp_active_ecus_total_util"] = x.pop("ilp_active_ecus")
+            x["ar_star"], x["ilp_active_ecus"] = ar, act
         d["ar_star_solver"] = "dinkelbach_max_ar"
         yaml.safe_dump(d, open(path, "w"), sort_keys=False)
-        old = sum(e["ar_star_total_util"] for e in d["instances"]) / len(d["instances"])
-        new = sum(e["ar_star"] for e in d["instances"]) / len(d["instances"])
+        old = sum(x["ar_star_total_util"] for x in d["instances"]) / len(d["instances"])
+        new = sum(x["ar_star"] for x in d["instances"]) / len(d["instances"])
         print(f"{scen}: mean AR* {old:.4f} (total-util ILP) -> {new:.4f} (max-AR ILP)")

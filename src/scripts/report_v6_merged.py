@@ -51,7 +51,7 @@ def from_runs(version, keep):
 
 
 def ms(xs, d=3):
-    xs = [e for e in xs if e is not None]
+    xs = [x for x in xs if x is not None]
     if not xs:
         return "—"
     s = f"{100 * st.mean(xs):.{d}f}%"
@@ -102,10 +102,10 @@ def write(lang, data):
                     continue
                 name = MECH[lang][mech] + (" (n_epochs=4)" if ver == "v6.0.0.2" else "")
                 L.append("| " + " | ".join([
-                    name, LEARN[l], ver, str(xs[0]["n"]), ",".join(str(e["seed"]) for e in sorted(xs, key=lambda e: e["seed"])),
-                    ms([e["gap"] for e in xs]), ms([e["vf"] for e in xs]), ms([e["vf_rel"] for e in xs]),
-                    ms([e["cap"] for e in xs]), ms([e["conf"] for e in xs]),
-                    ms([e["exit"] for e in xs]) if mech == "mask" else "—"]) + " |")
+                    name, LEARN[l], ver, str(xs[0]["n"]), ",".join(str(x["seed"]) for x in sorted(xs, key=lambda x: x["seed"])),
+                    ms([x["gap"] for x in xs]), ms([x["vf"] for x in xs]), ms([x["vf_rel"] for x in xs]),
+                    ms([x["cap"] for x in xs]), ms([x["conf"] for x in xs]),
+                    ms([x["exit"] for x in xs]) if mech == "mask" else "—"]) + " |")
     (OUT / ("report.md" if zh else "report.en.md")).write_text("\n".join(L) + "\n")
 
 

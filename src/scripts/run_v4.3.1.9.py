@@ -161,7 +161,7 @@ def main():
     if "--resume" in sys.argv and MANIFEST.exists():
         exp_ids = json.loads(MANIFEST.read_text())["exp_ids"]
         launched = {(int(sd), s, a) for sd, d in exp_ids.items() for s, d2 in d.items() for a in d2}
-        queue = [n for n in queue if n not in launched]
+        queue = [j for j in queue if j not in launched]
         print(f"=== resume: {len(launched)} launched, {len(queue)} to launch ===", flush=True)
     write_manifest(exp_ids)
     print(f"=== v4.3.1.9 start {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(queue)} jobs, "
@@ -170,17 +170,17 @@ def main():
     active, failed, done = [], [], 0
     while True:
         load = machine_load()
-        m = 0
-        while m < len(queue):
-            sd, s, a = queue[m]
+        i = 0
+        while i < len(queue):
+            sd, s, a = queue[i]
             if load + weight(a) <= CAPACITY:
-                queue.pop(m)
+                queue.pop(i)
                 p, f = launch(sd, s, a, exp_ids)
                 mine.add(exp_ids[str(sd)][s][a])
                 active.append((p, f, f"seed{sd} {s}/{a}"))
                 load += weight(a)
             else:
-                m += 1
+                i += 1
         still = []
         for p, f, label in active:
             ret = p.poll()

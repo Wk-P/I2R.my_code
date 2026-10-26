@@ -26,8 +26,8 @@ OUT = ROOT / "data" / "testset_v6.0.4"
 POOL = ROOT / "results" / "sup_diag" / "{scen}.json"
 
 
-def key(e):
-    return json.dumps([e["ECUs"], e["SVCs"], sorted(map(sorted, e["conflict_sets"]))])
+def key(x):
+    return json.dumps([x["ECUs"], x["SVCs"], sorted(map(sorted, x["conflict_sets"]))])
 
 
 def main():
@@ -35,20 +35,20 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for k, scen in enumerate(SCENARIOS):
         t0 = time.time()
-        seen = {key(e) for e in json.loads(Path(str(POOL).format(scen=scen)).read_text())}
-        seen |= {key(e) for e in load(scen, "v4.3.1.4")["instances"]}
+        seen = {key(x) for x in json.loads(Path(str(POOL).format(scen=scen)).read_text())}
+        seen |= {key(x) for x in load(scen, "v4.3.1.4")["instances"]}
         base, nxt, out = 800_000_000 + k * 10_000_000, 0, []
         with Pool(48) as pool:
             while len(out) < N_TEST:
                 need = N_TEST - len(out)
-                for e in pool.map(_gen, [(scen, base + nxt + m) for m in range(need)], chunksize=16):
-                    if key(e) not in seen and e["ar_star"] > 0:
-                        seen.add(key(e))
-                        out.append(e)
+                for x in pool.map(_gen, [(scen, base + nxt + i) for i in range(need)], chunksize=16):
+                    if key(x) not in seen and x["ar_star"] > 0:
+                        seen.add(key(x))
+                        out.append(x)
                 nxt += need
         assert len(out) == N_TEST
         (OUT / f"{scen}.json").write_text(json.dumps(out))
-        print(f"{scen}: {len(out)} instances ({nxt} seeds), mean AR* {sum(e['ar_star'] for e in out) / len(out):.4f}, "
+        print(f"{scen}: {len(out)} instances ({nxt} seeds), mean AR* {sum(x['ar_star'] for x in out) / len(out):.4f}, "
               f"{(time.time() - t0) / 60:.1f} min", flush=True)
 
 

@@ -89,34 +89,34 @@ def solve_ilp_max_ar(caps, reqs, conflict_sets=None, tol: float = 1e-6, max_iter
     lam, best = 0.0, None
     for it in range(1, max_iter + 1):
         prob = pulp.LpProblem("max_AR", pulp.LpMaximize)
-        e = pulp.LpVariable.dicts("x", (range(M), range(N)), cat="Binary")
-        c = pulp.LpVariable.dicts("y", range(N), cat="Binary")
-        prob += (pulp.lpSum(e[m][n] * reqs[m] / caps[n] for m in range(M) for n in range(N))
-                 - lam * pulp.lpSum(c[n] for n in range(N)))
-        for m in range(M):
-            prob += pulp.lpSum(e[m][n] for n in range(N)) == 1
-        for m, n in (fixed or {}).items():
-            prob += e[m][n] == 1
-        for n in range(N):
-            prob += pulp.lpSum(e[m][n] * reqs[m] for m in range(M)) <= caps[n] * c[n]
-            for m in range(M):
-                prob += e[m][n] <= c[n]
+        x = pulp.LpVariable.dicts("x", (range(M), range(N)), cat="Binary")
+        y = pulp.LpVariable.dicts("y", range(N), cat="Binary")
+        prob += (pulp.lpSum(x[i][j] * reqs[i] / caps[j] for i in range(M) for j in range(N))
+                 - lam * pulp.lpSum(y[j] for j in range(N)))
+        for i in range(M):
+            prob += pulp.lpSum(x[i][j] for j in range(N)) == 1
+        for i, j in (fixed or {}).items():
+            prob += x[i][j] == 1
+        for j in range(N):
+            prob += pulp.lpSum(x[i][j] * reqs[i] for i in range(M)) <= caps[j] * y[j]
+            for i in range(M):
+                prob += x[i][j] <= y[j]
         for cs in conflict_sets or []:
-            valid = [m for m in cs if m < M]
+            valid = [i for i in cs if i < M]
             if len(valid) >= 2:
-                for n in range(N):
-                    prob += pulp.lpSum(e[m][n] for m in valid) <= 1
+                for j in range(N):
+                    prob += pulp.lpSum(x[i][j] for i in valid) <= 1
         prob.solve(pulp.PULP_CBC_CMD(msg=False))
         status = pulp.LpStatus[prob.status]
         if status != "Optimal":
             return {"status": status, "avg_utilization": 0.0, "total_utilization": 0.0,
                     "active_ecus": 0, "iterations": it, "allocation": {}}
         alloc = {}
-        for n in range(N):
-            svcs = [m for m in range(M) if (pulp.value(e[m][n]) or 0) > 0.5]
+        for j in range(N):
+            svcs = [i for i in range(M) if (pulp.value(x[i][j]) or 0) > 0.5]
             if svcs:
-                alloc[n] = svcs
-        total = sum(reqs[m] / caps[n] for n, svcs in alloc.items() for m in svcs)
+                alloc[j] = svcs
+        total = sum(reqs[i] / caps[j] for j, svcs in alloc.items() for i in svcs)
         new_lam = total / len(alloc)
         best = {"status": status, "avg_utilization": new_lam, "total_utilization": total,
                 "active_ecus": len(alloc), "iterations": it, "allocation": alloc}
@@ -141,45 +141,45 @@ def solve_ilp(ecus, services, conflict_sets=None) -> dict:
     AR = total_utilization / active_ecus  (average ECU utilization).
     """
     N, M = len(ecus), len(services)
-    e_list = [e_.capacity    for e_ in ecus]
+    e_list = [e.capacity    for e in ecus]
     n_list = [s.requirement for s in services]
 
     prob = pulp.LpProblem("ILP", pulp.LpMaximize)
-    e = pulp.LpVariable.dicts("x", (range(M), range(N)), cat="Binary")
+    x = pulp.LpVariable.dicts("x", (range(M), range(N)), cat="Binary")
 
     # Objective: maximise sum of req/cap (= M * AR)
-    prob += pulp.lpSum(e[m][n] * n_list[m] / e_list[n]
-                       for m in range(M) for n in range(N))
+    prob += pulp.lpSum(x[i][j] * n_list[i] / e_list[j]
+                       for i in range(M) for j in range(N))
     # Each service assigned to exactly one ECU
-    for m in range(M):
-        prob += pulp.lpSum(e[m][n] for n in range(N)) == 1
+    for i in range(M):
+        prob += pulp.lpSum(x[i][j] for j in range(N)) == 1
     # Capacity constraint per ECU (multiple services allowed)
-    for n in range(N):
-        prob += pulp.lpSum(e[m][n] * n_list[m] for m in range(M)) <= e_list[n]
+    for j in range(N):
+        prob += pulp.lpSum(x[i][j] * n_list[i] for i in range(M)) <= e_list[j]
     # Hard-infeasible assignments
-    for m in range(M):
-        for n in range(N):
-            if n_list[m] > e_list[n]:
-                prob += e[m][n] == 0
+    for i in range(M):
+        for j in range(N):
+            if n_list[i] > e_list[j]:
+                prob += x[i][j] == 0
     # Conflict constraints: at most one service from each conflict subset per ECU
     if conflict_sets:
         for k, subset in enumerate(conflict_sets):
-            valid = [m for m in subset if m < M]
+            valid = [i for i in subset if i < M]
             if len(valid) >= 2:
-                for n in range(N):
-                    prob += pulp.lpSum(e[m][n] for m in valid) <= 1
+                for j in range(N):
+                    prob += pulp.lpSum(x[i][j] for i in valid) <= 1
 
     prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
     alloc = {}
-    for n in range(N):
-        svcs = [m for m in range(M) if pulp.value(e[m][n]) is not None and pulp.value(e[m][n]) > 0.5]
+    for j in range(N):
+        svcs = [i for i in range(M) if pulp.value(x[i][j]) is not None and pulp.value(x[i][j]) > 0.5]
         if svcs:
-            alloc[n] = {
+            alloc[j] = {
                 "services":    svcs,
-                "utilization": sum(n_list[m] for m in svcs) / e_list[n],
-                "capacity":    e_list[n],
-                "demand":      sum(n_list[m] for m in svcs),
+                "utilization": sum(n_list[i] for i in svcs) / e_list[j],
+                "capacity":    e_list[j],
+                "demand":      sum(n_list[i] for i in svcs),
             }
     total_util = pulp.value(prob.objective) or 0.0
     # AR = total_util / active_ecus  (average ECU utilization)
@@ -262,8 +262,8 @@ def solve_ilp_all_scenarios(yaml_config: Path, scenarios: list, outdir: Path):
     # Compute remaining, save after each
     for idx, sc in enumerate(scenarios[len(results):], start=len(results)):
         caps, reqs, conflict_sets = sc[0], sc[1], sc[2] if len(sc) > 2 else []
-        ecus_sc = [ECU(f"ECU{m}", c) for m, c in enumerate(caps)]
-        svcs_sc = [SVC(f"SVC{m}", r) for m, r in enumerate(reqs)]
+        ecus_sc = [ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
+        svcs_sc = [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
         res = solve_ilp(ecus_sc, svcs_sc, conflict_sets)
         results.append(res)
         print(f"    Scenario {idx + 1}: AR={res['avg_utilization']:.4f}  ({res['status']})")
@@ -283,8 +283,8 @@ def check_scenario_feasibility(scenarios: list) -> dict:
     feasible, infeasible = [], []
     for idx, sc in enumerate(scenarios):
         caps, reqs, conflict_sets = sc[0], sc[1], sc[2] if len(sc) > 2 else []
-        ecus_sc = [ECU(f"ECU{m}", c) for m, c in enumerate(caps)]
-        svcs_sc = [SVC(f"SVC{m}", r) for m, r in enumerate(reqs)]
+        ecus_sc = [ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
+        svcs_sc = [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
         res = solve_ilp(ecus_sc, svcs_sc, conflict_sets)
         if res["status"] == "Optimal" and res["active_ecus"] > 0:
             feasible.append(idx)
@@ -305,6 +305,6 @@ def moving_avg(arr, w):
     first point instead of w - 1 points in. Returns (smoothed, offset=0)."""
     arr = np.asarray(arr, dtype=float)
     c = np.concatenate([[0.0], np.cumsum(arr)])
-    m = np.arange(1, len(arr) + 1)
-    lo = np.maximum(m - w, 0)
-    return (c[m] - c[lo]) / (m - lo), 0
+    i = np.arange(1, len(arr) + 1)
+    lo = np.maximum(i - w, 0)
+    return (c[i] - c[lo]) / (i - lo), 0

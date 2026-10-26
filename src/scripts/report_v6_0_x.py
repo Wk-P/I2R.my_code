@@ -29,10 +29,10 @@ def load():
         for r in json.loads((ROOT / f"logs/{v}/manifest.json").read_text())["runs"]:
             ids[r["exp_id"]] = v
     data = defaultdict(list)
-    for m in ids:
-        f = glob.glob(str(ROOT / f"results/unified/*/*/{m}/results.json"))
+    for i in ids:
+        f = glob.glob(str(ROOT / f"results/unified/*/*/{i}/results.json"))
         if not f:
-            sys.exit(f"missing results.json for {m}")
+            sys.exit(f"missing results.json for {i}")
         r = json.loads(Path(f[0]).read_text())
         a = r[r["algo"]]
         data[(r["mechanism"], r["version"], r["scenario"], r["learner"])].append(dict(
@@ -42,12 +42,12 @@ def load():
     return data
 
 
-def pct(e):
-    return f"{100 * e:.1f}%"
+def pct(x):
+    return f"{100 * x:.1f}%"
 
 
 def cell(v, key):
-    xs = [e[key] for e in v]
+    xs = [x[key] for x in v]
     m = st.mean(xs)
     return pct(m) + (f" ± {pct(st.stdev(xs))}" if len(xs) > 1 else "")
 
@@ -85,9 +85,9 @@ def build(data, lang):
     L.append("|---" * 9 + "|")
     for s in SCENS:
         for l in LEARNERS:
-            for e in sorted(data[("none", "v6.0.1", s, l)], key=lambda e: e["seed"]):
-                L.append(f"| {s.upper()} | {l.upper()} | {e['seed']} | {e['ilp']:.3f} | {e['ar_obj']:.3f} | {e['ar']:.3f} | "
-                         f"{e['last50']:.3f} | {pct(e['cap'])} | {pct(e['conf'])} |")
+            for x in sorted(data[("none", "v6.0.1", s, l)], key=lambda x: x["seed"]):
+                L.append(f"| {s.upper()} | {l.upper()} | {x['seed']} | {x['ilp']:.3f} | {x['ar_obj']:.3f} | {x['ar']:.3f} | "
+                         f"{x['last50']:.3f} | {pct(x['cap'])} | {pct(x['conf'])} |")
     L.append("")
     L.append("## " + ("观察" if zh else "Observations"))
     L.append("")

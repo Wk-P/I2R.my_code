@@ -41,39 +41,39 @@ def _inline(s: str) -> str:
 
 
 def md_to_html(text: str) -> str:
-    out, m, lines = [], 0, text.splitlines()
-    while m < len(lines):
-        ln = lines[m]
+    out, i, lines = [], 0, text.splitlines()
+    while i < len(lines):
+        ln = lines[i]
         if ln.startswith("|"):
             rows = []
-            while m < len(lines) and lines[m].startswith("|"):
-                cells = [c_.strip() for c_ in lines[m].strip().strip("|").split("|")]
-                if not all(re.fullmatch(r":?-+:?", c_) for c_ in cells):
+            while i < len(lines) and lines[i].startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if not all(re.fullmatch(r":?-+:?", c) for c in cells):
                     rows.append(cells)
-                m += 1
+                i += 1
             if rows:
-                head = "".join(f"<th>{_inline(c_)}</th>" for c_ in rows[0])
-                body = "".join("<tr>" + "".join(f"<td>{_inline(c_)}</td>" for c_ in r) + "</tr>" for r in rows[1:])
+                head = "".join(f"<th>{_inline(c)}</th>" for c in rows[0])
+                body = "".join("<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in r) + "</tr>" for r in rows[1:])
                 out.append(f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")
             continue
         if ln.startswith("- ") or ln.startswith("  "):
             items = []
-            while m < len(lines) and (lines[m].startswith("- ") or (lines[m].startswith("  ") and items)):
-                if lines[m].startswith("- "):
-                    items.append(lines[m][2:])
+            while i < len(lines) and (lines[i].startswith("- ") or (lines[i].startswith("  ") and items)):
+                if lines[i].startswith("- "):
+                    items.append(lines[i][2:])
                 else:
-                    items[-1] += "<br>" + lines[m].strip()
-                m += 1
-            out.append("<ul>" + "".join(f"<li>{_inline(e) if '<br>' not in e else '<br>'.join(_inline(c) for c in e.split('<br>'))}</li>"
-                                        for e in items) + "</ul>")
+                    items[-1] += "<br>" + lines[i].strip()
+                i += 1
+            out.append("<ul>" + "".join(f"<li>{_inline(x) if '<br>' not in x else '<br>'.join(_inline(y) for y in x.split('<br>'))}</li>"
+                                        for x in items) + "</ul>")
             continue
-        m_ = re.match(r"^(#{1,4}) (.*)", ln)
-        if m_:
-            n = len(m_.group(1))
-            out.append(f"<h{n + 1}>{_inline(m_.group(2))}</h{n + 1}>")
+        m = re.match(r"^(#{1,4}) (.*)", ln)
+        if m:
+            n = len(m.group(1))
+            out.append(f"<h{n + 1}>{_inline(m.group(2))}</h{n + 1}>")
         elif ln.strip():
             out.append(f"<p>{_inline(ln)}</p>")
-        m += 1
+        i += 1
     return "\n".join(out)
 
 

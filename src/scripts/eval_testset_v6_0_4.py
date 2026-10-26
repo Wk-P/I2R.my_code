@@ -91,7 +91,7 @@ def pct(v):
 
 
 def cell(xs):
-    xs = [e for e in xs if e is not None and e == e]
+    xs = [x for x in xs if x is not None and x == x]
     if not xs:
         return "—"
     return pct(st.mean(xs)) + (f" ± {pct(st.stdev(xs))}" if len(xs) > 1 else "")
@@ -153,10 +153,10 @@ def main():
           f"test set {n_test}, {a.workers} workers", flush=True)
     parts = {}
     with Pool(a.workers) as pool:
-        for m, (eid, lo, ev) in enumerate(pool.imap_unordered(eval_chunk, tasks), 1):
+        for i, (eid, lo, ev) in enumerate(pool.imap_unordered(eval_chunk, tasks), 1):
             parts.setdefault(eid, {})[lo] = ev
-            if m % 50 == 0 or m == len(tasks):
-                print(f"[chunk] {m}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
+            if i % 50 == 0 or i == len(tasks):
+                print(f"[chunk] {i}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
     rows = []
     for r in rs:
         res = r["res"]

@@ -21,20 +21,20 @@ def draw(rounded: bool) -> Image.Image:
     im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     d.rounded_rectangle([0, 0, S - 1, S - 1], radius=224 if rounded else 0, fill=BLUE)
-    for e, lv in BARS:
+    for x, lv in BARS:
         bar = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-        ImageDraw.Draw(bar).rounded_rectangle([e, TOP, e + BAR_W, BOT], radius=R_BAR, fill=TRACK)
+        ImageDraw.Draw(bar).rounded_rectangle([x, TOP, x + BAR_W, BOT], radius=R_BAR, fill=TRACK)
         im.alpha_composite(bar)
-        d.rounded_rectangle([e, BOT - (BOT - TOP) * lv, e + BAR_W, BOT], radius=R_BAR, fill=WHITE)
+        d.rounded_rectangle([x, BOT - (BOT - TOP) * lv, x + BAR_W, BOT], radius=R_BAR, fill=WHITE)
     return im
 
 
 def svg() -> str:
     parts = [f'<rect width="{S}" height="{S}" rx="224" fill="#2563eb"/>']
-    for e, lv in BARS:
-        parts.append(f'<rect x="{e}" y="{TOP}" width="{BAR_W}" height="{BOT - TOP}" rx="{R_BAR}" fill="#fff" fill-opacity="0.35"/>')
-        c = BOT - (BOT - TOP) * lv
-        parts.append(f'<rect x="{e}" y="{c:.0f}" width="{BAR_W}" height="{BOT - c:.0f}" rx="{R_BAR}" fill="#fff"/>')
+    for x, lv in BARS:
+        parts.append(f'<rect x="{x}" y="{TOP}" width="{BAR_W}" height="{BOT - TOP}" rx="{R_BAR}" fill="#fff" fill-opacity="0.35"/>')
+        y = BOT - (BOT - TOP) * lv
+        parts.append(f'<rect x="{x}" y="{y:.0f}" width="{BAR_W}" height="{BOT - y:.0f}" rx="{R_BAR}" fill="#fff"/>')
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {S} {S}">' + "".join(parts) + "</svg>\n"
 
 

@@ -85,8 +85,8 @@ class DQNEnv(gym.Env):
     def _init_conflict_sets(self, K: int = 10) -> list[set]:
         sets = []
         for _ in range(K):
-            n = random.randint(2, self.M)
-            sets.append(set(random.sample(range(self.M), n)))
+            j = random.randint(2, self.M)
+            sets.append(set(random.sample(range(self.M), j)))
         return sets
 
     def _has_conflict(self, ecu_idx: int, svc_idx: int) -> bool:
@@ -104,15 +104,15 @@ class DQNEnv(gym.Env):
         if self._scenarios is not None:
             caps, reqs, _cs = random.choice(self._scenarios)
             self._sc = (caps, reqs, _cs)
-            self.ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
-            self.services = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
+            self.ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
+            self.services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
             self.initial_vms = np.array([e.capacity for e in self.ecus], dtype=np.float32)
             self.conflict_sets = [set(cs) for cs in _cs]
         else:
             self.conflict_sets = self._init_conflict_sets()
         # Sort services descending and remap conflict_set indices to match the new order.
-        sort_idx = sorted(range(self.M), key=lambda m: -self.services[m].requirement)
-        self.services = [self.services[m] for m in sort_idx]
+        sort_idx = sorted(range(self.M), key=lambda i: -self.services[i].requirement)
+        self.services = [self.services[i] for i in sort_idx]
         inv_perm = [0] * self.M
         for new_i, old_i in enumerate(sort_idx):
             inv_perm[old_i] = new_i
@@ -146,7 +146,7 @@ class DQNEnv(gym.Env):
             svc = self.services[self._step]
             service_demand_norm = np.float32(svc.requirement / max_cap)
             conflict_flag = np.array(
-                [float(self._has_conflict(n, self._step)) for n in range(self.N)],
+                [float(self._has_conflict(j, self._step)) for j in range(self.N)],
                 dtype=np.float32,
             )
             valid_flag = (self.remaining_vms >= svc.requirement).astype(np.float32)
@@ -169,16 +169,16 @@ class DQNEnv(gym.Env):
             dtype=np.float32,
         )
         ecu_allowed_frac = np.array(
-            [len(self.ecu_allowed[n]) / self.M for n in range(self.N)],
+            [len(self.ecu_allowed[j]) / self.M for j in range(self.N)],
             dtype=np.float32,
         )
 
         svc_valid_ecus = np.zeros(self.M, dtype=np.float32)
-        for m in range(self._step, self.M):
-            svc_valid_ecus[m] = sum(
-                1 for n in range(self.N)
-                if self.remaining_vms[n] >= self.services[m].requirement
-                and not self._has_conflict(n, m)
+        for i in range(self._step, self.M):
+            svc_valid_ecus[i] = sum(
+                1 for j in range(self.N)
+                if self.remaining_vms[j] >= self.services[i].requirement
+                and not self._has_conflict(j, i)
             ) / self.N
 
         return np.concatenate([
@@ -221,7 +221,7 @@ class DQNEnv(gym.Env):
         self._update_ecu_allowed(action, self._step)
         if ru > 0:
             self._total_ru += ru
-        _active = sum(1 for n in range(self.N) if self.ecu_placements[n])
+        _active = sum(1 for j in range(self.N) if self.ecu_placements[j])
         self.ar = self._total_ru / _active if _active > 0 else 0.0
         self._step += 1
 
@@ -278,8 +278,8 @@ if __name__ == "__main__":
     import random as rng
     rng.seed(42)
     N, M = 7, 10
-    ecus     = [ECU(f"ECU{m}", cap) for m, cap in enumerate(rng.sample(range(50, 200, 5), N))]
-    services = [SVC(f"SVC{m}", req) for m, req in enumerate(rng.sample(range(10, 80, 5), M))]
+    ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(rng.sample(range(50, 200, 5), N))]
+    services = [SVC(f"SVC{i}", req) for i, req in enumerate(rng.sample(range(10, 80, 5), M))]
 
     print("ECU capacities :", [e.capacity for e in ecus])
     print("Service demands:", [s.requirement for s in services])
@@ -292,7 +292,7 @@ if __name__ == "__main__":
     done = False
     while not done:
         svc = env.services[env._step]
-        valid = [n for n in range(N) if env.remaining_vms[n] >= svc.requirement]
+        valid = [j for j in range(N) if env.remaining_vms[j] >= svc.requirement]
         a = valid[0] if valid else int(np.argmax(env.remaining_vms))
         obs, r, done, _, info = env.step(a)
         env.render()

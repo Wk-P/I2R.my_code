@@ -20,10 +20,10 @@ from paper_rl.train import split_instances
 def greedy_action(env: PlacementEnv) -> int:
     cand = np.flatnonzero(env._feasible(env.t))
     if len(cand) == 0:               # only with full_episode (v4.3.7): every ECU violates; prefer
-        free = [n for n in range(env.N) if not env._conflict(n, env.t)]   # no privacy conflict,
+        free = [j for j in range(env.N) if not env._conflict(j, env.t)]   # no privacy conflict,
         pool = free or list(range(env.N))                                   # then most capacity left
-        return int(max(pool, key=lambda n: env.remaining[n]))
-    used = np.array([bool(env.hosted[n]) for n in cand])
+        return int(max(pool, key=lambda j: env.remaining[j]))
+    used = np.array([bool(env.hosted[j]) for j in cand])
     return int(cand[np.argmax(used * 10.0 + env.req[env.t] / env.cap[cand])])
 
 

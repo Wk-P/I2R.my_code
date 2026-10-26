@@ -25,4 +25,4 @@ class FastDummyVecEnv(DummyVecEnv):
                 self.buf_infos[env_idx]["terminal_observation"] = obs
                 obs, self.reset_infos[env_idx] = self.envs[env_idx].reset()
             self._save_obs(env_idx, obs)
-        return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones), [dict(m) for m in self.buf_infos])
+        return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones), [dict(i) for i in self.buf_infos])

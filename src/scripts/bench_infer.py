@@ -68,9 +68,9 @@ def policy_times(job):
 def ilp_one(args):
     from shared.ilp_utils import solve_ilp_max_ar
     scen, seed, k = args
-    e = test_split(scen, seed)[k]
+    x = test_split(scen, seed)[k]
     t0 = time.perf_counter()
-    r = solve_ilp_max_ar(e["ECUs"], e["SVCs"], e["conflict_sets"])
+    r = solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
     return scen, seed, k, (time.perf_counter() - t0) * 1000, r["iterations"]
 
 
@@ -83,7 +83,7 @@ def main():
     ap.add_argument("--label-en", required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    seeds = [int(e) for e in a.seeds.split(",")]
+    seeds = [int(x) for x in a.seeds.split(",")]
     ids = json.loads((ROOT / a.manifest).read_text())["exp_ids"]
     t_start = time.time()
     jobs = [(s, sd, ids[str(sd)][s][a.key]) for sd in seeds for s in SCENARIOS]
@@ -91,11 +91,11 @@ def main():
     with Pool(len(jobs)) as pp, Pool(ILP_WORKERS) as ip:
         pol = pp.map_async(policy_times, jobs)
         ilp = {}
-        tasks = [(s, sd, k) for (s, sd), m_ in n.items() for k in range(m_)]
-        for m, (s, sd, k, ms, it) in enumerate(ip.imap_unordered(ilp_one, tasks, chunksize=2), 1):
+        tasks = [(s, sd, k) for (s, sd), m in n.items() for k in range(m)]
+        for i, (s, sd, k, ms, it) in enumerate(ip.imap_unordered(ilp_one, tasks, chunksize=2), 1):
             ilp.setdefault(s, []).append((ms, it))
-            if m % max(1, len(tasks) // 20) == 0:
-                print(f"[bench] ILP {m}/{len(tasks)} ({100 * m / len(tasks):.0f}%)", flush=True)
+            if i % max(1, len(tasks) // 20) == 0:
+                print(f"[bench] ILP {i}/{len(tasks)} ({100 * i / len(tasks):.0f}%)", flush=True)
         pol = {(s, sd): rows for s, sd, rows in pol.get()}
     secs = time.time() - t_start
     print(f"done in {secs / 60:.1f} min", flush=True)
@@ -105,7 +105,7 @@ def main():
     out = {}
     for lang in ("zh", "en"):
         zh = lang == "zh"
-        T = lambda z, e_: z if zh else e_
+        T = lambda z, e: z if zh else e
         L = [T("# 测试实例耗时与 gap：结构感知网络 vs ILP", "# Per-instance time and gap: structure-aware network vs ILP"), "",
              T(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/bench_infer.py`；总耗时 {secs / 60:.1f} 分钟。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/bench_infer.py`; took {secs / 60:.1f} min."),
@@ -125,9 +125,9 @@ def main():
                "| Scenario | Method | Relative gap | Mean ms | Median ms | P95 ms | Max ms | Speed-up (mean) | Speed-up (median) |"),
              "|---|---|---|---|---|---|---|---|---|"]
         for s in SCENARIOS:
-            im = [e[0] for e in ilp[s]]
+            im = [x[0] for x in ilp[s]]
             ia = st(im)
-            L.append(f"| {s.upper()} | {T('ILP（Dinkelbach，平均', 'ILP (Dinkelbach, mean')} {np.mean([e[1] for e in ilp[s]]):.2f} {T('次迭代）', 'iterations)')} | 0 | "
+            L.append(f"| {s.upper()} | {T('ILP（Dinkelbach，平均', 'ILP (Dinkelbach, mean')} {np.mean([x[1] for x in ilp[s]]):.2f} {T('次迭代）', 'iterations)')} | 0 | "
                      + " | ".join(f(v) for v in ia) + " | 1× | 1× |")
             rows = [r for sd in seeds for r in pol[(s, sd)]]
             gaps = []
@@ -138,7 +138,7 @@ def main():
             gtxt = f"{100 * np.mean(gaps):.1f}% ± {100 * np.std(gaps, ddof=1):.1f}%" if len(gaps) > 1 else f"{100 * gaps[0]:.1f}%"
             for part, key in ((T("整条 episode", "full episode"), "ms"), (T("仅前向", "forward only"), "fwd_ms")):
                 b = st([r[key] for r in rows])
-                L.append(f"| {s.upper()} | {T('网络：', 'network: ')}{part} | {gtxt} | " + " | ".join(f(e) for e in b)
+                L.append(f"| {s.upper()} | {T('网络：', 'network: ')}{part} | {gtxt} | " + " | ".join(f(x) for x in b)
                          + f" | {ia[0] / b[0]:.0f}× | {ia[1] / b[1]:.0f}× |")
         L.append("")
         out[lang] = L
@@ -146,7 +146,7 @@ def main():
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("\n".join(out["zh"]))
     p.with_suffix(".en.md").write_text("\n".join(out["en"]))
-    p.with_suffix(".json").write_text(json.dumps({"ilp": {s: [e[0] for e in ilp[s]] for s in SCENARIOS},
+    p.with_suffix(".json").write_text(json.dumps({"ilp": {s: [x[0] for x in ilp[s]] for s in SCENARIOS},
                                                   "policy": {f"{s}|{sd}": pol[(s, sd)] for s in SCENARIOS for sd in seeds}}))
     print(f"report -> {p} (+ .en.md)", flush=True)
 

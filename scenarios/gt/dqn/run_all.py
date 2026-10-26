@@ -55,8 +55,8 @@ def _make_dqn_env(seed: int) -> Monitor:
     import random
     random.seed(seed)
     caps, reqs, _ = C.SCENARIOS[C.SCENARIO_IDX]
-    ecus = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
-    services = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
+    ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
+    services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
     return Monitor(DQNEnv(ecus, services, scenarios=C.TRAIN_SCENARIOS))
 
 
@@ -71,8 +71,8 @@ def run_episodes(ecus, services, policy_fn):
     for scenario in C.TEST_SCENARIOS:
         caps, reqs, cs = scenario
         M_sc = len(reqs)
-        _ecus = [ECU(f"ECU{m}", cap) for m, cap in enumerate(caps)]
-        _svcs = [SVC(f"SVC{m}", req) for m, req in enumerate(reqs)]
+        _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
+        _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
         env = DQNEnv(_ecus, _svcs, scenarios=[scenario])
         obs, _ = env.reset()
         done = False
@@ -166,7 +166,7 @@ def train_dqn(ecus, services, device: str):
     sys.stdout.flush()
     n_envs = max(1, int(C.N_ENVS))
     env = DummyVecEnv(
-        [functools.partial(_make_dqn_env, C.SEED + m) for m in range(n_envs)],
+        [functools.partial(_make_dqn_env, C.SEED + i) for i in range(n_envs)],
     )
     print(f"  Using DummyVecEnv: n_envs={n_envs}")
     cb = DQNCallback()
@@ -215,13 +215,13 @@ def save_training_curve_csv(cb, outdir):
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["timestep", "episode_ar", "episode_success", "episode_placed", "episode_reward"])
-        for m in range(len(cb.timesteps_at_ep)):
+        for i in range(len(cb.timesteps_at_ep)):
             writer.writerow([
-                cb.timesteps_at_ep[m],
-                round(cb.episode_ars[m], 6),
-                int(cb.episode_success[m]),
-                cb.episode_placed[m],
-                round(cb.episode_rewards[m], 6),
+                cb.timesteps_at_ep[i],
+                round(cb.episode_ars[i], 6),
+                int(cb.episode_success[i]),
+                cb.episode_placed[i],
+                round(cb.episode_rewards[i], 6),
             ])
     print(f"  Saved -> {path}")
 

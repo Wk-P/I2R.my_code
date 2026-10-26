@@ -40,9 +40,9 @@ def read_env(path: Path) -> dict:
 
 def write_env_value(path: Path, key: str, value: str) -> None:
     lines = path.read_text().splitlines() if path.exists() else []
-    for m, ln in enumerate(lines):
+    for i, ln in enumerate(lines):
         if ln.split("=", 1)[0].strip() == key:
-            lines[m] = f"{key}={value}"
+            lines[i] = f"{key}={value}"
             break
     else:
         lines.append(f"{key}={value}")
@@ -71,8 +71,8 @@ class CF:
 def zone_of(cf: CF, hostname: str) -> dict:
     """The zone the hostname belongs to (longest matching suffix)."""
     parts = hostname.split(".")
-    for m in range(len(parts) - 1):
-        zs = cf.call("GET", "/zones", query=f"name={'.'.join(parts[m:])}")
+    for i in range(len(parts) - 1):
+        zs = cf.call("GET", "/zones", query=f"name={'.'.join(parts[i:])}")
         if zs:
             return zs[0]
     sys.exit(f"no Cloudflare zone found for {hostname} (is the domain on this account, and may the token read it?)")

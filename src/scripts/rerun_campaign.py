@@ -80,14 +80,14 @@ def main():
     L = CampaignLog(log_dir, a.batch, smoke)
     allr = {r["label"]: r for g in C.groups for r in RC.plan_runs(C, g)}
     labels = a.label or [k for k, st in state["runs"].items() if a.failed and st["status"] in ("failed", "interrupted", "retrying", "running")]
-    bad = [e for e in labels if e not in allr]
+    bad = [x for x in labels if x not in allr]
     if bad or not labels:
         sys.exit(f"nothing to re-run / unknown labels {bad}")
     sup = RC.Supervisor(C, L)
     if C.mps:
         RC.mps_start(L)
     try:
-        left = retry(C, L, sup, [allr[e] for e in labels])
+        left = retry(C, L, sup, [allr[x] for x in labels])
     finally:
         if C.mps:
             RC.mps_stop(L)
