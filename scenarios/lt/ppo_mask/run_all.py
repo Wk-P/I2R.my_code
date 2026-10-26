@@ -59,9 +59,9 @@ def _make_p4_env(seed: int) -> Monitor:
     """Module-level factory."""
     import random
     random.seed(seed)
-    caps, reqs, _ = C.SCENARIOS[C.SCENARIO_IDX]
-    ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-    services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+    c, e, _ = C.SCENARIOS[C.SCENARIO_IDX]
+    ecus     = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+    services = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
     env = P4Env(
         ecus, services, scenarios=C.TRAIN_SCENARIOS,
         # Starting value only -- P4Callback._on_step() overwrites this every
@@ -90,10 +90,10 @@ def run_episodes(ecus, services, policy_fn, n_samples: int = 1):
     ars, placed_list = [], []
     valid_placed_list, ecus_used_list, success_list, attempts_list = [], [], [], []
     for scenario in C.TEST_SCENARIOS:
-        caps, reqs, cs = scenario
-        M_sc = len(reqs)
-        _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-        _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+        c, e, cs = scenario
+        M_sc = len(e)
+        _ecus = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+        _svcs = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
 
         best = None  # (success, valid_placed, ar, placed, ecus_used)
         used_attempts = 0
@@ -219,7 +219,7 @@ def train_maskppo(ecus, services, device: str):
     sys.stdout.flush()
     n_envs = max(1, int(C.N_ENVS))
     env = DummyVecEnv(
-        [functools.partial(_make_p4_env, C.SEED + i) for i in range(n_envs)],
+        [functools.partial(_make_p4_env, C.SEED + m) for m in range(n_envs)],
     )
     print(f"  Using DummyVecEnv: n_envs={n_envs}")
 
@@ -270,13 +270,13 @@ def save_training_curve_csv(cb, outdir):
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["timestep", "episode_ar", "episode_success", "episode_valid_placed", "episode_placed"])
-        for i in range(len(cb.timesteps_at_ep)):
+        for m in range(len(cb.timesteps_at_ep)):
             writer.writerow([
-                cb.timesteps_at_ep[i],
-                round(cb.episode_ars[i], 6),
-                int(cb.episode_success[i]),
-                cb.episode_valid_placed[i],
-                cb.episode_placed[i],
+                cb.timesteps_at_ep[m],
+                round(cb.episode_ars[m], 6),
+                int(cb.episode_success[m]),
+                cb.episode_valid_placed[m],
+                cb.episode_placed[m],
             ])
     print(f"  Saved -> {path}")
 

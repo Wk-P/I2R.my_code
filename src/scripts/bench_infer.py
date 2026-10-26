@@ -91,11 +91,11 @@ def main():
     with Pool(len(jobs)) as pp, Pool(ILP_WORKERS) as ip:
         pol = pp.map_async(policy_times, jobs)
         ilp = {}
-        tasks = [(s, sd, k) for (s, sd), m in n.items() for k in range(m)]
-        for i, (s, sd, k, ms, it) in enumerate(ip.imap_unordered(ilp_one, tasks, chunksize=2), 1):
+        tasks = [(s, sd, k) for (s, sd), m_ in n.items() for k in range(m_)]
+        for m, (s, sd, k, ms, it) in enumerate(ip.imap_unordered(ilp_one, tasks, chunksize=2), 1):
             ilp.setdefault(s, []).append((ms, it))
-            if i % max(1, len(tasks) // 20) == 0:
-                print(f"[bench] ILP {i}/{len(tasks)} ({100 * i / len(tasks):.0f}%)", flush=True)
+            if m % max(1, len(tasks) // 20) == 0:
+                print(f"[bench] ILP {m}/{len(tasks)} ({100 * m / len(tasks):.0f}%)", flush=True)
         pol = {(s, sd): rows for s, sd, rows in pol.get()}
     secs = time.time() - t_start
     print(f"done in {secs / 60:.1f} min", flush=True)

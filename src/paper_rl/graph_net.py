@@ -88,52 +88,52 @@ def run_graphed(owner: nn.Module, tag: str, fn, obs):
     return cache[key](obs)
 
 
-def build(caps, reqs, adj, assign, t, glob_std: bool = False, glob3: bool = False):
+def build(c, e, adj, assign, t, glob_std: bool = False, glob3: bool = False):
     """Raw state -> (node features: glob [B,4 or 5], ecu [B,N,6], svc [B,M,5]), relations [B,R,L,L], mask [B,N+1], ar [B]."""
-    B, N = caps.shape
-    M = reqs.shape[1]
-    dev = caps.device
+    B, N = c.shape
+    M = e.shape[1]
+    dev = c.device
     ar_idx = torch.arange(B, device=dev)
-    cmax = caps.max(1, keepdim=True).values
+    cmax = c.max(1, keepdim=True).values
     placed = assign >= 0
     unpl = ~placed
     host = assign.unsqueeze(-1) == torch.arange(N, device=dev)              # [B,M,N]
     hostf = host.float()
-    load = (hostf * reqs.unsqueeze(-1)).sum(1)                              # [B,N]
-    free = caps - load
+    load = (hostf * e.unsqueeze(-1)).sum(1)                              # [B,N]
+    free = c - load
     active = host.any(1)
-    util = load / caps
+    util = load / c
     ar = (util * active).sum(1) / active.sum(1).clamp(min=1)
     adjf = adj.float()
     conf_ecu = (adjf @ hostf) > 0                                           # k conflicts with a service on j
-    fits = reqs.unsqueeze(-1) <= free.unsqueeze(1)
+    fits = e.unsqueeze(-1) <= free.unsqueeze(1)
     feas = fits & ~conf_ecu & unpl.unsqueeze(-1)                            # [B,M,N]
     tc = t.clamp(max=M - 1)
     cur = torch.arange(M, device=dev) == tc.unsqueeze(1)
     m_ecu = feas[ar_idx, tc] & (t < M).unsqueeze(1)
     mask = torch.cat([m_ecu, ~m_ecu.any(1, keepdim=True)], 1)
-    tot = caps.sum(1)
+    tot = c.sum(1)
     if glob3:                                       # v4.4.13: [M_rem / M, AR_t, sigma_util,t]
         var = (((util - ar.unsqueeze(1)) ** 2) * active).sum(1) / active.sum(1).clamp(min=1)
         gl = [unpl.float().mean(1), ar, var.clamp(min=0).sqrt()]
     else:
-        gl = [ar, unpl.float().mean(1), (reqs * unpl).sum(1) / tot, free.clamp(min=0).sum(1) / tot]
+        gl = [ar, unpl.float().mean(1), (e * unpl).sum(1) / tot, free.clamp(min=0).sum(1) / tot]
     if glob_std and not glob3:                                    # v4.4.6: spread of utilisation over the active ECUs
         var = (((util - ar.unsqueeze(1)) ** 2) * active).sum(1) / active.sum(1).clamp(min=1)
         gl.append(2 * var.clamp(min=0).sqrt())
     glob = torch.stack(gl, 1)
-    ecu = torch.stack([caps / cmax, free.clamp(min=0) / cmax, active.float(), m_ecu.float(),
+    ecu = torch.stack([c / cmax, free.clamp(min=0) / cmax, active.float(), m_ecu.float(),
                        hostf.sum(1) / M, util], -1)
     uu = unpl.unsqueeze(1) & unpl.unsqueeze(2)
-    svc = torch.stack([reqs / cmax, placed.float(), cur.float(), feas.float().sum(-1) / N,
+    svc = torch.stack([e / cmax, placed.float(), cur.float(), feas.float().sum(-1) / N,
                        (adj & uu).float().sum(-1) / M * unpl], -1)
     L = 1 + N + M
     rel = torch.zeros(B, N_REL, L, L, device=dev)
-    s, e = slice(1 + N, L), slice(1, 1 + N)
+    s, e_ = slice(1 + N, L), slice(1, 1 + N)
     rel[:, 0, s, s] = (adj & uu).float()
     for r, x in ((1, hostf), (2, (conf_ecu & unpl.unsqueeze(-1)).float()), (3, (fits & unpl.unsqueeze(-1)).float())):
-        rel[:, r, s, e] = x
-        rel[:, r, e, s] = x.transpose(1, 2)
+        rel[:, r, s, e_] = x
+        rel[:, r, e_, s] = x.transpose(1, 2)
     return (glob, ecu, svc), rel, mask, ar
 
 
@@ -177,13 +177,13 @@ class PlanEncoder(nn.Module):
         nn.init.zeros_(self.w_e.weight)
         nn.init.zeros_(self.w_e.bias)
 
-    def forward(self, caps, reqs, adj):
+    def forward(self, c, e, adj):
         """-> P [B, M, N] from the initial state (nothing placed, t = 0)."""
-        B, N = caps.shape
-        M = reqs.shape[1]
-        assign0 = torch.full((B, M), -1, dtype=torch.long, device=caps.device)
-        t0 = torch.zeros(B, dtype=torch.long, device=caps.device)
-        feats, rel, _, _ = build(caps, reqs, adj, assign0, t0, self.glob_std)
+        B, N = c.shape
+        M = e.shape[1]
+        assign0 = torch.full((B, M), -1, dtype=torch.long, device=c.device)
+        t0 = torch.zeros(B, dtype=torch.long, device=c.device)
+        feats, rel, _, _ = build(c, e, adj, assign0, t0, self.glob_std)
         x0 = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
         h_ecu, h_svc = x0[:, 1:1 + N], x0[:, 1 + N:]
         return self.w_s(h_svc) @ self.w_e(h_ecu).transpose(1, 2) / self.d ** 0.5
@@ -218,15 +218,15 @@ class GraphPolicyNet(nn.Module):
         self.exit_head = nn.Linear(d, 1)
         self.value_head = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, 1))
 
-    def forward(self, caps, reqs, adj, assign, t, lam=None):
+    def forward(self, c, e, adj, assign, t, lam=None):
         """-> masked logits [B,N+1], value [B], mask [B,N+1], ar [B]"""
-        logits, value, mask, ar = self.scores(caps, reqs, adj, assign, t, lam)
+        logits, value, mask, ar = self.scores(c, e, adj, assign, t, lam)
         return logits.masked_fill(~mask, -1e9), value, mask, ar
 
-    def scores(self, caps, reqs, adj, assign, t, lam=None):
+    def scores(self, c, e, adj, assign, t, lam=None):
         """-> unmasked scores [B,N+1] (ECUs + EXIT; used as Q-values by graph DQN, v4.5.2), value [B], mask, ar.
         lam [B] (lambda / LAMBDA_MAX) is required iff the network was built with lam_in (v4.5.4)."""
-        feats, rel, mask, ar = build(caps, reqs, adj, assign, t, self.glob_std, self.glob3)
+        feats, rel, mask, ar = build(c, e, adj, assign, t, self.glob_std, self.glob3)
         if not self.feas_in:
             glob, ecu, svc = feats
             # no violation leaks either: utilisation clipped to 1 (free is already clamped at 0), AR from the clipped one
@@ -240,11 +240,11 @@ class GraphPolicyNet(nn.Module):
         if self.lam_in:
             assert lam is not None, "lam_in network needs lambda (Lagrange raw observation)"
             feats = (torch.cat([feats[0], lam.float().unsqueeze(1)], 1), *feats[1:])
-        N = caps.shape[1]
+        N = c.shape[1]
         x = _encode(self.inp, self.type_emb, self.blocks, self.ln, feats, rel)
         h_ecu = x[:, 1:1 + N]
         if self.pair_head:
-            M = reqs.shape[1]
+            M = e.shape[1]
             h_svc = x[torch.arange(x.shape[0], device=x.device), 1 + N + t.clamp(max=M - 1)]   # current service
             h_svc = h_svc.unsqueeze(1).expand_as(h_ecu)
             z = torch.cat([h_svc, h_ecu, h_svc * h_ecu, x[:, :1].expand_as(h_ecu)], -1)
@@ -252,8 +252,8 @@ class GraphPolicyNet(nn.Module):
         else:
             ecu_logits = self.ecu_head(h_ecu).squeeze(-1)
         if self.plan:                                   # plan row of the current service: P[i_t, :]
-            M = reqs.shape[1]
-            P = self.plan_enc(caps, reqs, adj)
+            M = e.shape[1]
+            P = self.plan_enc(c, e, adj)
             row = P[torch.arange(P.shape[0], device=P.device), t.clamp(max=M - 1)]
             if self.plan_decay:                         # v4.4.13: beta_t = (M - t) / M
                 row = row * ((M - t.clamp(max=M - 1)).float() / M).unsqueeze(1)
@@ -267,25 +267,25 @@ def state_from_env(env):
     """Raw state tensors (batch of 1) of a PlacementEnv (ECU action, placement order)."""
     import numpy as np
     adj = np.zeros((env.M, env.M), dtype=bool)
-    for i, ps in enumerate(env.partners):
-        adj[i, list(ps)] = True
+    for m, ps in enumerate(env.partners):
+        adj[m, list(ps)] = True
     assign = np.full(env.M, -1)
-    for j, hs in enumerate(env.hosted):
-        for i in hs:
-            assign[i] = j
-    return (torch.as_tensor(env.cap[None], dtype=torch.float32), torch.as_tensor(env.req[None], dtype=torch.float32),
+    for n, hs in enumerate(env.hosted):
+        for m in hs:
+            assign[m] = n
+    return (torch.as_tensor(env.c[None], dtype=torch.float32), torch.as_tensor(env.e[None], dtype=torch.float32),
             torch.as_tensor(adj[None]), torch.as_tensor(assign[None]), torch.as_tensor([env.t]))
 
 
 def decode_raw(obs, n: int, m: int):
     """PlacementEnv raw observation [B, N+M+M*M+M+1 (+1)] -> (caps, reqs, adj, assign, t).
     t is read at its fixed position, so the optional trailing lambda (Lagrange, v4.5.4) does not move it."""
-    caps = obs[:, :n]
-    reqs = obs[:, n:n + m]
+    c = obs[:, :n]
+    e = obs[:, n:n + m]
     adj = obs[:, n + m:n + m + m * m].reshape(-1, m, m) > 0.5
     assign = obs[:, n + m + m * m:n + 2 * m + m * m].round().long() - 1
     t = obs[:, n + 2 * m + m * m].round().long()
-    return caps, reqs, adj, assign, t
+    return c, e, adj, assign, t
 
 
 def raw_lambda(obs, n: int, m: int):

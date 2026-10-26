@@ -108,13 +108,13 @@ def main():
     a = ap.parse_args()
     t0 = time.time()
     rs = runs()
-    tasks = [(r, p, a.steps, f"cuda:{i % 3}") for i, (r, p) in enumerate((r, p) for r in rs for p in POINTS)]
+    tasks = [(r, p, a.steps, f"cuda:{m % 3}") for m, (r, p) in enumerate((r, p) for r in rs for p in POINTS)]
     print(f"{len(tasks)} probes of {a.steps:,} steps", flush=True)
     rows = []
     with get_context("spawn").Pool(a.workers) as pool:
-        for i, r in enumerate(pool.imap_unordered(probe, tasks), 1):
+        for m, r in enumerate(pool.imap_unordered(probe, tasks), 1):
             rows.append(r)
-            print(f"[probe] {i}/{len(tasks)} {r['scen']} seed {r['seed']} {r['point'] // 1_000_000}M "
+            print(f"[probe] {m}/{len(tasks)} {r['scen']} seed {r['seed']} {r['point'] // 1_000_000}M "
                   f"kl={r['mean']['approx_kl']:.5f} clip={r['mean']['clip_fraction']:.4f} | {(time.time() - t0) / 60:.1f} min", flush=True)
     minutes = (time.time() - t0) / 60
     OUT.mkdir(parents=True, exist_ok=True)

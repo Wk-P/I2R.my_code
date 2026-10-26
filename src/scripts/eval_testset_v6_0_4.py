@@ -153,10 +153,10 @@ def main():
           f"test set {n_test}, {a.workers} workers", flush=True)
     parts = {}
     with Pool(a.workers) as pool:
-        for i, (eid, lo, ev) in enumerate(pool.imap_unordered(eval_chunk, tasks), 1):
+        for m, (eid, lo, ev) in enumerate(pool.imap_unordered(eval_chunk, tasks), 1):
             parts.setdefault(eid, {})[lo] = ev
-            if i % 50 == 0 or i == len(tasks):
-                print(f"[chunk] {i}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
+            if m % 50 == 0 or m == len(tasks):
+                print(f"[chunk] {m}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
     rows = []
     for r in rs:
         res = r["res"]

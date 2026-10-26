@@ -86,8 +86,8 @@ class P3Env(gym.Env):
     def _init_conflict_sets(self, K: int = 10) -> list[set]:
         sets = []
         for _ in range(K):
-            j = random.randint(2, self.M)
-            sets.append(set(random.sample(range(self.M), j)))
+            n = random.randint(2, self.M)
+            sets.append(set(random.sample(range(self.M), n)))
         return sets
 
     def _has_conflict(self, ecu_idx: int, svc_idx: int) -> bool:
@@ -103,11 +103,11 @@ class P3Env(gym.Env):
         super().reset(seed=seed)
         self._sc = None  # (caps, reqs, conflict_sets) as drawn, for AR* lookup
         if self._scenarios is not None:
-            caps, reqs, _cs = random.choice(self._scenarios)
-            self._sc = (caps, reqs, _cs)
-            self.ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-            self.services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
-            self.initial_vms = np.array([e.capacity for e in self.ecus], dtype=np.float32)
+            c, e, _cs = random.choice(self._scenarios)
+            self._sc = (c, e, _cs)
+            self.ecus     = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+            self.services = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
+            self.initial_vms = np.array([e_.capacity for e_ in self.ecus], dtype=np.float32)
             # Remap conflict-set indices from original order → sorted order so that
             # they match self._step (which is a sorted-position index, not original index).
             self.conflict_sets = [set(cs) for cs in _cs]
@@ -157,7 +157,7 @@ class P3Env(gym.Env):
             svc = self.services[self._step]
             service_demand_norm = np.float32(svc.requirement / max_cap)
             conflict_flag = np.array(
-                [float(self._has_conflict(j, self._step)) for j in range(self.N)],
+                [float(self._has_conflict(n, self._step)) for n in range(self.N)],
                 dtype=np.float32,
             )
             valid_flag = (self.remaining_vms >= svc.requirement).astype(np.float32)
@@ -179,7 +179,7 @@ class P3Env(gym.Env):
             remaining_svcs[self._step:] = self._req_arr[self._step:] / max_cap
 
         ecu_allowed_frac = np.array(
-            [len(self.ecu_allowed[j]) / self.M for j in range(self.N)],
+            [len(self.ecu_allowed[n]) / self.M for n in range(self.N)],
             dtype=np.float32,
         )
 
@@ -282,10 +282,10 @@ P3Env.step = directional_step(P3Env.step)
 if __name__ == "__main__":
     random.seed(42)
     N, M = 7, 10
-    ecus     = [ECU(f"ECU{i}", cap) for i, cap in enumerate(random.sample(range(50, 200, 5), N))]
-    services = [SVC(f"SVC{i}", req) for i, req in enumerate(random.sample(range(10, 80, 5), M))]
+    ecus     = [ECU(f"ECU{m}", c) for m, c in enumerate(random.sample(range(50, 200, 5), N))]
+    services = [SVC(f"SVC{m}", e) for m, e in enumerate(random.sample(range(10, 80, 5), M))]
 
-    print("ECU capacities :", [e.capacity for e in ecus])
+    print("ECU capacities :", [e_.capacity for e_ in ecus])
     print("Service demands:", [s.requirement for s in services])
 
     env = P3Env(ecus, services)

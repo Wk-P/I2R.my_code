@@ -35,9 +35,9 @@ def _alloc_one(x):
     r = solve_ilp_max_ar(x["ECUs"], x["SVCs"], x["conflict_sets"])
     assert r["status"] == "Optimal", r["status"]
     svc_ecu = [None] * len(x["SVCs"])
-    for j, svcs in r["allocation"].items():
-        for i in svcs:
-            svc_ecu[i] = int(j)
+    for n, svcs in r["allocation"].items():
+        for m in svcs:
+            svc_ecu[m] = int(n)
     return svc_ecu, float(r["avg_utilization"])
 
 
@@ -62,25 +62,25 @@ def expert_dataset(env_kwargs: dict, instances: list, allocs: list):
     env = PlacementEnv(instances, **env_kwargs)
     obs_l, mask_l, lab_l, ret_l = [], [], [], []
     for k, inst in enumerate(instances):
-        order = sorted(range(len(inst["SVCs"])), key=lambda i: -inst["SVCs"][i])   # as PlacementEnv.reset
+        order = sorted(range(len(inst["SVCs"])), key=lambda m: -inst["SVCs"][m])   # as PlacementEnv.reset
         env.use_instance(k)
         obs, _ = env.reset()
         done, t = False, 0
         while not done:
             mask = env.action_masks()
-            j = allocs[k][order[t]]
-            assert mask[j], "expert action masked"
+            n = allocs[k][order[t]]
+            assert mask[n], "expert action masked"
             lab = np.zeros_like(mask)
-            if env.hosted[j]:
-                lab[j] = True
+            if env.hosted[n]:
+                lab[n] = True
             else:                                        # empty ECU: every legal empty ECU of equal capacity
                 for q in range(env.N):
-                    lab[q] = mask[q] and not env.hosted[q] and env.cap[q] == env.cap[j]
+                    lab[q] = mask[q] and not env.hosted[q] and env.c[q] == env.c[n]
             obs_l.append(obs)
             mask_l.append(mask)
             lab_l.append(lab)
             ret_l.append(inst["ar_star"])
-            obs, _, done, _, info = env.step(j)
+            obs, _, done, _, info = env.step(n)
             t += 1
         assert info["valid_placed"] == env.M and abs(info["ar"] - inst["ar_star"]) < 1e-4, "expert replay mismatch"
     return (np.array(obs_l, dtype=np.float32), np.array(mask_l), np.array(lab_l), np.array(ret_l, dtype=np.float32))

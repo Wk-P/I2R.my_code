@@ -41,7 +41,7 @@ def main():
         with Pool(48) as pool:
             while len(out) < N_TEST:
                 need = N_TEST - len(out)
-                for x in pool.map(_gen, [(scen, base + nxt + i) for i in range(need)], chunksize=16):
+                for x in pool.map(_gen, [(scen, base + nxt + m) for m in range(need)], chunksize=16):
                     if key(x) not in seen and x["ar_star"] > 0:
                         seen.add(key(x))
                         out.append(x)

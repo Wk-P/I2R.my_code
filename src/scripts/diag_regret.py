@@ -35,7 +35,7 @@ def test_split(scen):
     inst = load(scen, DATA)["instances"]
     idx = list(range(len(inst)))
     random.Random(SEED).shuffle(idx)                   # same as paper_rl.train.split_instances
-    return [inst[i] for i in idx[int(0.8 * len(inst)):]]
+    return [inst[m] for m in idx[int(0.8 * len(inst)):]]
 
 
 def rollout(args):
@@ -61,13 +61,13 @@ def rollout(args):
             if a == env.N:                                     # EXIT
                 obs, _, done, _, info = env.step(a)
                 break
-            active = [j for j in range(env.N) if env.hosted[j]]
+            active = [n for n in range(env.N) if env.hosted[n]]
             feas = env._feasible(env.t)
             kind = None
             if a not in active and active:
-                kind = "voluntary" if any(feas[j] for j in active) else "forced"
-            steps.append({"svc": order[env.t], "a": a, "legal": [int(j) for j in np.flatnonzero(mask[:env.N])],
-                          "empty": [not env.hosted[j] for j in range(env.N)], "open": kind})
+                kind = "voluntary" if any(feas[n] for n in active) else "forced"
+            steps.append({"svc": order[env.t], "a": a, "legal": [int(n) for n in np.flatnonzero(mask[:env.N])],
+                          "empty": [not env.hosted[n] for n in range(env.N)], "open": kind})
             obs, _, done, _, info = env.step(a)
         out.append({"k": k, "steps": steps, "exited": bool(info["exited"]), "ar": float(info["ar"]),
                     "ilp": float(test[k]["ar_star"]), "M": env.M})
@@ -79,12 +79,12 @@ def values(args):
     from shared.ilp_utils import solve_ilp_max_ar
     scen, k, t, prefix, step = args
     x = test_split_cache(scen)[k]
-    caps = x["ECUs"]
+    c = x["ECUs"]
     vals, seen = {}, {}
     for a in step["legal"]:
-        key = ("empty", caps[a]) if step["empty"][a] else ("ecu", a)
+        key = ("empty", c[a]) if step["empty"][a] else ("ecu", a)
         if key not in seen:
-            r = solve_ilp_max_ar(caps, x["SVCs"], x["conflict_sets"], fixed={**prefix, step["svc"]: a})
+            r = solve_ilp_max_ar(c, x["SVCs"], x["conflict_sets"], fixed={**prefix, step["svc"]: a})
             seen[key] = float(r["avg_utilization"]) if r["status"] == "Optimal" else None
         vals[a] = seen[key]
     return scen, k, t, vals
@@ -135,12 +135,12 @@ def main():
                 prefix[st["svc"]] = st["a"]
         print(f"{len(traj)} trajectories, {len(tasks)} steps to solve", flush=True)
         t_solve, every = time.time(), max(1, len(tasks) // 50)
-        for i, (s, k, t, vals) in enumerate(pool.imap_unordered(values, tasks, chunksize=4), 1):
+        for m, (s, k, t, vals) in enumerate(pool.imap_unordered(values, tasks, chunksize=4), 1):
             traj[(s, k)]["steps"][t]["vals"] = vals
-            if i % every == 0 or i == len(tasks):              # progress line, parsed by the panel
+            if m % every == 0 or m == len(tasks):              # progress line, parsed by the panel
                 el = time.time() - t_solve
-                print(f"[regret] solved {i}/{len(tasks)} ({100 * i / len(tasks):.0f}%) | "
-                      f"elapsed {el / 60:.1f} min | eta {el / i * (len(tasks) - i) / 60:.1f} min", flush=True)
+                print(f"[regret] solved {m}/{len(tasks)} ({100 * m / len(tasks):.0f}%) | "
+                      f"elapsed {el / 60:.1f} min | eta {el / m * (len(tasks) - m) / 60:.1f} min", flush=True)
     print(f"solved in {(time.time() - t0) / 60:.1f} min", flush=True)
 
     pc = lambda v: f"{100 * v:.1f}%"

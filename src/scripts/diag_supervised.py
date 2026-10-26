@@ -42,17 +42,17 @@ def _gen(args):
     from paper_rl.data import draw
     from shared.ilp_utils import solve_ilp_max_ar
     scen, seed = args
-    n, m = SCEN_NM[scen]
+    n_, m_ = SCEN_NM[scen]
     rng = random.Random(seed)
     while True:
-        caps, reqs, sets = draw(n, m, P, rng)
-        r = solve_ilp_max_ar(caps, reqs, sets)
+        c, e, sets = draw(n_, m_, P, rng)
+        r = solve_ilp_max_ar(c, e, sets)
         if r["status"] == "Optimal":
-            alloc = [None] * m
-            for j, svcs in r["allocation"].items():
-                for i in svcs:
-                    alloc[i] = int(j)
-            return {"ECUs": caps, "SVCs": reqs, "conflict_sets": sets, "ar_star": round(float(r["avg_utilization"]), 6),
+            alloc = [None] * m_
+            for n, svcs in r["allocation"].items():
+                for m in svcs:
+                    alloc[m] = int(n)
+            return {"ECUs": c, "SVCs": e, "conflict_sets": sets, "ar_star": round(float(r["avg_utilization"]), 6),
                     "alloc": alloc}
 
 
@@ -62,7 +62,7 @@ def gen():
         t0 = time.time()
         base = 700_000_000 + SCENARIOS.index(scen) * 10_000_000
         with Pool(48) as pool:
-            inst = pool.map(_gen, [(scen, base + i) for i in range(max(SIZES))], chunksize=16)
+            inst = pool.map(_gen, [(scen, base + m) for m in range(max(SIZES))], chunksize=16)
         (OUT / f"{scen}.json").write_text(json.dumps(inst))
         print(f"{scen}: {len(inst)} instances, {(time.time() - t0) / 60:.1f} min", flush=True)
 
@@ -74,7 +74,7 @@ def test_set(scen):
     alloc = json.loads(alloc_path(scen, DATA).read_text())
     idx = list(range(len(inst)))
     random.Random(SEED).shuffle(idx)                   # same as paper_rl.train.split_instances
-    return [{**inst[i], "alloc": alloc[i]} for i in idx[int(0.8 * len(inst)):]]
+    return [{**inst[m], "alloc": alloc[m]} for m in idx[int(0.8 * len(inst)):]]
 
 
 def collect(args):
@@ -84,26 +84,26 @@ def collect(args):
     env = PlacementEnv(insts, "mask", "ar_pen", obs_mode=obs_mode, full_episode=True, exit_action=True)
     O, MK, LB, T = [], [], [], []
     for k, x in enumerate(insts):
-        order = sorted(range(len(x["SVCs"])), key=lambda i: -x["SVCs"][i])
+        order = sorted(range(len(x["SVCs"])), key=lambda m: -x["SVCs"][m])
         env.use_instance(k)
         obs, _ = env.reset()
         for t in range(env.M):
             mask = env.action_masks()
-            j = x["alloc"][order[t]]
+            n = x["alloc"][order[t]]
             lab = np.zeros_like(mask)
-            if env.hosted[j]:
-                lab[j] = True
+            if env.hosted[n]:
+                lab[n] = True
             else:
                 for q in range(env.N):
-                    lab[q] = mask[q] and not env.hosted[q] and env.cap[q] == env.cap[j]
+                    lab[q] = mask[q] and not env.hosted[q] and env.c[q] == env.c[n]
             O.append(obs); MK.append(mask); LB.append(lab); T.append(t)
-            obs, *_ = env.step(j)
+            obs, *_ = env.step(n)
     return np.array(O, np.float32), np.array(MK), np.array(LB), np.array(T)
 
 
 def dataset(pool, insts, obs_mode):
     parts = pool.map(collect, [(insts[c:c + 500], obs_mode) for c in range(0, len(insts), 500)])
-    return tuple(np.concatenate([p[i] for p in parts]) for i in range(4))
+    return tuple(np.concatenate([p[m] for p in parts]) for m in range(4))
 
 
 # ── model ───────────────────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ def rollout(model, insts, obs_mode):
             n_exit += 1
         else:
             ok.append((info["ar"], x["ar_star"]))
-    ar, ilp = (float(np.mean([v[i] for v in ok])) for i in (0, 1))
+    ar, ilp = (float(np.mean([v[m] for v in ok])) for m in (0, 1))
     return {"exit": n_exit / len(insts), "ar": ar, "ilp": ilp, "gap": ilp - ar, "rel": (ilp - ar) / ilp}
 
 

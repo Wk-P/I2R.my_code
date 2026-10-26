@@ -117,10 +117,10 @@ def main():
     print(f"{len(rs)} runs, {len(tasks)} checkpoint evaluations", flush=True)
     pts = {}
     with Pool(a.workers) as pool:
-        for i, (eid, step, p) in enumerate(pool.imap_unordered(eval_ckpt, tasks), 1):
+        for m, (eid, step, p) in enumerate(pool.imap_unordered(eval_ckpt, tasks), 1):
             pts.setdefault(eid, {})[str(step)] = p
-            if i % 20 == 0 or i == len(tasks):
-                print(f"[ckpt] {i}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
+            if m % 20 == 0 or m == len(tasks):
+                print(f"[ckpt] {m}/{len(tasks)} | {(time.time() - t0) / 60:.1f} min", flush=True)
     rows = []
     for r in rs:
         res = r["res"]

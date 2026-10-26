@@ -20,9 +20,9 @@ ROOT = Path(__file__).parent.parent.parent
 def _solve(sc):
     from ilp.objects import ECU, SVC
     from shared.ilp_utils import solve_ilp
-    caps, reqs, cs = sc
-    res = solve_ilp([ECU(f"ECU{i}", c) for i, c in enumerate(caps)],
-                    [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)], cs)
+    c, e, cs = sc
+    res = solve_ilp([ECU(f"ECU{m}", c_) for m, c_ in enumerate(c)],
+                    [SVC(f"SVC{m}", r) for m, r in enumerate(e)], cs)
     return res["status"], res["avg_utilization"]
 
 

@@ -113,10 +113,10 @@ def collect_self_imitation_data(model, scenarios, n_samples):
     obs_list, mask_list, act_list = [], [], []
     n_success = 0
     for sc in scenarios:
-        caps, reqs, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
-        M_sc = len(reqs)
-        ecus = [RA.ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
-        svcs = [RA.SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
+        c, e, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
+        M_sc = len(e)
+        ecus = [RA.ECU(f"ECU{m}", c_) for m, c_ in enumerate(c)]
+        svcs = [RA.SVC(f"SVC{m}", r) for m, r in enumerate(e)]
         for _attempt in range(n_samples):
             env = P4Env(ecus, svcs, scenarios=[sc])
             obs, _ = env.reset()
@@ -163,11 +163,11 @@ def evaluate(model, label_n_pairs, progress_ctx=None):
         action, _ = model.predict(obs, deterministic=True, action_masks=mask)
         return int(action)
     out = {}
-    for i, (label, det, n) in enumerate(label_n_pairs):
+    for m, (label, det, n) in enumerate(label_n_pairs):
         if progress_ctx:
             phase, round_idx, total_rounds, exp_id = progress_ctx
             write_progress(PROGRESS_DIR, phase=phase, round=round_idx, total_rounds=total_rounds,
-                            eval_label=label, eval_step=i + 1, eval_total=len(label_n_pairs),
+                            eval_label=label, eval_step=m + 1, eval_total=len(label_n_pairs),
                             pct=round(round_idx / max(total_rounds, 1) * 100, 1), exp_id=exp_id)
         pol = ppo_policy_det if det else ppo_policy
         res = RA.run_episodes(None, None, pol, n_samples=n)
@@ -197,7 +197,7 @@ def main():
     # MaskablePPO.load() doesn't restore an env; attach one so model.learn()
     # can run further on-policy optimization (the RL-recovery step below).
     n_envs = max(1, int(C.N_ENVS))
-    env = DummyVecEnv([functools.partial(RA._make_p4_env, C.SEED + i) for i in range(n_envs)])
+    env = DummyVecEnv([functools.partial(RA._make_p4_env, C.SEED + m) for m in range(n_envs)])
     model.set_env(env)
 
     exp_id = resolve_exp_id(C.OUTDIR)

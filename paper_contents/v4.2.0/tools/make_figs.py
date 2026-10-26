@@ -122,14 +122,14 @@ def styled_table(rows, col_labels, highlight, title, name, figsize, col_widths=N
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1, 2.0)
-    for j in range(len(col_labels)):
-        table[(0, j)].set_facecolor("#c9d6ea")
-        table[(0, j)].set_text_props(fontweight="bold")
-    for i, hl in enumerate(highlight, start=1):
-        for j in range(len(col_labels)):
-            table[(i, j)].set_facecolor("#fdf1c7" if hl else "white")
+    for n in range(len(col_labels)):
+        table[(0, n)].set_facecolor("#c9d6ea")
+        table[(0, n)].set_text_props(fontweight="bold")
+    for m, hl in enumerate(highlight, start=1):
+        for n in range(len(col_labels)):
+            table[(m, n)].set_facecolor("#fdf1c7" if hl else "white")
             if hl:
-                table[(i, j)].set_text_props(fontweight="bold")
+                table[(m, n)].set_text_props(fontweight="bold")
     fig.tight_layout()
     out = FIGDIR / name
     fig.savefig(out, dpi=150, bbox_inches="tight")

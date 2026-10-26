@@ -122,9 +122,9 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
 
     def make_env(seed: int) -> Monitor:
         random.seed(seed)
-        caps, reqs, _ = C.SCENARIOS[C.SCENARIO_IDX]
-        ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-        services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+        c, e, _ = C.SCENARIOS[C.SCENARIO_IDX]
+        ecus = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+        services = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
         return Monitor(EnvCls(ecus, services, scenarios=C.TRAIN_SCENARIOS, **env_kwargs()))
 
     # ── evaluation ───────────────────────────────────────────────────────────
@@ -133,9 +133,9 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
         tooling's signature; v4.3.0 always evaluates with n_samples=1)."""
         rows = []
         for scenario in C.TEST_SCENARIOS:
-            caps, reqs, _ = scenario
-            _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-            _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+            c, e, _ = scenario
+            _ecus = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+            _svcs = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
             best = None
             for _ in range(max(1, n_samples)):
                 env = EnvCls(_ecus, _svcs, scenarios=[scenario], **env_kwargs())
@@ -143,7 +143,7 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
                 done, info = False, {}
                 while not done:
                     obs, _, done, _, info = env.step(policy_fn(obs))
-                st = _episode_stats(info, len(reqs), variant)
+                st = _episode_stats(info, len(e), variant)
                 key = (st["success"], st["valid_placed"], st["ar"])
                 if best is None or key > best[0]:
                     best = (key, st)
@@ -166,7 +166,7 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
         def __init__(self):
             super().__init__()
             self.rewards, self.ars, self.placed, self.valid_placed = [], [], [], []
-            self.cap, self.conf, self.success, self.ts = [], [], [], []
+            self.c, self.conf, self.success, self.ts = [], [], [], []
             self._next_progress = C.PROGRESS_LOG_EVERY_STEPS
             self._t0 = 0.0
             self.lambdas = []
@@ -201,7 +201,7 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
                     self.ars.append(st["ar"])
                     self.placed.append(st["placed"])
                     self.valid_placed.append(st["valid_placed"])
-                    self.cap.append(int(st["cap_v"] > 0))
+                    self.c.append(int(st["cap_v"] > 0))
                     self.conf.append(int(st["conf_v"] > 0))
                     self.success.append(st["success"])
                     self.ts.append(self.num_timesteps)
@@ -224,7 +224,7 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
         import torch
         torch.set_num_threads(C.TORCH_NUM_THREADS)
         n_envs = max(1, int(C.N_ENVS))
-        env = DummyVecEnv([functools.partial(make_env, C.SEED + i) for i in range(n_envs)])
+        env = DummyVecEnv([functools.partial(make_env, C.SEED + m) for m in range(n_envs)])
         print(f"  Using DummyVecEnv: n_envs={n_envs}")
         cb = Callback()
         model = model_cls(
@@ -257,9 +257,9 @@ def make_runner(C, variant: str, double: bool) -> SimpleNamespace:
             w = csv.writer(f)
             w.writerow(["timestep", "episode_ar", "episode_success", "episode_valid_placed",
                         "episode_placed", "episode_reward"])
-            for i in range(len(cb.ts)):
-                w.writerow([cb.ts[i], round(cb.ars[i], 6), int(cb.success[i]),
-                            cb.valid_placed[i], cb.placed[i], round(cb.rewards[i], 6)])
+            for m in range(len(cb.ts)):
+                w.writerow([cb.ts[m], round(cb.ars[m], 6), int(cb.success[m]),
+                            cb.valid_placed[m], cb.placed[m], round(cb.rewards[m], 6)])
         print(f"  Saved -> {path}")
 
     def plot_training_curve(cb, ilp_ar, outdir, scenario_name):

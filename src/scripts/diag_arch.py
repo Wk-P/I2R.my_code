@@ -37,10 +37,10 @@ ATTN_LR, MLP_LR, WARMUP = 5e-4, 1e-3, 1000
 def raw(insts):
     """Instances (original index) -> placement-order tensors + expert ECU per step."""
     import torch
-    caps, reqs, adj, exp = [], [], [], []
+    c, e, adj, exp = [], [], [], []
     for x in insts:
         M = len(x["SVCs"])
-        order = sorted(range(M), key=lambda i: -x["SVCs"][i])                 # as PlacementEnv.reset
+        order = sorted(range(M), key=lambda m: -x["SVCs"][m])                 # as PlacementEnv.reset
         pos = {o: n for n, o in enumerate(order)}
         a = np.zeros((M, M), dtype=bool)
         for s in x["conflict_sets"]:
@@ -48,28 +48,28 @@ def raw(insts):
                 for v in s:
                     if u != v:
                         a[pos[u], pos[v]] = True
-        caps.append(x["ECUs"]); reqs.append([x["SVCs"][o] for o in order]); adj.append(a)
+        c.append(x["ECUs"]); e.append([x["SVCs"][o] for o in order]); adj.append(a)
         exp.append([x["alloc"][o] for o in order])
-    return (torch.tensor(caps, dtype=torch.float32), torch.tensor(reqs, dtype=torch.float32),
+    return (torch.tensor(c, dtype=torch.float32), torch.tensor(e, dtype=torch.float32),
             torch.as_tensor(np.array(adj)), torch.tensor(exp))
 
 
 def batch_states(d, idx, t):
     """Expert prefix states for instances idx at steps t -> net inputs + label sets."""
     import torch
-    caps, reqs, adj, exp = (x[idx] for x in d)
-    M = reqs.shape[1]
+    c, e, adj, exp = (x[idx] for x in d)
+    M = e.shape[1]
     assign = torch.where(torch.arange(M) < t.unsqueeze(1), exp, torch.full_like(exp, -1))
-    return caps, reqs, adj, assign, t, exp[torch.arange(len(idx)), t]
+    return c, e, adj, assign, t, exp[torch.arange(len(idx)), t]
 
 
-def labels(caps, assign, mask, jstar):
+def labels(c, assign, mask, jstar):
     import torch
-    N = caps.shape[1]
+    N = c.shape[1]
     B = len(jstar)
     active = (assign.unsqueeze(-1) == torch.arange(N)).any(1)
     one = torch.nn.functional.one_hot(jstar, N).bool()
-    eq = mask[:, :N] & ~active & (caps == caps[torch.arange(B), jstar].unsqueeze(1))
+    eq = mask[:, :N] & ~active & (c == c[torch.arange(B), jstar].unsqueeze(1))
     lab = torch.where(active[torch.arange(B), jstar].unsqueeze(1), one, one | eq)
     return torch.cat([lab, torch.zeros(B, 1, dtype=torch.bool)], 1)
 
@@ -81,28 +81,28 @@ def attn_eval(model, d, m):
     hits = np.zeros((n, m))
     with torch.no_grad():
         for t in range(m):
-            for c in range(0, n, 2000):
-                idx = torch.arange(c, min(c + 2000, n))
-                caps, reqs, adj, assign, tt, js = batch_states(d, idx, torch.full((len(idx),), t))
-                lg, _, mask, _ = model(caps, reqs, adj, assign, tt)
-                lab = labels(caps, assign, mask, js)
-                hits[c:c + len(idx), t] = lab[torch.arange(len(idx)), lg.argmax(-1)].numpy()
+            for c_ in range(0, n, 2000):
+                idx = torch.arange(c_, min(c_ + 2000, n))
+                c, e, adj, assign, tt, js = batch_states(d, idx, torch.full((len(idx),), t))
+                lg, _, mask, _ = model(c, e, adj, assign, tt)
+                lab = labels(c, assign, mask, js)
+                hits[c_:c_ + len(idx), t] = lab[torch.arange(len(idx)), lg.argmax(-1)].numpy()
     return float(hits.mean()), [float(v) for v in hits.mean(0)]
 
 
 def attn_rollout(model, d, ar_star):
     import torch
-    caps, reqs, adj, _ = d
-    B, M = reqs.shape
+    c, e, adj, _ = d
+    B, M = e.shape
     assign = torch.full((B, M), -1)
     exited = torch.zeros(B, dtype=torch.bool)
     with torch.no_grad():
         for t in range(M):
-            lg, _, mask, _ = model(caps, reqs, adj, assign, torch.full((B,), t))
+            lg, _, mask, _ = model(c, e, adj, assign, torch.full((B,), t))
             a = lg.argmax(-1)
-            exited |= a == caps.shape[1]
+            exited |= a == c.shape[1]
             assign[:, t] = torch.where(exited, torch.full_like(a, -1), a)
-        *_, ar = model(caps, reqs, adj, assign, torch.full((B,), M))
+        *_, ar = model(c, e, adj, assign, torch.full((B,), M))
     ok = ~exited.numpy()
     ar, ils = ar.numpy()[ok], np.array(ar_star)[ok]
     return {"exit": float(exited.float().mean()), "ar": float(ar.mean()), "ilp": float(ils.mean()),
@@ -126,9 +126,9 @@ def train_attn(scen, size):
     for step in range(STEPS):
         idx = torch.randint(size, (BATCH,), generator=g)
         t = torch.randint(M, (BATCH,), generator=g)
-        caps, reqs, adj, assign, tt, js = batch_states(tr, idx, t)
-        lg, _, mask, _ = model(caps, reqs, adj, assign, tt)
-        lab = labels(caps, assign, mask, js)
+        c, e, adj, assign, tt, js = batch_states(tr, idx, t)
+        lg, _, mask, _ = model(c, e, adj, assign, tt)
+        lab = labels(c, assign, mask, js)
         loss = -torch.logsumexp(torch.log_softmax(lg, -1).masked_fill(~lab, -1e9), -1).mean()
         opt.zero_grad()
         loss.backward()

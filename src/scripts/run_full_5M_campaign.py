@@ -98,9 +98,9 @@ def main():
     while queue or active:
         # fill available capacity greedily from the front of the queue
         current_load = sum(w for _, _, w, _ in active)
-        i = 0
-        while i < len(queue) and current_load + queue[i][3] <= CAPACITY:
-            scenario, algo, seed, weight = queue.pop(i)
+        m = 0
+        while m < len(queue) and current_load + queue[m][3] <= CAPACITY:
+            scenario, algo, seed, weight = queue.pop(m)
             proc, log_f = launch(scenario, algo, seed)
             active.append((proc, log_f, weight, f"{scenario}/{algo}/seed{seed}"))
             current_load += weight

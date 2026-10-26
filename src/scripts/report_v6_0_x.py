@@ -29,10 +29,10 @@ def load():
         for r in json.loads((ROOT / f"logs/{v}/manifest.json").read_text())["runs"]:
             ids[r["exp_id"]] = v
     data = defaultdict(list)
-    for i in ids:
-        f = glob.glob(str(ROOT / f"results/unified/*/*/{i}/results.json"))
+    for m in ids:
+        f = glob.glob(str(ROOT / f"results/unified/*/*/{m}/results.json"))
         if not f:
-            sys.exit(f"missing results.json for {i}")
+            sys.exit(f"missing results.json for {m}")
         r = json.loads(Path(f[0]).read_text())
         a = r[r["algo"]]
         data[(r["mechanism"], r["version"], r["scenario"], r["learner"])].append(dict(

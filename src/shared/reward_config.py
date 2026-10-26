@@ -37,10 +37,10 @@ assert REWARD_MODE in ("legacy", "ar", "ratio", "directional"), f"unknown REWARD
 _AR_STAR: dict[str, dict[str, float]] = {}
 
 
-def scenario_key(caps, reqs, conflict_sets) -> str:
+def scenario_key(c, e, conflict_sets) -> str:
     return hashlib.sha1(repr((
-        [float(c) for c in caps],
-        [float(r) for r in reqs],
+        [float(c_) for c_ in c],
+        [float(r) for r in e],
         [sorted(int(k) for k in cs) for cs in conflict_sets],
     )).encode()).hexdigest()
 
@@ -49,7 +49,7 @@ def ar_star_path(scenario: str):
     return results_dir(scenario, "ilp", "ar_star.json")
 
 
-def lookup_ar_star(scenario: str, caps, reqs, conflict_sets) -> float | None:
+def lookup_ar_star(scenario: str, c, e, conflict_sets) -> float | None:
     """ILP-optimal AR of this instance; None unless REWARD_MODE needs it."""
     if REWARD_MODE != "ratio":
         return None
@@ -58,7 +58,7 @@ def lookup_ar_star(scenario: str, caps, reqs, conflict_sets) -> float | None:
         if not path.exists():
             raise FileNotFoundError(f"{path} missing -- run src/scripts/build_ar_star.py first")
         _AR_STAR[scenario] = json.loads(path.read_text())
-    return _AR_STAR[scenario][scenario_key(caps, reqs, conflict_sets)]
+    return _AR_STAR[scenario][scenario_key(c, e, conflict_sets)]
 
 
 def success_quality(ar: float, ar_star: float | None) -> float:
@@ -123,7 +123,7 @@ def directional_step(step_fn):
         if self._step == 0:                      # first step of an episode
             self._dir_ru, self._dir_active = 0.0, set()
         idx = self._step
-        req = float(self.services[idx].requirement)
+        e = float(self.services[idx].requirement)
         before = [len(p) for p in self.ecu_placements]
         ar0 = self._dir_ru / len(self._dir_active) if self._dir_active else 0.0
         v0 = _viol_count(self)
@@ -139,9 +139,9 @@ def directional_step(step_fn):
             info["dead_end"] = True
             return obs, -C, done, truncated, info
 
-        placed_on = next((j for j, p in enumerate(self.ecu_placements) if len(p) > before[j]), None)
+        placed_on = next((n for n, p in enumerate(self.ecu_placements) if len(p) > before[n]), None)
         if placed_on is not None and (is_repair or c_t == 0):
-            self._dir_ru += req / float(self.initial_vms[placed_on])
+            self._dir_ru += e / float(self.initial_vms[placed_on])
             self._dir_active.add(placed_on)
         ar1 = self._dir_ru / len(self._dir_active) if self._dir_active else 0.0
         info["dir_ar"] = ar1

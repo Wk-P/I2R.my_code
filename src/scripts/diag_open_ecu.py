@@ -39,7 +39,7 @@ def test_split(scen, version, seed):
     inst = load(scen, version)["instances"]
     idx = list(range(len(inst)))
     random.Random(seed).shuffle(idx)                   # same as paper_rl.train.split_instances
-    return [inst[i] for i in idx[int(0.8 * len(inst)):]]
+    return [inst[m] for m in idx[int(0.8 * len(inst)):]]
 
 
 def replay(job):
@@ -53,8 +53,8 @@ def replay(job):
     seed = job[6] if len(job) > 6 else SEED                   # v4.4.5: test split of the run's own training seed
     mech, learner = split_algo(algo)
     test = test_split(scen, version, seed)
-    n, m = len(test[0]["ECUs"]), len(test[0]["SVCs"])
-    predict, obs_mode = load_policy(scen, algo, exp_id, pattern, n, m)   # v4.4.3: any policy / observation
+    n_, m_ = len(test[0]["ECUs"]), len(test[0]["SVCs"])
+    predict, obs_mode = load_policy(scen, algo, exp_id, pattern, n_, m_)   # v4.4.3: any policy / observation
     env = PlacementEnv(test, mech, "ar_pen", full_episode=True, exit_action=True, obs_mode=obs_mode,
                        **env_order(scen, algo, exp_id))
     opens, insts = [], []
@@ -65,16 +65,16 @@ def replay(job):
         while not done:
             a = predict(obs, env.action_masks())
             if a < env.N:
-                i = env.t
-                active = [j for j in range(env.N) if env.hosted[j]]
+                m = env.t
+                active = [n for n in range(env.N) if env.hosted[n]]
                 if a not in active:
-                    feas = env._feasible(i)
-                    inactive_ok = [j for j in range(env.N) if feas[j] and j not in active]
-                    u = float(env.req[i] / env.cap[a])
-                    u_best = max(float(env.req[i] / env.cap[j]) for j in inactive_ok)
-                    kind = "first" if not active else ("voluntary" if any(feas[j] for j in active) else "forced")
+                    feas = env._feasible(m)
+                    inactive_ok = [n for n in range(env.N) if feas[n] and n not in active]
+                    u = float(env.e[m] / env.c[a])
+                    u_best = max(float(env.e[m] / env.c[n]) for n in inactive_ok)
+                    kind = "first" if not active else ("voluntary" if any(feas[n] for n in active) else "forced")
                     # forced: did some active ECU have room but a privacy conflict?
-                    room = any(env.remaining[j] >= env.req[i] for j in active)
+                    room = any(env.remaining[n] >= env.e[m] for n in active)
                     opens.append({"kind": kind, "u": u, "u_best": u_best, "du": u_best - u, "room": room})
                     n_vol += kind == "voluntary"
                     sum_du += u_best - u
@@ -82,7 +82,7 @@ def replay(job):
         if not info["exited"]:
             ilp = test[k]["ar_star"]
             insts.append({"ar": info["ar"], "ilp": ilp, "gap": ilp - info["ar"], "rel": (ilp - info["ar"]) / ilp,
-                          "act": len([j for j in range(env.N) if env.hosted[j]]), "ilp_act": test[k]["ilp_active_ecus"],
+                          "act": len([n for n in range(env.N) if env.hosted[n]]), "ilp_act": test[k]["ilp_active_ecus"],
                           "n_vol": n_vol, "sum_du": sum_du, "k": k})
     return job, opens, insts, len(test)
 

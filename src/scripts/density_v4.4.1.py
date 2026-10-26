@@ -26,20 +26,20 @@ from paper_rl.data import SCENARIOS, conflict_ratio, draw, load  # noqa: E402
 
 VERSION = "v4.4.1"
 REPORT = ROOT / "paper_contents" / VERSION / "density_report.md"
-BINS = [i / 10 for i in range(11)]
+BINS = [m / 10 for m in range(11)]
 
 
-def feasible(caps, reqs, sets) -> bool:
-    n, m = len(caps), len(reqs)
+def feasible(c, e, sets) -> bool:
+    n_, m_ = len(c), len(e)
     prob = pulp.LpProblem("feas", pulp.LpMinimize)
-    x = pulp.LpVariable.dicts("x", (range(m), range(n)), cat="Binary")
+    x = pulp.LpVariable.dicts("x", (range(m_), range(n_)), cat="Binary")
     prob += 0
-    for i in range(m):
-        prob += pulp.lpSum(x[i][j] for j in range(n)) == 1
-    for j in range(n):
-        prob += pulp.lpSum(x[i][j] * reqs[i] for i in range(m)) <= caps[j]
+    for m in range(m_):
+        prob += pulp.lpSum(x[m][n] for n in range(n_)) == 1
+    for n in range(n_):
+        prob += pulp.lpSum(x[m][n] * e[m] for m in range(m_)) <= c[n]
         for s in sets:
-            prob += pulp.lpSum(x[i][j] for i in s) <= 1
+            prob += pulp.lpSum(x[m][n] for m in s) <= 1
     prob.solve(pulp.PULP_CBC_CMD(msg=False))
     return pulp.LpStatus[prob.status] == "Optimal"
 
@@ -49,8 +49,8 @@ def one(args):
     n, m = SCENARIOS[scen]
     rng = random.Random(seed)
     p = rng.random()
-    caps, reqs, sets = draw(n, m, p, rng)
-    return conflict_ratio(m, sets), feasible(caps, reqs, sets)
+    c, e, sets = draw(n, m, p, rng)
+    return conflict_ratio(m, sets), feasible(c, e, sets)
 
 
 def bin_of(r):
@@ -74,7 +74,7 @@ def main():
              "- 每格写 均值（实例数）。", ""]
     for scen in SCENARIOS:
         with Pool(a.workers) as pool:
-            res = pool.map(one, [(scen, 900_000_000 + i) for i in range(a.n)], chunksize=8)
+            res = pool.map(one, [(scen, 900_000_000 + m) for m in range(a.n)], chunksize=8)
         data = load(scen, VERSION)
         inst = data["instances"]
         ps = np.array([x["p"] for x in inst])

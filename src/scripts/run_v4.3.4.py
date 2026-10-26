@@ -196,12 +196,12 @@ def main():
     exp_ids = {}
     # PPO first: they are the longest jobs, so the DQN ones fill in the tail.
     queue = [(sd, s, a) for sd in SEEDS for a in ALGOS for s in SCENARIOS]
-    queue.sort(key=lambda j: not j[2].endswith("ppo"))
+    queue.sort(key=lambda n: not n[2].endswith("ppo"))
     adopted = []
     if "--resume" in sys.argv and MANIFEST.exists():
         exp_ids = json.loads(MANIFEST.read_text())["exp_ids"]
         launched = {(int(sd), s, a): e for sd, d in exp_ids.items() for s, d2 in d.items() for a, e in d2.items()}
-        queue = [j for j in queue if j not in launched]
+        queue = [n for n in queue if n not in launched]
         live = live_pids()
         adopted = [(live[e], WEIGHT[a]) for (sd, s, a), e in launched.items() if e in live]
         print(f"=== resume: {len(launched)} launched, {len(adopted)} running, {len(queue)} to launch ===", flush=True)

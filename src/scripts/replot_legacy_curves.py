@@ -40,7 +40,7 @@ def one(d: Path):
         if not body:
             return f"{d}: empty csv"
         a = np.array([[float(x) for x in row] for row in body])
-        col = {h: a[:, i] for i, h in enumerate(head)}
+        col = {h: a[:, m] for m, h in enumerate(head)}
         total = float(r["training"]["total_steps"])
         ts = col["timestep"]
         w = max(1, min(C.SMOOTH_W, len(a) // 10))

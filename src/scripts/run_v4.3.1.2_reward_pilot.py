@@ -139,12 +139,12 @@ def main():
     for scen in SCENARIOS:
         p = RESULTS_ROOT / scen / "ilp" / "ar_star.json"
         pass  # ar / directional do not need AR*
-    queue = [(m, s, a) for s in SCENARIOS for a in ALGOS for m in MODES]
+    queue = [(m_, s, a) for s in SCENARIOS for a in ALGOS for m_ in MODES]
     exp_ids: dict = {}
     adopted = []  # (pid, label, weight) of runs launched by a previous driver, still alive
     if "--resume" in sys.argv and MANIFEST_PATH.exists():
         exp_ids = json.loads(MANIFEST_PATH.read_text())["exp_ids"]
-        launched = {(m, s, a): eid for m, d in exp_ids.items() for s, d2 in d.items() for a, eid in d2.items()}
+        launched = {(m_, s, a): eid for m_, d in exp_ids.items() for s, d2 in d.items() for a, eid in d2.items()}
         queue = [job for job in queue if job not in launched]
         live = {}
         for pd in Path("/proc").iterdir():
@@ -156,9 +156,9 @@ def main():
                     live[env.get(b"EXP_ID", b"").decode()] = int(pd.name)
             except OSError:
                 continue
-        for (m, s, a), eid in launched.items():
+        for (m_, s, a), eid in launched.items():
             if eid in live:
-                adopted.append((live[eid], f"{m} {s}/{a}", WEIGHT[a]))
+                adopted.append((live[eid], f"{m_} {s}/{a}", WEIGHT[a]))
         print(f"=== resume: {len(launched)} launched before, {len(adopted)} still running, "
               f"{len(queue)} left to launch ===", flush=True)
     print(f"=== v4.3.1.2 reward pilot start {time.strftime('%Y-%m-%d %H:%M:%S')} — {len(queue)} jobs, "
@@ -176,16 +176,16 @@ def main():
         adopted = [x for x in adopted if pid_alive(x[0]) or print(
             f"[{time.strftime('%H:%M:%S')}] finished {x[1]} (adopted)", flush=True)]
         load = sum(w for *_, w in active) + sum(w for *_, w in adopted)
-        i = 0
-        while i < len(queue):
-            m, s, a = queue[i]
+        m = 0
+        while m < len(queue):
+            m_, s, a = queue[m]
             if load + WEIGHT[a] <= CAPACITY:
-                queue.pop(i)
-                proc, log_f = launch(m, s, a, exp_ids)
-                active.append((proc, log_f, f"{m} {s}/{a}", WEIGHT[a]))
+                queue.pop(m)
+                proc, log_f = launch(m_, s, a, exp_ids)
+                active.append((proc, log_f, f"{m_} {s}/{a}", WEIGHT[a]))
                 load += WEIGHT[a]
             else:
-                i += 1
+                m += 1
         still = []
         for proc, log_f, label, w in active:
             ret = proc.poll()

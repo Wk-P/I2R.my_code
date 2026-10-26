@@ -29,22 +29,22 @@ def parse_report(text: str) -> dict:
     title = next((l[2:].strip() for l in lines if l.startswith("# ")), "")
     change = ""
     for l in lines:
-        m = re.match(r"^- (唯一改动[^：:]*|两个单变量实验[^：:]*|Single change[^:]*)[：:]\s*(.*)", l)
-        if m:
-            change = re.split(r"(?<=[。.])\s", m.group(2), 1)[0]
+        m_ = re.match(r"^- (唯一改动[^：:]*|两个单变量实验[^：:]*|Single change[^:]*)[：:]\s*(.*)", l)
+        if m_:
+            change = re.split(r"(?<=[。.])\s", m_.group(2), 1)[0]
             break
-    gaps, models, section, i = {}, [], None, 0
-    while i < len(lines):
-        l = lines[i]
-        m = re.match(r"^##\s+(LT|EQ|GT)\b", l)
-        if m:
-            section = m.group(1)
-        if l.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[-| :]+\|?$", lines[i + 1].strip()):
+    gaps, models, section, m = {}, [], None, 0
+    while m < len(lines):
+        l = lines[m]
+        m_ = re.match(r"^##\s+(LT|EQ|GT)\b", l)
+        if m_:
+            section = m_.group(1)
+        if l.startswith("|") and m + 1 < len(lines) and re.match(r"^\|[-| :]+\|?$", lines[m + 1].strip()):
             head = [c.strip() for c in l.strip().strip("|").split("|")]
-            rows, j = [], i + 2
-            while j < len(lines) and lines[j].startswith("|"):
-                rows.append([c.strip() for c in lines[j].strip().strip("|").split("|")])
-                j += 1
+            rows, n = [], m + 2
+            while n < len(lines) and lines[n].startswith("|"):
+                rows.append([c.strip() for c in lines[n].strip().strip("|").split("|")])
+                n += 1
             gcol = next((head.index(h) for h in GAP_HEAD if h in head), None)
             mcol = next((head.index(h) for h in ("模型", "Model") if h in head), None)
             scol = next((head.index(h) for h in ("场景", "Scenario") if h in head), None)
@@ -57,13 +57,13 @@ def parse_report(text: str) -> dict:
                         gaps[(sc, r[mcol])] = v
                         if r[mcol] not in models:
                             models.append(r[mcol])
-            i = j
+            m = n
             continue
-        i += 1
+        m += 1
     out = {"title": title, "change": change, "new_model": None, "base_model": None, "new": None, "base": None}
     if models:
-        refs = [m for m in models if re.search(r"参照|reference", m, re.I)]
-        variants = [m for m in models[1:] if m not in refs]
+        refs = [m_ for m_ in models if re.search(r"参照|reference", m_, re.I)]
+        variants = [m_ for m_ in models[1:] if m_ not in refs]
         new, base = (variants[-1] if variants else models[-1]), models[0]
         g = {s: gaps.get((s, new)) for s in SCENS}
         b = {s: gaps.get((s, base)) for s in SCENS}

@@ -58,8 +58,8 @@ for scen, title in SCENARIOS:
            error_kw={"ecolor": "#555555"})
     ax.axhline(S["ilp_ar"], ls="--", color="black", lw=1.8)
     ax.text(-0.3, S["ilp_ar"] + 0.012, f"ILP optimum {S['ilp_ar']:.3f}", fontsize=11)
-    for xi, m in zip(x, ar):
-        ax.text(xi, m - 0.04, f"{m:.3f}", ha="center", color="white", fontsize=11)
+    for xi, m_ in zip(x, ar):
+        ax.text(xi, m_ - 0.04, f"{m_:.3f}", ha="center", color="white", fontsize=11)
     ax.set_ylim(0, max(0.8, S["ilp_ar"] + 0.06))
     ax.set_title("Allocation Ratio (mean ± std)", fontsize=14, pad=14)
 
@@ -67,8 +67,8 @@ for scen, title in SCENARIOS:
     sm = [v["success_mean"] for v in A]
     ss = [v["success_std"] for v in A]
     ax.bar(x, sm, yerr=ss, capsize=4, color=COLORS, width=0.62, error_kw={"ecolor": "#555555"})
-    for xi, m, s in zip(x, sm, ss):
-        ax.text(xi, m + s + 0.03, f"{m:.3f}", ha="center", fontsize=11)
+    for xi, m_, s in zip(x, sm, ss):
+        ax.text(xi, m_ + s + 0.03, f"{m_:.3f}", ha="center", fontsize=11)
     ax.set_ylim(0, 1.12)
     ax.set_title("Success Rate (mean ± std)", fontsize=14, pad=14)
 
@@ -121,12 +121,12 @@ table = ax.table(cellText=rows, colLabels=col_labels, cellLoc="center", loc="upp
 table.auto_set_font_size(False)
 table.set_fontsize(12)
 table.scale(1, 1.8)
-for (i, j), cell in table.get_celld().items():
+for (m, n), cell in table.get_celld().items():
     cell.set_edgecolor("#dddddd")
-    if i == 0:
+    if m == 0:
         cell.set_facecolor("#eef1f7")
         cell.set_text_props(fontweight="bold")
-    elif ((i - 1) // 6) % 2 == 1:
+    elif ((m - 1) // 6) % 2 == 1:
         cell.set_facecolor("#f7f7f4")
 fig.tight_layout()
 out = FIGDIR / "summary_table.png"

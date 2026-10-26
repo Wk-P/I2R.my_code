@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     N, M = 5, 8                                         # 5 ECUs, 8 services
     ecus     = [my_ecu(np.random.randint(3, 10)) for _ in range(N)]
-    services = [my_service(i, np.random.randint(1, 6)) for i in range(M)]
+    services = [my_service(m, np.random.randint(1, 6)) for m in range(M)]
 
     print("ECU capacity :", [e.vms for e in ecus])
     print("Service demand:", [s.required_vms for s in services])

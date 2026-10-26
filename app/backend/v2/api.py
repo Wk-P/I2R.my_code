@@ -277,8 +277,8 @@ def report_data(name: str):
     if rdir is None:
         return {"report": None, "sweeps": []}
     return {"report": D.read_json(rdir / "report_data.json"),
-            "sweeps": [dict(j, RL_algorithm=(j.get("RL_algorithm") or j.get("learner") or "").upper())
-                       for p in sorted(rdir.glob("lam_sweep_*.json")) if (j := D.read_json(p))]}
+            "sweeps": [dict(n, RL_algorithm=(n.get("RL_algorithm") or n.get("learner") or "").upper())
+                       for p in sorted(rdir.glob("lam_sweep_*.json")) if (n := D.read_json(p))]}
 
 
 def _run_path(space, scen, algo, exp_id) -> Path:

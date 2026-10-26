@@ -51,10 +51,10 @@ def collect_self_imitation_data(model, scenarios, n_samples):
     obs_list, mask_list, act_list = [], [], []
     n_success = 0
     for sc in scenarios:
-        caps, reqs, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
-        M_sc = len(reqs)
-        ecus = [RA.ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
-        svcs = [RA.SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
+        c, e, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
+        M_sc = len(e)
+        ecus = [RA.ECU(f"ECU{m}", c_) for m, c_ in enumerate(c)]
+        svcs = [RA.SVC(f"SVC{m}", r) for m, r in enumerate(e)]
 
         for _attempt in range(n_samples):
             env = P4Env(ecus, svcs, scenarios=[sc])

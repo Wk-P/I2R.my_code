@@ -41,44 +41,44 @@ class GroupMaskablePPO(MaskablePPO):
 
         def start(g):
             k = int(self._group_rng.integers(n_inst))
-            for i in range(g * K, (g + 1) * K):
-                envs[i].unwrapped.use_instance(k)
-                obs[i], _ = envs[i].reset()
-                active[i], traj[i] = True, []
+            for m in range(g * K, (g + 1) * K):
+                envs[m].unwrapped.use_instance(k)
+                obs[m], _ = envs[m].reset()
+                active[m], traj[m] = True, []
 
         for g in range(len(envs) // K):
             start(g)
         done_steps = []                                 # (obs, action, log_prob, value, mask, adv, ret)
         self.last_groups = []                           # per completed group: instances, returns, lengths (checks)
         while len(done_steps) < target:
-            idx = [i for i in range(len(envs)) if active[i]]
-            masks = np.stack([envs[i].unwrapped.action_masks() for i in idx])
+            idx = [m for m in range(len(envs)) if active[m]]
+            masks = np.stack([envs[m].unwrapped.action_masks() for m in idx])
             with th.no_grad():
-                acts, vals, logps = self.policy(obs_as_tensor(np.stack([obs[i] for i in idx]), self.device),
+                acts, vals, logps = self.policy(obs_as_tensor(np.stack([obs[m] for m in idx]), self.device),
                                                 action_masks=masks)
             acts, vals, logps = acts.cpu().numpy(), vals.cpu().numpy().flatten(), logps.cpu().numpy()
             infos = []
-            for n, i in enumerate(idx):
-                o2, r, term, trunc, info = envs[i].step(int(acts[n]))
-                traj[i].append((obs[i], acts[n], logps[n], vals[n], masks[n], r))
-                obs[i] = o2
+            for n, m in enumerate(idx):
+                o2, r, term, trunc, info = envs[m].step(int(acts[n]))
+                traj[m].append((obs[m], acts[n], logps[n], vals[n], masks[n], r))
+                obs[m] = o2
                 infos.append(info)
                 if term or trunc:
-                    active[i] = False
+                    active[m] = False
             self.num_timesteps += len(idx)
             callback.update_locals({"infos": infos})
             if not callback.on_step():
                 return False
             for g in range(len(envs) // K):
                 members = range(g * K, (g + 1) * K)
-                if any(active[i] for i in members):
+                if any(active[m] for m in members):
                     continue
-                G = np.array([sum(s[5] for s in traj[i]) for i in members])
+                G = np.array([sum(s[5] for s in traj[m]) for m in members])
                 b = G.mean()
-                self.last_groups.append({"inst": [envs[i].unwrapped.inst_idx for i in members], "G": G.tolist(),
-                                         "len": [len(traj[i]) for i in members]})
-                for i, Gk in zip(members, G):
-                    done_steps += [(s[0], s[1], s[2], s[3], s[4], Gk - b, Gk) for s in traj[i]]
+                self.last_groups.append({"inst": [envs[m].unwrapped.inst_idx for m in members], "G": G.tolist(),
+                                         "len": [len(traj[m]) for m in members]})
+                for m, Gk in zip(members, G):
+                    done_steps += [(s[0], s[1], s[2], s[3], s[4], Gk - b, Gk) for s in traj[m]]
                 start(g)
 
         steps = done_steps[:target]

@@ -33,9 +33,9 @@ def evaluate_model(
 
     results = []
     for scenario in test_scenarios:
-        caps, reqs, cs = scenario
-        ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-        svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+        c, e, cs = scenario
+        ecus = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+        svcs = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
         env = env_cls(ecus, svcs, scenarios=[scenario], **env_kwargs)
         obs, _ = env.reset()
         done = False

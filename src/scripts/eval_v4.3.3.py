@@ -82,12 +82,12 @@ def run(job):
     rows, t0 = [], time.perf_counter()
     for k in range(len(test)):
         samples = []
-        for j in range(K_MAX):
+        for n in range(K_MAX):
             env.use_instance(k)
             obs, _ = env.reset()
             done = False
             while not done:
-                obs, _, done, _, info = env.step(act(obs, j))
+                obs, _, done, _, info = env.step(act(obs, n))
             samples.append((bool(info["valid_placed"] == env.M), float(info["ar"])))
         rows.append({"ar_star": test[k]["ar_star"], "samples": samples})
     ms = (time.perf_counter() - t0) * 1000 / (len(test) * K_MAX)
@@ -172,7 +172,7 @@ def main():
     raw = OUT / "raw.jsonl"
     runs = [json.loads(l) for l in open(raw)] if "--resume" in sys.argv and raw.exists() else []
     have = {(r["scen"], r["algo"], int(r["seed"])) for r in runs}
-    todo = [j for j in jobs if (j[0], j[1], int(j[2])) not in have]
+    todo = [n for n in jobs if (n[0], n[1], int(n[2])) not in have]
     with open(raw, "a" if runs else "w") as f, Pool(WORKERS) as pool:
         for r in pool.imap_unordered(run, todo, chunksize=1):
             f.write(json.dumps(r) + "\n")

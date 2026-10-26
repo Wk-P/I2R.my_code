@@ -113,7 +113,7 @@ def train_gap(job):
     from paper_rl.train import evaluate, model_class
     scen, seed, eid = job
     pool = json.loads((ROOT / POOL.format(scen=scen)).read_text())
-    sub = [pool[i] for i in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
+    sub = [pool[m] for m in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
     model = model_class("ppo", "mask").load(str(next((RESULTS / scen / ALGO / eid).glob("model_*"))), device="cpu")
     ev = evaluate(model, sub, "mask", "ar_pen", 0.0, "ppo", "raw", True, True)
     ok = [e for e in ev if not e["exited"]]

@@ -69,7 +69,7 @@ def split_instances(scen: str, seed: int):
     idx = list(range(len(inst)))
     random.Random(seed).shuffle(idx)
     n_train = int(C.TRAIN_FRACTION * len(inst))
-    return data, [inst[i] for i in idx[:n_train]], [inst[i] for i in idx[n_train:]]
+    return data, [inst[m] for m in idx[:n_train]], [inst[m] for m in idx[n_train:]]
 
 
 # ── learners ────────────────────────────────────────────────────────────────
@@ -178,8 +178,8 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
         def _on_rollout_end(self) -> None:
             """v5.0.3.7 (lam_window "rollout"): one update per PPO rollout from its episodes' mean cost."""
             if mech == "lagrange" and lam_window == "rollout" and self._roll:
-                j = float(np.mean(self._roll))
-                self._step_lambda(j, j)
+                n = float(np.mean(self._roll))
+                self._step_lambda(n, n)
                 self._roll = []
 
         def _on_step(self) -> bool:
@@ -217,15 +217,15 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             self._since += 1
             if len(self._viol) == C.LAMBDA_UPDATE_WINDOW and self._since >= C.LAMBDA_UPDATE_WINDOW:
                 j_beh = float(np.mean(self._viol))
-                j = self._greedy_jc() if lam_cost == "greedy" else j_beh
-                self._step_lambda(j_beh, j)
+                n = self._greedy_jc() if lam_cost == "greedy" else j_beh
+                self._step_lambda(j_beh, n)
                 self._since = 0
 
-        def _step_lambda(self, j_beh: float, j: float) -> None:
+        def _step_lambda(self, j_beh: float, n: float) -> None:
             d = lam_target
             if self._adam is not None:
                 self._adam.zero_grad()
-                (-self._lam_t * (j - d)).backward()
+                (-self._lam_t * (n - d)).backward()
                 self._adam.step()
                 with __import__("torch").no_grad():
                     self._lam_t.clamp_(0.0, lam_max)
@@ -233,10 +233,10 @@ def make_callback(mech: str, total_steps: int, outdir: Path, exp_id: str, start:
             else:
                 # linear: e = J_C - d (v5.0.3); normalized (v5.0.3.1): e = (J_C - d) / max(J_C, d) in (-1, 1), so a step
                 # up and a step down have the same size lam_lr (with d ~ 0 the linear error can rise ~1000x faster than it falls)
-                e = j - d if lam_update == "linear" else (j - d) / max(j, d, 1e-12)
+                e = n - d if lam_update == "linear" else (n - d) / max(n, d, 1e-12)
                 self.lam = float(np.clip(self.lam + lam_lr * e, 0.0, lam_max))
             self.training_env.env_method("set_lambda", self.lam)
-            self.dual_rows.append((self._n_ep, self.num_timesteps, j_beh, j, self.lam))
+            self.dual_rows.append((self._n_ep, self.num_timesteps, j_beh, n, self.lam))
 
         def _greedy_jc(self) -> float:
             """v5.0.3.3: J_C of the greedy (epsilon = 0) policy that is deployed and tested, not of the epsilon-greedy

@@ -24,7 +24,7 @@ from ilp.objects import ECU, SVC
 from shared.ilp_utils import solve_ilp
 
 
-def ilp_expert_actions(caps, reqs, conflict_sets, sorted_desc=True):
+def ilp_expert_actions(c, e, conflict_sets, sorted_desc=True):
     """Solve the scenario ILP and return the expert action sequence in the
     same service order the target env presents them.
 
@@ -38,22 +38,22 @@ def ilp_expert_actions(caps, reqs, conflict_sets, sorted_desc=True):
         silently misaligns every expert action with the wrong service.
 
     Returns None if the ILP is infeasible or doesn't place every service."""
-    M = len(reqs)
-    ecus = [ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
-    svcs = [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
+    M = len(e)
+    ecus = [ECU(f"ECU{m}", c_) for m, c_ in enumerate(c)]
+    svcs = [SVC(f"SVC{m}", r) for m, r in enumerate(e)]
     res = solve_ilp(ecus, svcs, conflict_sets)
     if res["status"] != "Optimal":
         return None
 
     svc_to_ecu = {}
-    for j, info in res["allocation"].items():
-        for i in info["services"]:
-            svc_to_ecu[i] = j
+    for n, info in res["allocation"].items():
+        for m in info["services"]:
+            svc_to_ecu[m] = n
     if len(svc_to_ecu) != M:
         return None
 
-    order = sorted(range(M), key=lambda i: -reqs[i]) if sorted_desc else list(range(M))
-    return [svc_to_ecu[i] for i in order]
+    order = sorted(range(M), key=lambda m: -e[m]) if sorted_desc else list(range(M))
+    return [svc_to_ecu[m] for m in order]
 
 
 def build_bc_dataset(scenarios, env_cls, use_mask=True, violation_key="total_violations",
@@ -76,14 +76,14 @@ def build_bc_dataset(scenarios, env_cls, use_mask=True, violation_key="total_vio
     used, skipped_infeasible, skipped_mismatch = 0, 0, 0
 
     for sc in scenarios:
-        caps, reqs, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
-        actions = ilp_expert_actions(caps, reqs, cs, sorted_desc=sorted_desc)
+        c, e, cs = sc[0], sc[1], sc[2] if len(sc) > 2 else []
+        actions = ilp_expert_actions(c, e, cs, sorted_desc=sorted_desc)
         if actions is None:
             skipped_infeasible += 1
             continue
 
-        ecus = [ECU(f"ECU{i}", c) for i, c in enumerate(caps)]
-        svcs = [SVC(f"SVC{i}", r) for i, r in enumerate(reqs)]
+        ecus = [ECU(f"ECU{m}", c_) for m, c_ in enumerate(c)]
+        svcs = [SVC(f"SVC{m}", r) for m, r in enumerate(e)]
         env = env_cls(ecus, svcs, scenarios=[sc])
         obs, _ = env.reset()
 

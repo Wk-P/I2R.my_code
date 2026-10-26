@@ -54,9 +54,9 @@ from shared.paths import VERSION, resolve_exp_id, write_progress
 def _make_p6_env(seed: int) -> Monitor:
     import random
     random.seed(seed)
-    caps, reqs, _ = C.SCENARIOS[C.SCENARIO_IDX]
-    ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-    services = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+    c, e, _ = C.SCENARIOS[C.SCENARIO_IDX]
+    ecus = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+    services = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
     return Monitor(P6Env(ecus, services, scenarios=C.TRAIN_SCENARIOS))
 
 
@@ -71,10 +71,10 @@ def run_episodes(ecus, services, policy_fn):
     valid_placed_list, ecus_used_list, success_list = [], [], []
 
     for scenario in C.TEST_SCENARIOS:
-        caps, reqs, cs = scenario
-        M_sc = len(reqs)
-        _ecus = [ECU(f"ECU{i}", cap) for i, cap in enumerate(caps)]
-        _svcs = [SVC(f"SVC{i}", req) for i, req in enumerate(reqs)]
+        c, e, cs = scenario
+        M_sc = len(e)
+        _ecus = [ECU(f"ECU{m}", c_n) for m, c_n in enumerate(c)]
+        _svcs = [SVC(f"SVC{m}", e_m) for m, e_m in enumerate(e)]
         env = P6Env(_ecus, _svcs, scenarios=[scenario])
         obs, _ = env.reset()
         done   = False
@@ -169,7 +169,7 @@ def train_ppo(ecus, services, device: str) -> tuple[PPO, P6Callback]:
     sys.stdout.flush()
     n_envs = max(1, int(C.N_ENVS))
     env = DummyVecEnv(
-        [functools.partial(_make_p6_env, C.SEED + i) for i in range(n_envs)],
+        [functools.partial(_make_p6_env, C.SEED + m) for m in range(n_envs)],
     )
     print(f"  Using DummyVecEnv: n_envs={n_envs}")
     cb    = P6Callback()
@@ -211,12 +211,12 @@ def save_training_curve_csv(cb: P6Callback, outdir: Path):
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["timestep", "episode_ar", "episode_success", "episode_placed"])
-        for i in range(len(cb.timesteps_at_ep)):
+        for m in range(len(cb.timesteps_at_ep)):
             writer.writerow([
-                cb.timesteps_at_ep[i],
-                round(cb.episode_ars[i], 6),
-                int(cb.episode_success[i]),
-                cb.episode_placed[i],
+                cb.timesteps_at_ep[m],
+                round(cb.episode_ars[m], 6),
+                int(cb.episode_success[m]),
+                cb.episode_placed[m],
             ])
     print(f"  Saved → {path}")
 

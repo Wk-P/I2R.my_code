@@ -47,7 +47,7 @@ if PILOT:
     MANIFEST = LOG_DIR / "manifest.json"
     REPORT = ROOT / "paper_contents" / f"v{VERSION}" / "pilot_report.md"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-BINS = [i / 10 for i in range(11)]
+BINS = [m / 10 for m in range(11)]
 
 
 def new_exp_id():

@@ -126,7 +126,7 @@ def ckpt_eval(job):
     from paper_rl.train import model_class, split_instances
     scen, seed, eid, pattern = job
     pool = json.loads((ROOT / POOL.format(scen=scen)).read_text())
-    sub = [pool[i] for i in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
+    sub = [pool[m] for m in sorted(_r.Random(0).sample(range(len(pool)), 1600))]
     test = split_instances(scen, seed)[2]
     model = model_class("ppo", "mask").load(str(next((RESULTS / scen / ALGO / eid).glob(pattern))), device="cpu")
     (te, te_exit), (tr, _) = _gap(model, test), _gap(model, sub)

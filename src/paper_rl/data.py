@@ -53,21 +53,21 @@ def q_for(p: float, k: int = K_SETS) -> float:
     return math.sqrt(1 - (1 - p) ** (1 / k))
 
 
-def draw(n: int, m: int, p: float, rng: random.Random):
+def draw(n: int, m_: int, p: float, rng: random.Random):
     q = q_for(p)
-    caps = [rng.choice(CAP_CHOICES) for _ in range(n)]
-    reqs = [rng.choice(REQ_CHOICES) for _ in range(m)]
+    c = [rng.choice(CAP_CHOICES) for _ in range(n)]
+    e = [rng.choice(REQ_CHOICES) for _ in range(m_)]
     sets = []
     for _ in range(K_SETS):
-        s = [i for i in range(m) if rng.random() < q]
+        s = [m for m in range(m_) if rng.random() < q]
         if len(s) >= 2:
             sets.append(s)
-    return caps, reqs, sets
+    return c, e, sets
 
 
-def solve(caps, reqs, sets) -> dict:
+def solve(c, e, sets) -> dict:
     from shared.ilp_utils import solve_ilp_max_ar
-    return solve_ilp_max_ar(caps, reqs, sets)
+    return solve_ilp_max_ar(c, e, sets)
 
 
 def conflict_ratio(m: int, sets) -> float:
@@ -83,10 +83,10 @@ def _gen_one(args):
     while True:
         tries += 1
         p_i = rng.random() if p is None else p
-        caps, reqs, sets = draw(n, m, p_i, rng)
-        res = solve(caps, reqs, sets)
+        c, e, sets = draw(n, m, p_i, rng)
+        res = solve(c, e, sets)
         if res["status"] == "Optimal":
-            out = {"ECUs": caps, "SVCs": reqs, "conflict_sets": sets,
+            out = {"ECUs": c, "SVCs": e, "conflict_sets": sets,
                    "ar_star": round(float(res["avg_utilization"]), 6),
                    "ilp_active_ecus": res["active_ecus"], "draws": tries}
             if p is None:
@@ -97,11 +97,11 @@ def _gen_one(args):
 
 def generate(scen: str, p: float | None, n_inst: int, seed: int = 42, workers: int = 32) -> dict:
     from multiprocessing import Pool
-    n, m = SCENARIOS[scen]
+    n, m_ = SCENARIOS[scen]
     base = {"lt": 1, "eq": 2, "gt": 3}[scen] * 10_000_000 + seed * 100_000
     with Pool(workers) as pool:
-        inst = pool.map(_gen_one, [(n, m, p, base + i) for i in range(n_inst)], chunksize=8)
-    return {"scenario": scen, "N": n, "M": m, "conflict_pair_prob": "U[0,1) per instance" if p is None else p, "k_sets": K_SETS,
+        inst = pool.map(_gen_one, [(n, m_, p, base + m) for m in range(n_inst)], chunksize=8)
+    return {"scenario": scen, "N": n, "M": m_, "conflict_pair_prob": "U[0,1) per instance" if p is None else p, "k_sets": K_SETS,
             "cap_choices": [CAP_CHOICES[0], CAP_CHOICES[-1], 5],
             "req_choices": [REQ_CHOICES[0], REQ_CHOICES[-1], 5],
             "seed": seed, "ar_star_solver": "dinkelbach_max_ar", "instances": inst}

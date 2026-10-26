@@ -71,7 +71,7 @@ def processes() -> list[dict]:
                     p["live"] = run_live(p["batch"], p["exp_id"])
                 p["label"] = " · ".join(x for x in (p["batch"], (p["scenario"] or "").upper(), p["key"] or p["algo"]) if x)
             else:
-                at = next((i for i, x in enumerate(tok) if x.endswith(".py") or x == "-m"), None)
+                at = next((m for m, x in enumerate(tok) if x.endswith(".py") or x == "-m"), None)
                 if at is None:
                     p["label"] = cmd[:80]
                 else:
@@ -184,7 +184,7 @@ def report_stage(batch: str) -> dict | None:
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:
         return None
-    done = max((i for i, l in enumerate(lines) if l.startswith("=== done")), default=None)
+    done = max((m for m, l in enumerate(lines) if l.startswith("=== done")), default=None)
     if done is None:
         return None
     after = lines[done + 1:]

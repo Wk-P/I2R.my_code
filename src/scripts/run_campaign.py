@@ -197,8 +197,8 @@ def gpu_stats():
                               "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=30).stdout
         st = {}
         for line in out.strip().splitlines():
-            i, u, mu, mt = [x.strip() for x in line.split(",")]
-            st[int(i)] = {"util": float(u), "mem_used": float(mu), "mem_pct": 100.0 * float(mu) / float(mt)}
+            m, u, mu, mt = [x.strip() for x in line.split(",")]
+            st[int(m)] = {"util": float(u), "mem_used": float(mu), "mem_pct": 100.0 * float(mu) / float(mt)}
         return st or None
     except Exception:
         return None

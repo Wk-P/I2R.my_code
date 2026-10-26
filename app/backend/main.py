@@ -468,23 +468,23 @@ def _parse_report(text: str) -> dict:
     title = next((l[2:].strip() for l in lines if l.startswith("# ")), "")
     change = ""
     for l in lines:
-        m = re.match(r"^- (唯一改动[^：:]*|两个单变量实验[^：:]*|Single change[^:]*)[：:]\s*(.*)", l)
-        if m:
-            change = re.split(r"(?<=[。.])\s", m.group(2), 1)[0]
+        m_ = re.match(r"^- (唯一改动[^：:]*|两个单变量实验[^：:]*|Single change[^:]*)[：:]\s*(.*)", l)
+        if m_:
+            change = re.split(r"(?<=[。.])\s", m_.group(2), 1)[0]
             break
-    gaps, models, section, i = {}, [], None, 0
-    while i < len(lines):
-        l = lines[i]
-        m = re.match(r"^##\s+(LT|EQ|GT)\b", l)
-        if m:
-            section = m.group(1)
-        if l.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[-| :]+\|?$", lines[i + 1].strip()):
+    gaps, models, section, m = {}, [], None, 0
+    while m < len(lines):
+        l = lines[m]
+        m_ = re.match(r"^##\s+(LT|EQ|GT)\b", l)
+        if m_:
+            section = m_.group(1)
+        if l.startswith("|") and m + 1 < len(lines) and re.match(r"^\|[-| :]+\|?$", lines[m + 1].strip()):
             head = [c.strip() for c in l.strip().strip("|").split("|")]
             rows = []
-            j = i + 2
-            while j < len(lines) and lines[j].startswith("|"):
-                rows.append([c.strip() for c in lines[j].strip().strip("|").split("|")])
-                j += 1
+            n = m + 2
+            while n < len(lines) and lines[n].startswith("|"):
+                rows.append([c.strip() for c in lines[n].strip().strip("|").split("|")])
+                n += 1
             gcol = next((head.index(h) for h in _GAP_HEAD if h in head), None)
             mcol = next((head.index(h) for h in ("模型", "Model") if h in head), None)
             scol = next((head.index(h) for h in ("场景", "Scenario") if h in head), None)
@@ -499,13 +499,13 @@ def _parse_report(text: str) -> dict:
                         gaps[(sc, r[mcol])] = v
                         if r[mcol] not in models:
                             models.append(r[mcol])
-            i = j
+            m = n
             continue
-        i += 1
+        m += 1
     out = {"title": title, "change": change, "models": models,
            "gaps": {mdl: {sc: gaps.get((sc, mdl)) for sc in _SCENS} for mdl in models}}
-    refs = [m for m in models if re.search(r"参照|reference", m, re.I)]
-    variants = [m for m in models[1:] if m not in refs]
+    refs = [m_ for m_ in models if re.search(r"参照|reference", m_, re.I)]
+    variants = [m_ for m_ in models[1:] if m_ not in refs]
     out["refs"], out["variants"] = refs, variants
     if models:
         new, base = (variants[-1] if variants else models[-1]), models[0]
@@ -580,7 +580,7 @@ def _parse_curves(text: str, default_label: str) -> dict:
     训练集相对 gap | 测试 EXIT 率 ...; the version's own model)."""
     lines = text.splitlines()
     out: dict = {}
-    sec = [i for i, ln in enumerate(lines) if ln.startswith("## ")] + [len(lines)]
+    sec = [m for m, ln in enumerate(lines) if ln.startswith("## ")] + [len(lines)]
     for a, b in zip(sec, sec[1:]):
         head = lines[a]
         if not (head.startswith("## 学习曲线") or head.startswith("## Learning curve")):
@@ -590,19 +590,19 @@ def _parse_curves(text: str, default_label: str) -> dict:
         block = lines[a + 1:b]
         if metric == "avg":
             for hdr, rows in _md_tables(block):
-                for j, lab in enumerate(hdr[1:], 1):
-                    pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[j])] for r in rows if _STEP_RE.match(r[0]) and _val(r[j])[0] is not None]
+                for n, lab in enumerate(hdr[1:], 1):
+                    pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[n])] for r in rows if _STEP_RE.match(r[0]) and _val(r[n])[0] is not None]
                     if pts:
                         out.setdefault("gap", []).append({"label": lab, "scen": "AVG", "points": pts})
             continue
-        subs = [i for i, ln in enumerate(block) if ln.startswith("### ")] + [len(block)]
+        subs = [m for m, ln in enumerate(block) if ln.startswith("### ")] + [len(block)]
         if len(subs) > 1:                                # per-scenario layout
             for c, d in zip(subs, subs[1:]):
                 scen = block[c][4:].strip().upper()
                 for hdr, rows in _md_tables(block[c + 1:d]):
-                    for j, lab in enumerate(hdr[1:], 1):
-                        pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[j])] for r in rows
-                               if j < len(r) and _STEP_RE.match(r[0]) and _val(r[j])[0] is not None]
+                    for n, lab in enumerate(hdr[1:], 1):
+                        pts = [[float(_STEP_RE.match(r[0])[1]), *_val(r[n])] for r in rows
+                               if n < len(r) and _STEP_RE.match(r[0]) and _val(r[n])[0] is not None]
                         if pts:
                             out.setdefault(metric, []).append({"label": lab, "scen": scen, "points": pts})
             continue
@@ -612,14 +612,14 @@ def _parse_curves(text: str, default_label: str) -> dict:
                     "fail": next((k for k, h in enumerate(hdr) if "EXIT" in h and "逐" not in h and "per seed" not in h.lower()), None)}
             if len(hdr) < 3 or cols["gap"] is None:
                 continue
-            for m, k in cols.items():
+            for m_, k in cols.items():
                 if k is None:
                     continue
                 for scen in ("LT", "EQ", "GT"):
                     pts = [[float(_STEP_RE.match(r[1])[1]), *_val(r[k])] for r in rows
                            if r[0].upper() == scen and _STEP_RE.match(r[1]) and _val(r[k])[0] is not None]
                     if pts:
-                        out.setdefault(m, []).append({"label": default_label, "scen": scen, "points": pts})
+                        out.setdefault(m_, []).append({"label": default_label, "scen": scen, "points": pts})
     return out
 
 
@@ -918,12 +918,12 @@ def _project_related_procs() -> list[dict]:
         # both `python foo.py args...` and `python -m pkg.module args...`.
         tokens = p["cmd"].split()
         script_name, script_args = None, []
-        for i, tok in enumerate(tokens):
+        for m, tok in enumerate(tokens):
             if tok.endswith(".py"):
-                script_name, script_args = Path(tok).name, tokens[i + 1:i + 3]
+                script_name, script_args = Path(tok).name, tokens[m + 1:m + 3]
                 break
-            if tok == "-m" and i + 1 < len(tokens):
-                script_name, script_args = tokens[i + 1], tokens[i + 2:i + 4]
+            if tok == "-m" and m + 1 < len(tokens):
+                script_name, script_args = tokens[m + 1], tokens[m + 2:m + 4]
                 break
         script_label = " ".join([script_name] + script_args) if script_name else None
         out.append({
@@ -1286,7 +1286,7 @@ def _host_status() -> dict:
             dt, di = now[k][0] - _CPU_PREV[k][0], now[k][1] - _CPU_PREV[k][1]
             return round(100.0 * (1 - di / dt), 1) if dt > 0 else None
         usage = pct("cpu")
-        per_core = [pct(f"cpu{i}") for i in range(os.cpu_count() or 0)]
+        per_core = [pct(f"cpu{m}") for m in range(os.cpu_count() or 0)]
     _CPU_PREV.clear()
     _CPU_PREV.update(now)
 
@@ -1618,15 +1618,15 @@ def _eval_batch_state(batch_name: str, manifest: dict) -> dict:
     alive = bool(manifest.get("script")) and _script_alive(manifest["script"])
     free = int(manifest.get("workers") or 1) if alive else 0
     runs = []
-    for j in manifest.get("jobs", []):
-        key = (j["scenario"], j["algo"], int(j["seed"]))
+    for n in manifest.get("jobs", []):
+        key = (n["scenario"], n["algo"], int(n["seed"]))
         if key in summary or key in done_ms:
             status = "done"
         elif free:
             status, free = "running", free - 1
         else:
             status = "queued" if alive else "skipped"
-        runs.append({"scenario": j["scenario"], "algo": j["algo"], "seed": int(j["seed"]), "variant": "",
+        runs.append({"scenario": n["scenario"], "algo": n["algo"], "seed": int(n["seed"]), "variant": "",
                      "exp_id": None, "status": status,
                      "ms": (summary.get(key) or {}).get("ms") or done_ms.get(key),
                      "metrics": (summary.get(key) or {}).get("k")})
@@ -1795,21 +1795,21 @@ def _report_progress(batch_name: str) -> dict | None:
         f.seek(0, 2)
         f.seek(max(0, f.tell() - 400_000))
         lines = f.read().decode("utf-8", "replace").splitlines()
-    done_at = max((i for i, l in enumerate(lines) if l.startswith("=== done")), default=None)
+    done_at = max((m for m, l in enumerate(lines) if l.startswith("=== done")), default=None)
     if done_at is None:
         return None
     after = lines[done_at + 1:]
     finished = any(l.startswith("report -> ") and "/regret_" not in l for l in after)
     k = n = None
     x = y = eta = None
-    durations = [float(m.group(1)) for l in after if (m := SOLVED_RE.match(l))]
+    durations = [float(m_.group(1)) for l in after if (m_ := SOLVED_RE.match(l))]
     stage = "replay" if any(l.startswith("[report] replay") for l in after) else "starting"
     for l in after:
-        if m := REPORT_RE.match(l):
-            k, n, x, y, eta = int(m.group(1)), int(m.group(2)), None, None, None
+        if m_ := REPORT_RE.match(l):
+            k, n, x, y, eta = int(m_.group(1)), int(m_.group(2)), None, None, None
             stage = "regret"
-        elif m := REGRET_RE.match(l):
-            x, y, eta = int(m.group(1)), int(m.group(2)), float(m.group(3))
+        elif m_ := REGRET_RE.match(l):
+            x, y, eta = int(m_.group(1)), int(m_.group(2)), float(m_.group(3))
             stage = "regret"
         elif l.endswith("steps to solve"):
             stage, x, y, eta = "regret", 0, None, None

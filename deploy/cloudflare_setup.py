@@ -40,9 +40,9 @@ def read_env(path: Path) -> dict:
 
 def write_env_value(path: Path, key: str, value: str) -> None:
     lines = path.read_text().splitlines() if path.exists() else []
-    for i, ln in enumerate(lines):
+    for m, ln in enumerate(lines):
         if ln.split("=", 1)[0].strip() == key:
-            lines[i] = f"{key}={value}"
+            lines[m] = f"{key}={value}"
             break
     else:
         lines.append(f"{key}={value}")
@@ -55,14 +55,14 @@ class CF:
         self.token = token
 
     def call(self, method: str, path: str, body: dict | None = None, query: str = ""):
-        req = urllib.request.Request(f"{API}{path}{'?' + query if query else ''}", method=method,
+        e = urllib.request.Request(f"{API}{path}{'?' + query if query else ''}", method=method,
                                      data=json.dumps(body).encode() if body is not None else None,
                                      headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(e, timeout=30) as r:
                 res = json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            res = json.loads(e.read() or b"{}")
+        except urllib.error.HTTPError as e_:
+            res = json.loads(e_.read() or b"{}")
         if not res.get("success"):
             sys.exit(f"Cloudflare API {method} {path} failed: {res.get('errors')}")
         return res["result"]
@@ -71,8 +71,8 @@ class CF:
 def zone_of(cf: CF, hostname: str) -> dict:
     """The zone the hostname belongs to (longest matching suffix)."""
     parts = hostname.split(".")
-    for i in range(len(parts) - 1):
-        zs = cf.call("GET", "/zones", query=f"name={'.'.join(parts[i:])}")
+    for m in range(len(parts) - 1):
+        zs = cf.call("GET", "/zones", query=f"name={'.'.join(parts[m:])}")
         if zs:
             return zs[0]
     sys.exit(f"no Cloudflare zone found for {hostname} (is the domain on this account, and may the token read it?)")

@@ -41,16 +41,16 @@ def _inline(s: str) -> str:
 
 
 def md_to_html(text: str) -> str:
-    out, i, lines = [], 0, text.splitlines()
-    while i < len(lines):
-        ln = lines[i]
+    out, m, lines = [], 0, text.splitlines()
+    while m < len(lines):
+        ln = lines[m]
         if ln.startswith("|"):
             rows = []
-            while i < len(lines) and lines[i].startswith("|"):
-                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+            while m < len(lines) and lines[m].startswith("|"):
+                cells = [c.strip() for c in lines[m].strip().strip("|").split("|")]
                 if not all(re.fullmatch(r":?-+:?", c) for c in cells):
                     rows.append(cells)
-                i += 1
+                m += 1
             if rows:
                 head = "".join(f"<th>{_inline(c)}</th>" for c in rows[0])
                 body = "".join("<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in r) + "</tr>" for r in rows[1:])
@@ -58,22 +58,22 @@ def md_to_html(text: str) -> str:
             continue
         if ln.startswith("- ") or ln.startswith("  "):
             items = []
-            while i < len(lines) and (lines[i].startswith("- ") or (lines[i].startswith("  ") and items)):
-                if lines[i].startswith("- "):
-                    items.append(lines[i][2:])
+            while m < len(lines) and (lines[m].startswith("- ") or (lines[m].startswith("  ") and items)):
+                if lines[m].startswith("- "):
+                    items.append(lines[m][2:])
                 else:
-                    items[-1] += "<br>" + lines[i].strip()
-                i += 1
+                    items[-1] += "<br>" + lines[m].strip()
+                m += 1
             out.append("<ul>" + "".join(f"<li>{_inline(x) if '<br>' not in x else '<br>'.join(_inline(y) for y in x.split('<br>'))}</li>"
                                         for x in items) + "</ul>")
             continue
-        m = re.match(r"^(#{1,4}) (.*)", ln)
-        if m:
-            n = len(m.group(1))
-            out.append(f"<h{n + 1}>{_inline(m.group(2))}</h{n + 1}>")
+        m_ = re.match(r"^(#{1,4}) (.*)", ln)
+        if m_:
+            n = len(m_.group(1))
+            out.append(f"<h{n + 1}>{_inline(m_.group(2))}</h{n + 1}>")
         elif ln.strip():
             out.append(f"<p>{_inline(ln)}</p>")
-        i += 1
+        m += 1
     return "\n".join(out)
 
 

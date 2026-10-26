@@ -46,7 +46,7 @@ def rollout(args):
         steps, done = [], False
         while not done:
             mask = env.action_masks()
-            legal = [int(j) for j in np.flatnonzero(mask[:env.N])]
+            legal = [int(n) for n in np.flatnonzero(mask[:env.N])]
             x = decode_raw(torch.as_tensor(obs, dtype=torch.float32)[None], env.N, env.M)
             with torch.no_grad():
                 logits = net(*x)[0][0].numpy()
@@ -58,7 +58,7 @@ def rollout(args):
             a_full = legal[int(np.argmax(logits[legal]))]
             a_dyn = legal[int(np.argmax(dl[legal]))]
             steps.append({"svc": env.order[env.t], "a": a_full, "a_dyn": a_dyn, "legal": legal,
-                          "empty": [not env.hosted[j] for j in range(env.N)],
+                          "empty": [not env.hosted[n] for n in range(env.N)],
                           "std_p": float(np.std(P[legal])), "std_dl": float(np.std(dl[legal]))})
             obs, _, done, _, info = env.step(a_full)
         out.append({"k": k, "steps": steps, "exited": bool(env.exited)})
@@ -90,10 +90,10 @@ def main():
                 for t, st in enumerate(e["steps"]):
                     tasks.append((a.scen, k, t, dict(prefix), st))
                     prefix[st["svc"]] = st["a"]
-            for i, (s, k, t, vals) in enumerate(pool.imap_unordered(DR.values, tasks, chunksize=4), 1):
+            for m, (s, k, t, vals) in enumerate(pool.imap_unordered(DR.values, tasks, chunksize=4), 1):
                 traj[k]["steps"][t]["vals"] = vals
-                if i % max(1, len(tasks) // 20) == 0:
-                    print(f"[plan-diag] seed {sd}: solved {i}/{len(tasks)} ({100 * i / len(tasks):.0f}%)", flush=True)
+                if m % max(1, len(tasks) // 20) == 0:
+                    print(f"[plan-diag] seed {sd}: solved {m}/{len(tasks)} ({100 * m / len(tasks):.0f}%)", flush=True)
         rows = []                                               # one row per step with a feasible completion
         for k, e in traj.items():
             for t, st in enumerate(e["steps"]):

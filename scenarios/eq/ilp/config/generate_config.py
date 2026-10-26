@@ -28,11 +28,11 @@ def _is_conflict_feasible(conflict_sets: list, M: int, N: int) -> bool:
     """Greedy graph colouring: True iff conflict constraints are satisfiable with N ECUs."""
     adj = [set() for _ in range(M)]
     for cs in conflict_sets:
-        valid = [i for i in cs if i < M]
-        for i in valid:
-            for j in valid:
-                if i != j:
-                    adj[i].add(j)
+        valid = [m for m in cs if m < M]
+        for m in valid:
+            for n in valid:
+                if m != n:
+                    adj[m].add(n)
     colors = [-1] * M
     for node in range(M):
         used = {colors[nb] for nb in adj[node] if colors[nb] >= 0}
@@ -62,8 +62,8 @@ def generate_feasible(scenario_id: int) -> dict:
         ]
         if not _is_conflict_feasible(conflict_sets, N_SVCS, N_ECUS):
             continue
-        ecus = [ECU(f"ECU{i}", c) for i, c in enumerate(ecu_capacity)]
-        svcs = [SVC(f"SVC{i}", r) for i, r in enumerate(svc_requirement)]
+        ecus = [ECU(f"ECU{m}", c) for m, c in enumerate(ecu_capacity)]
+        svcs = [SVC(f"SVC{m}", r) for m, r in enumerate(svc_requirement)]
         res = solve_ilp(ecus, svcs, conflict_sets)
         if res["status"] == "Optimal":
             break
@@ -71,8 +71,8 @@ def generate_feasible(scenario_id: int) -> dict:
 
 
 def _build_config(scenario_id, ecu_capacity, svc_requirement, conflict_sets) -> dict:
-    ecu_list = [ECU(f"ECU{i}", cap) for i, cap in enumerate(ecu_capacity)]
-    svc_list = [SVC(f"SVC{i}", req) for i, req in enumerate(svc_requirement)]
+    ecu_list = [ECU(f"ECU{m}", c) for m, c in enumerate(ecu_capacity)]
+    svc_list = [SVC(f"SVC{m}", e) for m, e in enumerate(svc_requirement)]
     print(f"  Scenario {scenario_id:>4d} [feasible]: {N_ECUS} ECUs, {N_SVCS} SVCs")
     return {
         "name":          f"Scenario {scenario_id}",
@@ -105,6 +105,6 @@ if __name__ == "__main__":
     random.seed(SEED)
     n_total = 2000
     print(f"Generating {n_total} scenarios, all feasible ...")
-    scenarios = [generate_feasible(i + 1) for i in range(n_total)]
+    scenarios = [generate_feasible(m + 1) for m in range(n_total)]
     random.shuffle(scenarios)
     write_config(scenarios, "config_ecu_eq_svc.yaml")

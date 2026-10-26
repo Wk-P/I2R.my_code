@@ -238,9 +238,9 @@ def edit(a) -> None:
         q = [x for x in items if x["status"] == "queued"]
         it = next((x for x in q if x["id"] == a.id), None)
         assert it, f"{a.id}: only queued items can be moved"
-        j = q.index(it) + (-1 if a.direction == "up" else 1)
-        if 0 <= j < len(q):
-            i1, i2 = items.index(it), items.index(q[j])
+        n = q.index(it) + (-1 if a.direction == "up" else 1)
+        if 0 <= n < len(q):
+            i1, i2 = items.index(it), items.index(q[n])
             items[i1], items[i2] = items[i2], items[i1]
     elif a.cmd in ("pause", "unpause"):
         save(items, paused=a.cmd == "pause")

@@ -47,7 +47,7 @@ def rl_train_set(scen, seed=1):
     alloc = json.loads(alloc_path(scen, S.DATA).read_text())
     idx = list(range(len(inst)))
     random.Random(seed).shuffle(idx)                   # same as paper_rl.train.split_instances
-    return [{**inst[i], "alloc": alloc[i]} for i in idx[:int(0.8 * len(inst))]]
+    return [{**inst[m], "alloc": alloc[m]} for m in idx[:int(0.8 * len(inst))]]
 
 
 def train_sup(scen, tag):
@@ -70,9 +70,9 @@ def train_sup(scen, tag):
     for step in range(A.STEPS):
         idx = torch.randint(size, (A.BATCH,), generator=g)
         t = torch.randint(M, (A.BATCH,), generator=g)
-        caps, reqs, adj, assign, tt, js = A.batch_states(tr, idx, t)
-        lg, _, mask, _ = model(caps, reqs, adj, assign, tt)
-        lab = A.labels(caps, assign, mask, js)
+        c, e, adj, assign, tt, js = A.batch_states(tr, idx, t)
+        lg, _, mask, _ = model(c, e, adj, assign, tt)
+        lab = A.labels(c, assign, mask, js)
         loss = -torch.logsumexp(torch.log_softmax(lg, -1).masked_fill(~lab, -1e9), -1).mean()
         opt.zero_grad()
         loss.backward()

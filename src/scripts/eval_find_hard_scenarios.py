@@ -54,22 +54,22 @@ def main():
     success = res["success"]
     print(f"  success_rate = {float(np.mean(success)):.4f}  ({int(success.sum())}/{len(success)})")
 
-    failed_idx = [i for i, ok in enumerate(success) if not ok]
+    failed_idx = [m for m, ok in enumerate(success) if not ok]
     print(f"  failed scenario indices: {failed_idx}")
     if not failed_idx:
         print("  all scenarios already succeed at base-n -- nothing to push further.")
         return
 
     print(f"\n[2/2] pushing N={args.push_n} on the {len(failed_idx)} failed scenario(s) only ...")
-    C.TEST_SCENARIOS = [all_scenarios[i] for i in failed_idx]
+    C.TEST_SCENARIOS = [all_scenarios[m] for m in failed_idx]
     res2 = RA.run_episodes(ecus, services, ppo_policy, n_samples=args.push_n)
     for local_i, orig_i in enumerate(failed_idx):
         ok = bool(res2["success"][local_i])
         vp = int(res2["valid_placed"][local_i])
         attempts = int(res2["attempts"][local_i])
-        caps, reqs, cs = all_scenarios[orig_i]
-        M_sc = len(reqs)
-        util = sum(reqs) / sum(caps)
+        c, e, cs = all_scenarios[orig_i]
+        M_sc = len(e)
+        util = sum(e) / sum(c)
         print(f"  scenario idx={orig_i:>3}  success={ok}  valid_placed={vp}/{M_sc}  "
               f"attempts_used={attempts}/{args.push_n}  utilization={util:.3f}")
 
@@ -78,7 +78,7 @@ def main():
     print(f"\n  recovered {n_recovered}/{len(failed_idx)} at N={args.push_n}")
     print(f"  overall success_rate now = {overall_success:.4f}")
     print(f"  still-failing after N={args.push_n}: "
-          f"{[failed_idx[i] for i in range(len(failed_idx)) if not res2['success'][i]]}")
+          f"{[failed_idx[m] for m in range(len(failed_idx)) if not res2['success'][m]]}")
 
 
 if __name__ == "__main__":
