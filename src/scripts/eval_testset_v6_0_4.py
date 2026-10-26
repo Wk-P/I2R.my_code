@@ -15,6 +15,8 @@ The 400-instance column is the run's own final evaluation in results.json (same 
 
     .venv/bin/python src/scripts/eval_testset_v6_0_4.py [--workers 32]
         -> paper_contents/v6.0.4-test-50k/test_eval.{json,md,en.md}, mailed
+    .venv/bin/python src/scripts/eval_testset_v6_0_4.py --source v6.0.0.2 --batch v6.0.0.2-test-50k
+        the final models of another training batch (logs/<source>/manifest.json) -> paper_contents/<batch>/
 """
 import argparse
 import json
@@ -29,6 +31,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 BATCH = "v6.0.4-test-50k"
+SOURCE = "v6.0.0"                                      # training batch whose final models are evaluated
 OUT = ROOT / "paper_contents" / BATCH
 TEST = ROOT / "data/testset_v6.0.4/{scen}.json"
 CHUNK = 500
@@ -40,7 +43,7 @@ NAME = {"mask": "Mask", "repair": "Repair", "lagrange": "Lagrangian", "none": "P
 
 def runs():
     out, seen = [], set()
-    man = json.loads((ROOT / "logs/v6.0.0/manifest.json").read_text())
+    man = json.loads((ROOT / f"logs/{SOURCE}/manifest.json").read_text())
     for r in man["runs"]:
         if not r.get("exp_id") or r["exp_id"] in seen:
             continue
@@ -100,14 +103,14 @@ def cell(xs):
 def build(rows, lang, minutes, n_test):
     zh = lang == "zh"
     T = (lambda z, e: z if zh else e)
-    L = [f"# {BATCH} " + T("v6.0.0 模型在 v6.0.4 固定测试集上的评估", "v6.0.0 models on the fixed v6.0.4 test set"), ""]
+    L = [f"# {BATCH} " + T(f"{SOURCE} 模型在 v6.0.4 固定测试集上的评估", f"{SOURCE} models on the fixed v6.0.4 test set"), ""]
     L.append(T(f"- 生成时间 {time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/eval_testset_v6_0_4.py`；耗时 {minutes:.1f} 分钟；只用 CPU，不训练。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/eval_testset_v6_0_4.py`; took {minutes:.1f} min; CPU only, no training."))
-    seeds = {m: sorted({r["seed"] for r in rows if r["mech"] == m}) for m in MECHS}
+    seeds = {m: sorted({r["seed"] for r in rows if r["mech"] == m}) for m in MECHS if any(r["mech"] == m for r in rows)}
     sz = "；".join(f"{NAME[m]} 种子 {', '.join(map(str, v))}" for m, v in seeds.items())
     se = "; ".join(f"{NAME[m]} seeds {', '.join(map(str, v))}" for m, v in seeds.items())
-    L.append(T(f"- **模型：v6.0.0 的最终模型（20M 步）**，全部 {len(rows)} 个 run（4 strategies × PPO / DQN / DDQN × 3 场景；{sz}，与 v6.0.0 本身一致），不重新训练。",
-               f"- **Models: the v6.0.0 final models (20M steps)**, all {len(rows)} runs (4 strategies x PPO / DQN / DDQN x 3 scenarios; {se}, as in v6.0.0 itself), not retrained."))
+    L.append(T(f"- **模型：{SOURCE} 的最终模型（20M 步）**，全部 {len(rows)} 个 run（{sz}，与 {SOURCE} 本身一致），不重新训练。",
+               f"- **Models: the {SOURCE} final models (20M steps)**, all {len(rows)} runs ({se}, as in {SOURCE} itself), not retrained."))
     L.append(T(f"- 测试集：`data/testset_v6.0.4/<场景>.json`（v6.0.4-testset），每场景 {n_test} 个经 ILP 求得最优的实例，所有种子共用；"
                "确定性评估，设置与各 run 的最终评估相同（Lagrangian 用训练结束时的 λ 与 λ_max）。",
                f"- Test set: `data/testset_v6.0.4/<scenario>.json` (v6.0.4-testset), {n_test} ILP-optimal instances per scenario, shared by every seed; "
@@ -141,15 +144,12 @@ def build(rows, lang, minutes, n_test):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--workers", type=int, default=32)
-    ap.add_argument("--no-mail", action="store_true")
-    a = ap.parse_args()
+    a = ARGS
     t0 = time.time()
     rs = runs()
     n_test = {s: len(json.loads(Path(str(TEST).format(scen=s)).read_text())) for s in SCENS}
     tasks = [(r, lo) for r in rs for lo in range(0, n_test[r["res"]["scenario"]], CHUNK)]
-    print(f"{len(rs)} runs (v6.0.0 final models), {len(tasks)} chunks of {CHUNK} instances, "
+    print(f"{len(rs)} runs ({SOURCE} final models), {len(tasks)} chunks of {CHUNK} instances, "
           f"test set {n_test}, {a.workers} workers", flush=True)
     parts = {}
     with Pool(a.workers) as pool:
@@ -176,11 +176,19 @@ def main():
 
 
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--workers", type=int, default=32)
+    ap.add_argument("--no-mail", action="store_true")
+    ap.add_argument("--source", default=SOURCE, help="training batch whose final models are evaluated (logs/<source>/manifest.json)")
+    ap.add_argument("--batch", default=BATCH, help="name of this evaluation batch (paper_contents/<batch>/, logs/<batch>/)")
+    ARGS = ap.parse_args()
+    SOURCE, BATCH = ARGS.source, ARGS.batch
+    OUT = ROOT / "paper_contents" / BATCH
     from shared.batch_manifest import nontrain_batch      # docs/data_spec.md §6: listed by the v2 panel
     with nontrain_batch(BATCH, "eval", __file__,
-                        {"zh": "v6.0.4-test-50k：使用 v6.0.0 的最终模型（20M 步，全部 90 个 run，不重新训练），在 v6.0.4 固定测试集（每场景 5000 个 ILP 最优实例）上只用 CPU 重新评估",
-                         "en": "v6.0.4-test-50k: the v6.0.0 final models (20M steps, every run, not retrained) re-evaluated on CPU on the fixed v6.0.4 test set (5000 ILP-optimal instances per scenario)"},
-                        depends_on=["v6.0.0", "v6.0.4-testset"], report_dir=f"paper_contents/{BATCH}",
+                        {"zh": f"{BATCH}：使用 {SOURCE} 的最终模型（20M 步，全部 run，不重新训练），在 v6.0.4 固定测试集（每场景 5000 个 ILP 最优实例）上只用 CPU 重新评估",
+                         "en": f"{BATCH}: the {SOURCE} final models (20M steps, every run, not retrained) re-evaluated on CPU on the fixed v6.0.4 test set (5000 ILP-optimal instances per scenario)"},
+                        depends_on=[SOURCE, "v6.0.4-testset"], report_dir=f"paper_contents/{BATCH}",
                         inputs=["data/testset_v6.0.4/{scen}.json"],
                         outputs=[f"paper_contents/{BATCH}/test_eval.json", f"paper_contents/{BATCH}/test_eval.md", f"paper_contents/{BATCH}/test_eval.en.md"],
                         logs=[f"logs/{BATCH}/eval.log"]):

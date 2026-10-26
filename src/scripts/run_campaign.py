@@ -57,7 +57,8 @@ GPU_OF = {"eq": 0, "gt": 1, "lt": 2}
 ALGO = {"maskable": "mask_{l}", "repair": "repair_{l}", "lagrangian": "lagrange_{l}", "unconstraint": "{l}"}
 GROUPS = {"G1": ("maskable", 1), "G2": ("repair", 1),
           "G3": ("maskable", 2), "G4": ("maskable", 3), "G5": ("repair", 2), "G6": ("repair", 3),
-          "G7": ("lagrangian", 2), "G8": ("lagrangian", 3), "G9": ("unconstraint", 2), "G10": ("unconstraint", 3)}
+          "G7": ("lagrangian", 2), "G8": ("lagrangian", 3), "G9": ("unconstraint", 2), "G10": ("unconstraint", 3),
+          "G11": ("lagrangian", 1)}                     # v6.0.1-lagrangian: seed 1 of the standard Lagrangian
 LAGRANGE = {"lambda_max": "none", "lambda_update": "adam", "lambda_lr": 0.035, "lambda_init": 0.001,
             "lambda_target": 0.0, "lambda_cost": "behavior"}
 FLAG = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr",
@@ -80,7 +81,7 @@ class Cfg:
         self.smoke = a.smoke
         self.batch, self.version = a.batch, a.version or a.batch
         self.groups_def = SMOKE_GROUPS if a.smoke else GROUPS
-        self.groups = list(self.groups_def) if a.smoke else a.groups.split(",")
+        self.groups = a.groups.split(",") if a.groups else list(self.groups_def)    # smoke: --groups picks a subset (S1-S4)
         bad = [g for g in self.groups if g not in self.groups_def]
         if bad:
             sys.exit(f"unknown group(s) {bad}; choose from {list(self.groups_def)}")
@@ -99,6 +100,14 @@ class Cfg:
         self.test_set = a.test_set                        # v6.0.4: fixed test set (None: the seed's 400-instance split)
         self.learners = tuple(a.learners.split(","))      # v6.0.0.1: PPO-only batches
         self.ppo_params = {k: (float(v) if "." in v else int(v)) for k, v in (x.split("=") for x in a.ppo_params.split(",") if x)}
+        # v6.0.1-lagrangian: --lag-reward ar_obj --lag-target 0.001 = the standard Lagrangian (objective AR_obj, the
+        # constraint only through -lambda c_t, cost limit d > 0); the defaults keep v6.0.0 (ar_pen - lambda c_t, d = 0)
+        self.lag_reward = a.lag_reward
+        self.lag = {**LAGRANGE, "lambda_target": a.lag_target}
+
+
+def reward_of(C, strategy):
+    return C.lag_reward if strategy == "lagrangian" else "ar_pen"
 
 
 # ── plan ─────────────────────────────────────────────────────────────────────
@@ -109,7 +118,7 @@ def key_of(l, strategy):
 def own_params(C, l, strategy):
     p = dict(C.ppo_params) if l == "ppo" else {"eps_steps": EPS_STEPS}
     if strategy == "lagrangian":
-        p.update(LAGRANGE, **({"lambda_window": "rollout"} if l == "ppo" else {}))
+        p.update(C.lag, **({"lambda_window": "rollout"} if l == "ppo" else {}))
     return p
 
 
@@ -122,7 +131,7 @@ def plan_runs(C, gid):
 
 def train_cmd(C, r):
     cmd = [PY_GPU, "-u", "-m", "paper_rl.train", "--scen", r["scenario"], "--algo", r["algo"], "--net", "graph",
-           "--reward", "ar_pen", "--reward-norm", "none", "--obs", "base", "--gamma", "1.0", "--full-episode",
+           "--reward", reward_of(C, r["strategy"]), "--reward-norm", "none", "--obs", "base", "--gamma", "1.0", "--full-episode",
            "--steps", str(C.steps), "--checkpoints", ",".join(map(str, C.ckpts)), "--seed", str(r["seed"]),
            "--device", "cuda", "--train-pool", POOL]
     if C.test_set:
@@ -151,8 +160,13 @@ def title(C, strategies, runs):
     if C.test_set:
         zh.append(f"测试集 {C.test_set}")
         en.append(f"test set {C.test_set}")
-    zh.append("ar_pen 奖励（终局：全部合法给 AR，否则 M_v/M−1，不乘 M" + ("；Lagrangian 再减 λ·c_t" if "lagrangian" in strategies else "") + "）")
-    en.append("ar_pen reward (terminal AR if all legal, else M_v/M-1, no factor M" + ("; Lagrangian -λc_t" if "lagrangian" in strategies else "") + ")")
+    if strategies == ["lagrangian"] and C.lag_reward == "ar_obj":     # v6.0.1-lagrangian
+        d = C.lag["lambda_target"]
+        zh.append(f"标准 Lagrangian：终局 AR_obj（含违约放置、单 ECU 利用率截到 1）− 每步 λ·c_t，d = {d:g}")
+        en.append(f"standard Lagrangian: terminal AR_obj (violating placements included, per-ECU utilisation clipped to 1) − λ·c_t per step, d = {d:g}")
+    else:
+        zh.append("ar_pen 奖励（终局：全部合法给 AR，否则 M_v/M−1，不乘 M" + ("；Lagrangian 再减 λ·c_t" if "lagrangian" in strategies else "") + "）")
+        en.append("ar_pen reward (terminal AR if all legal, else M_v/M-1, no factor M" + ("; Lagrangian -λc_t" if "lagrangian" in strategies else "") + ")")
     if "maskable" in strategies:
         zh.append("EXIT 仅 Maskable")
         en.append("EXIT for Maskable only")
@@ -181,9 +195,9 @@ def write_manifest(C, L):
            "RL_algorithm": [l.upper() for l in C.learners], "strategies": strategies,
            "seeds": sorted({x["seed"] for x in runs}), "scenarios": list(SCENARIOS),
            "groups": {g: {"strategy": C.groups_def[g][0], "seed": C.groups_def[g][1]} for g in C.groups},
-           "params": {"steps": C.steps, "checkpoints": C.ckpts, "net": "graph", "reward": "ar_pen", "gamma": 1.0,
+           "params": {"steps": C.steps, "checkpoints": C.ckpts, "net": "graph", "reward": "ar_pen", "lagrangian_reward": C.lag_reward, "gamma": 1.0,
                       "full_episode": True, "exit_action": "maskable only", "train_pool": POOL, "test_set": C.test_set, "data": DATA, "eps_steps_dqn": EPS_STEPS,
-                      "lagrangian": LAGRANGE, "ppo_params": C.ppo_params, "per_gpu": C.per_gpu, "gpu_limit_pct": GPU_LIMIT, "gpu_of": GPU_OF},
+                      "lagrangian": C.lag, "ppo_params": C.ppo_params, "per_gpu": C.per_gpu, "gpu_limit_pct": GPU_LIMIT, "gpu_of": GPU_OF},
            "runs": runs, "references": []}
     tmp = C.log_dir / "manifest.json.tmp"
     tmp.write_text(json.dumps(man, indent=2, ensure_ascii=False))
@@ -422,7 +436,7 @@ def check_run(C, r, exp_id, log: Path):
         res = json.loads((d / "results.json").read_text())
     except (OSError, json.JSONDecodeError) as e:
         return [f"results.json 缺失或损坏（{e.__class__.__name__}）"], None
-    want = {"reward_mode": "ar_pen", "exit_action": r["strategy"] == "maskable", "full_episode": True, "seed": r["seed"], "algo": r["algo"],
+    want = {"reward_mode": reward_of(C, r["strategy"]), "exit_action": r["strategy"] == "maskable", "full_episode": True, "seed": r["seed"], "algo": r["algo"],
             "scenario": r["scenario"], "net": "graph", "train_pool": POOL, "gamma": 1.0,
             "test_set": C.test_set}
     probs += [f"results.json {k}={res.get(k)!r}（应为 {v!r}）" for k, v in want.items() if res.get(k) != v]
@@ -430,7 +444,7 @@ def check_run(C, r, exp_id, log: Path):
     if tr.get("total_steps", 0) < C.steps:
         probs.append(f"训练步数 {tr.get('total_steps')} < {C.steps}")
     if r["strategy"] == "lagrangian":
-        for k, v in LAGRANGE.items():
+        for k, v in C.lag.items():
             got = tr.get(k)
             if k == "lambda_max":
                 ok = got == "none"
@@ -593,6 +607,9 @@ def main():
     ap.add_argument("--test-set", default=None, help="v6.0.4: fixed test set, e.g. data/testset_v6.0.4/{scen}.json")
     ap.add_argument("--learners", default=",".join(LEARNERS), help="v6.0.0.1: comma-separated subset of ppo,dqn,ddqn")
     ap.add_argument("--ppo-params", default="", help="v6.0.0.1: extra PPO flags, e.g. target_kl=0.02 or n_epochs=4")
+    ap.add_argument("--lag-reward", default="ar_pen", choices=["ar_pen", "ar_obj"],
+                    help="v6.0.1-lagrangian: reward of the Lagrangian runs (ar_obj = standard Lagrangian, objective AR_obj)")
+    ap.add_argument("--lag-target", type=float, default=0.0, help="v6.0.1-lagrangian: cost limit d of the Lagrangian runs")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--no-mps", action="store_true")
     ap.add_argument("--allow-busy", action="store_true", help="start although other paper_rl.train processes exist")
