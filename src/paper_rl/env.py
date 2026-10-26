@@ -111,7 +111,7 @@ def service_order(inst: dict, mode: str = "desc", seed: int = 0) -> list[int]:
 
 
 OBS_MODES = ("base", "conflict", "feas", "raw")   # raw: v4.4.3, state for src/paper_rl/graph_net
-REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional", "ar_tel")
+REWARD_MODES = ("objective", "succ_first", "legacy", "ar", "ar_raw", "ar_pen", "directional", "ar_tel", "ar_obj")
 
 
 def obs_dim(n: int, m: int, obs_mode: str = "base", action_mode: str = "ecu") -> int:
@@ -476,6 +476,8 @@ class PlacementEnv(gym.Env):
                 r += C.DIR_B * self.M
         elif self.mechanism == "none" and self.reward_mode == "ar_pen":
             r = self.ar_obj if done else 0.0                # v6.0.1: unconstrained -- the objective AR only, no penalty
+        elif self.reward_mode == "ar_obj":
+            r = self.ar_obj if done else 0.0                # v6.0.1-lagrangian: J_R = AR_obj, violations only via -lambda*c_t
         elif self.reward_mode == "objective":
             r = self.M * self.ar_exec if done else 0.0
         else:
