@@ -11,7 +11,8 @@ Metrics, as the panel / results.json:
   gap      = 1 - mean(AR) / mean(ILP AR) over all test instances (AR over legal placements);
   vf gap   = ILP AR - AR (absolute) and (ILP AR - AR) / ILP AR (relative) over the violation-free instances;
   cap / privacy violation = share of instances with a capacity / conflict violation; EXIT for Maskable only.
-The 400-instance column is the run's own final evaluation in results.json (same gap definition).
+The "own eval" column is the run's own final evaluation in results.json (same gap definition): 400 per-seed
+instances for runs without test_set (v6.0.0.x), the shared fixed test set for runs that trained against it.
 
     .venv/bin/python src/scripts/eval_testset_v6_0_4.py [--workers 32]
         -> paper_contents/v6.0.4-test-50k/test_eval.{json,md,en.md}, mailed
@@ -84,7 +85,7 @@ def summarize(ev):
 
 
 def old_gap(res):
-    """The run's own 400-instance final evaluation, same gap definition."""
+    """The run's own final evaluation (400 per-seed instances, or the shared test set), same gap definition."""
     al = res[res["algo"]]
     return 1 - al["ar_mean"] / res["ilp"]["ar"]
 
@@ -100,9 +101,19 @@ def cell(xs):
     return pct(st.mean(xs)) + (f" ± {pct(st.stdev(xs))}" if len(xs) > 1 else "")
 
 
+def own_eval(res):
+    """(test set, instance count) of the run's own final evaluation; old runs have no test_set and used 400 per seed."""
+    return res.get("test_set"), res.get("test_count", 400)
+
+
 def build(rows, lang, minutes, n_test):
     zh = lang == "zh"
     T = (lambda z, e: z if zh else e)
+    own = sorted({(r["own_set"], r["own_n"]) for r in rows}, key=str)
+    own_zh = "；".join(f"该 run 训练结束时在固定测试集 `{ts}` 上的最终评估（{n} 个实例，所有种子共用，与本次评估同一批实例）" if ts
+                       else f"该 run 原来在各自种子 {n} 个测试实例上的最终评估" for ts, n in own)
+    own_en = "; ".join(f"the run's own final evaluation on the fixed test set `{ts}` ({n} instances, shared by every seed, the same instances as here)" if ts
+                       else f"the run's own final evaluation on its seed's {n} test instances" for ts, n in own)
     L = [f"# {BATCH} " + T(f"{SOURCE} 模型在 v6.0.4 固定测试集上的评估", f"{SOURCE} models on the fixed v6.0.4 test set"), ""]
     L.append(T(f"- 生成时间 {time.strftime('%Y-%m-%d %H:%M:%S')}；脚本 `src/scripts/eval_testset_v6_0_4.py`；耗时 {minutes:.1f} 分钟；只用 CPU，不训练。",
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/eval_testset_v6_0_4.py`; took {minutes:.1f} min; CPU only, no training."))
@@ -116,9 +127,9 @@ def build(rows, lang, minutes, n_test):
                f"- Test set: `data/testset_v6.0.4/<scenario>.json` (v6.0.4-testset), {n_test} ILP-optimal instances per scenario, shared by every seed; "
                "deterministic evaluation with each run's final-evaluation settings (Lagrangian: the λ and λ_max at the end of training)."))
     L.append(T("- **gap** = 1 − mean(AR) / mean(ILP AR)，全部测试实例，AR 只计合法放置（与看板、results.json 同一定义）；"
-               "**400 实例** = 该 run 原来在各自种子 400 个测试实例上的最终评估（同一定义）。",
+               f"**训练最终评估** = {own_zh}（同一定义）。",
                "- **gap** = 1 − mean(AR) / mean(ILP AR) over all test instances, AR over legal placements (as the panel and results.json); "
-               "**400 instances** = the run's own final evaluation on its seed's 400 test instances (same definition)."))
+               f"**own final eval** = {own_en} (same definition)."))
     L.append(T("- **无违约实例**：ILP AR − AR（绝对）与 (ILP AR − AR) / ILP AR（相对），只在无违约完成的实例上计算。EXIT 只属于 Mask。",
                "- **Violation-free instances**: ILP AR − AR (absolute) and (ILP AR − AR) / ILP AR (relative), over the instances completed without violation. EXIT exists for Mask only."))
     L.append(T("- 表中为种子间均值 ± 标准差。", "- Mean ± std over seeds."))
@@ -127,7 +138,7 @@ def build(rows, lang, minutes, n_test):
         L.append(f"## {s.upper()}")
         L.append("")
         L.append("| " + " | ".join([T("机制", "Mechanism"), T("算法", "Algo"), T(f"gap（{n_test} 实例）", f"gap ({n_test} instances)"),
-                                    T("gap（400 实例）", "gap (400 instances)"), T("无违约比例", "violation-free"),
+                                    T("gap（训练最终评估）", "gap (own final eval)"), T("无违约比例", "violation-free"),
                                     T("无违约实例 绝对 gap", "violation-free abs. gap"), T("无违约实例 相对 gap", "violation-free rel. gap"),
                                     T("容量违约", "cap viol"), T("隐私违约", "privacy viol"), "EXIT"]) + " |")
         L.append("|---" * 10 + "|")
@@ -162,7 +173,7 @@ def main():
         res = r["res"]
         ev = [e for lo in sorted(parts[res["exp_id"]]) for e in parts[res["exp_id"]][lo]]
         rows.append(dict(exp_id=res["exp_id"], mech=res["mechanism"], scen=res["scenario"], learner=res["learner"],
-                         seed=res["seed"], dir=r["dir"], old_gap=old_gap(res), new=summarize(ev)))
+                         seed=res["seed"], dir=r["dir"], old_gap=old_gap(res), own_set=own_eval(res)[0], own_n=own_eval(res)[1], new=summarize(ev)))
     minutes = (time.time() - t0) / 60
     assert len(set(n_test.values())) == 1, n_test
     OUT.mkdir(parents=True, exist_ok=True)

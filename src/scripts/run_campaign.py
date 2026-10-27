@@ -58,7 +58,8 @@ ALGO = {"maskable": "mask_{l}", "repair": "repair_{l}", "lagrangian": "lagrange_
 GROUPS = {"G1": ("maskable", 1), "G2": ("repair", 1),
           "G3": ("maskable", 2), "G4": ("maskable", 3), "G5": ("repair", 2), "G6": ("repair", 3),
           "G7": ("lagrangian", 2), "G8": ("lagrangian", 3), "G9": ("unconstraint", 2), "G10": ("unconstraint", 3),
-          "G11": ("lagrangian", 1)}                     # v6.0.1-lagrangian: seed 1 of the standard Lagrangian
+          "G11": ("lagrangian", 1),                     # v6.0.1-lagrangian: seed 1 of the standard Lagrangian
+          "G12": ("unconstraint", 1)}                   # v6.0.1-unconstraint: seed 1 of the v6.0.0 Unconstraint
 LAGRANGE = {"lambda_max": "none", "lambda_update": "adam", "lambda_lr": 0.035, "lambda_init": 0.001,
             "lambda_target": 0.0, "lambda_cost": "behavior"}
 FLAG = {"lambda_max": "--lambda-max", "lambda_update": "--lambda-update", "lambda_lr": "--lambda-lr",
@@ -171,8 +172,8 @@ def title(C, strategies, runs):
         zh.append("EXIT 仅 Maskable")
         en.append("EXIT for Maskable only")
     if "unconstraint" in strategies:
-        zh.append("unconstraint（v6.0.1 起）不罚分，终局给目标 AR（违约放置也计入，ECU 利用率截断到 1），违约照记，观测中无约束 / 违约信息")
-        en.append("unconstraint (from v6.0.1) is not penalised: terminal objective AR (violating placements included, ECU utilisation clipped at 1), violations recorded, no constraint / violation information in its observation")
+        zh.append("unconstraint = v6.0.0 定义：完整 ar_pen（违约即 M_v/M−1），观测与其他机制相同（v6.0.1 的不罚分版已弃用）")
+        en.append("unconstraint = the v6.0.0 definition: full ar_pen (any violation -> M_v/M-1), same observation as the other mechanisms (the v6.0.1 unpenalised variant is abandoned)")
     zh.append("组间串行")
     en.append("groups in series")
     return {"zh": (f"{C.label}：" if C.label else "") + "；".join(zh), "en": (f"{C.label}: " if C.label else "") + "; ".join(en)}

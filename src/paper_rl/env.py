@@ -474,8 +474,6 @@ class PlacementEnv(gym.Env):
             r = objective_reward(self.ar - ar0)
             if success:
                 r += C.DIR_B * self.M
-        elif self.mechanism == "none" and self.reward_mode == "ar_pen":
-            r = self.ar_obj if done else 0.0                # v6.0.1: unconstrained -- the objective AR only, no penalty
         elif self.reward_mode == "ar_obj":
             r = self.ar_obj if done else 0.0                # v6.0.1-lagrangian: J_R = AR_obj, violations only via -lambda*c_t
         elif self.reward_mode == "objective":

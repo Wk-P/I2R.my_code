@@ -91,7 +91,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
             from paper_rl.graph_policy import GraphMaskablePolicy
             kw.update(policy=GraphMaskablePolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, glob_std=glob_std, separate=separate, pair_head=pair_head, plan=plan, plan_decay=plan_decay, glob3=glob3,
                                                                   lam_in=mech == "lagrange", mask_logits=mech == "mask",
-                                                                  feas_in=mech != "none"))
+                                                                  feas_in=True))
         if mech == "mask" and group_k:                 # v4.4.11: same-instance groups, instance-wise baseline
             from paper_rl.group_ppo import GroupMaskablePPO
             return GroupMaskablePPO(group_k=group_k, group_seed=seed, **kw)
@@ -114,7 +114,7 @@ def build_model(learner: str, mech: str, env, seed: int, n: int, gamma: float | 
     if net == "graph":                                  # v4.5.2: structure-aware Q-network, same DQN settings
         assert action_mode == "ecu", "--net graph with DQN / DDQN: ECU action only"
         from paper_rl.graph_dqn import GraphDQNPolicy
-        kw.update(policy=GraphDQNPolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, lam_in=mech == "lagrange", feas_in=mech != "none"))
+        kw.update(policy=GraphDQNPolicy, policy_kwargs=dict(n_ecu=n, n_svc=m, lam_in=mech == "lagrange", feas_in=True))
         if mech == "mask":
             cls = MaskableDDQN if learner == "ddqn" else MaskableDQN
             return cls(mask_start=None, raw_dims=(n, m), exit_action=exit_action, **kw)
