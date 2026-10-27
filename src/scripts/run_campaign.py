@@ -101,6 +101,9 @@ class Cfg:
         self.test_set = a.test_set                        # v6.0.4: fixed test set (None: the seed's 400-instance split)
         self.learners = tuple(a.learners.split(","))      # v6.0.0.1: PPO-only batches
         self.ppo_params = {k: (float(v) if "." in v else int(v)) for k, v in (x.split("=") for x in a.ppo_params.split(",") if x)}
+        # v6.0.5-PPO-hyparam: --sweep n_epochs=1,2,3,6 -> one copy of every PPO run per value, inside one batch
+        k, _, vs = a.sweep.partition("=")
+        self.sweep = (k, [float(v) if "." in v else int(v) for v in vs.split(",")]) if a.sweep else None
         # v6.0.1-lagrangian: --lag-reward ar_obj --lag-target 0.001 = the standard Lagrangian (objective AR_obj, the
         # constraint only through -lambda c_t, cost limit d > 0); the defaults keep v6.0.0 (ar_pen - lambda c_t, d = 0)
         self.lag_reward = a.lag_reward
@@ -125,9 +128,20 @@ def own_params(C, l, strategy):
 
 def plan_runs(C, gid):
     strategy, seed = C.groups_def[gid]
-    return [{"label": f"seed{seed} {s} {key_of(l, strategy)}", "group": gid, "seed": seed, "scenario": s, "learner": l,
-             "strategy": strategy, "key": key_of(l, strategy), "algo": ALGO[strategy].format(l=l), "params": own_params(C, l, strategy)}
-            for s in SCENARIOS for l in C.learners]
+    vals = [(None, None)] if not C.sweep else [(C.sweep[0], v) for v in C.sweep[1]]
+    out = []
+    for k, v in vals:
+        for s in SCENARIOS:
+            for l in C.learners:
+                key = key_of(l, strategy) + (f"_{k}{v:g}" if k and l == "ppo" else "")
+                p = own_params(C, l, strategy)
+                if k and l == "ppo":
+                    p[k] = v
+                elif k:
+                    continue                                    # the sweep is over a PPO flag: PPO runs only
+                out.append({"label": f"seed{seed} {s} {key}", "group": gid, "seed": seed, "scenario": s, "learner": l,
+                            "strategy": strategy, "key": key, "algo": ALGO[strategy].format(l=l), "params": p})
+    return out
 
 
 def train_cmd(C, r):
@@ -152,7 +166,7 @@ def title(C, strategies, runs):
     """Manifest title from what the batch actually runs (strategies, learners, seeds, PPO flags, test set)."""
     seeds = sorted({x["seed"] for x in runs})
     word = "strategy" if len(strategies) == 1 else "strategies"
-    flags = ", ".join(f"{k}={v}" for k, v in C.ppo_params.items())
+    flags = ", ".join([f"{k}={v}" for k, v in C.ppo_params.items()] + ([f"{C.sweep[0]} ∈ {{{', '.join(f'{v:g}' for v in C.sweep[1])}}}"] if C.sweep else []))
     zh = [f"{len(strategies)} {word}（{' / '.join(strategies)}）× 3 场景 × {' / '.join(l.upper() for l in C.learners)}，种子 {', '.join(map(str, seeds))}"]
     en = [f"{len(strategies)} {word} ({' / '.join(strategies)}) x 3 scenarios x {' / '.join(l.upper() for l in C.learners)}, seeds {', '.join(map(str, seeds))}"]
     if flags:
@@ -198,7 +212,7 @@ def write_manifest(C, L):
            "groups": {g: {"strategy": C.groups_def[g][0], "seed": C.groups_def[g][1]} for g in C.groups},
            "params": {"steps": C.steps, "checkpoints": C.ckpts, "net": "graph", "reward": "ar_pen", "lagrangian_reward": C.lag_reward, "gamma": 1.0,
                       "full_episode": True, "exit_action": "maskable only", "train_pool": POOL, "test_set": C.test_set, "data": DATA, "eps_steps_dqn": EPS_STEPS,
-                      "lagrangian": C.lag, "ppo_params": C.ppo_params, "per_gpu": C.per_gpu, "gpu_limit_pct": GPU_LIMIT, "gpu_of": GPU_OF},
+                      "lagrangian": C.lag, "ppo_params": C.ppo_params, "sweep": C.sweep, "per_gpu": C.per_gpu, "gpu_limit_pct": GPU_LIMIT, "gpu_of": GPU_OF},
            "runs": runs, "references": []}
     tmp = C.log_dir / "manifest.json.tmp"
     tmp.write_text(json.dumps(man, indent=2, ensure_ascii=False))
@@ -454,7 +468,7 @@ def check_run(C, r, exp_id, log: Path):
             if not ok:
                 probs.append(f"Lagrangian 参数 {k}={got!r}（应为 {v!r}）")
     probs += [f"results.json {k}={res.get(k)!r}（应为 {v!r}）" for k, v in r["params"].items()
-              if r["learner"] == "ppo" and k in C.ppo_params and res.get(k) != v]
+              if r["learner"] == "ppo" and (k in C.ppo_params or (C.sweep and k == C.sweep[0])) and res.get(k) != v]
     if r["learner"] != "ppo" and tr.get("eps_steps") != EPS_STEPS:
         probs.append(f"eps_steps={tr.get('eps_steps')}（应为 {EPS_STEPS}）")
     if not list(d.glob("model_*")):
@@ -605,6 +619,7 @@ def main():
     ap.add_argument("--per-gpu", type=int, default=3)
     ap.add_argument("--label", default=None, help="short batch label, prefixed to the manifest title")
     ap.add_argument("--resume", action="store_true", help="keep runs that already passed the checks")
+    ap.add_argument("--sweep", default="", help="v6.0.5-PPO-hyparam: one PPO flag over several values in one batch, e.g. n_epochs=1,2,3,6")
     ap.add_argument("--test-set", default=None, help="v6.0.4: fixed test set, e.g. data/testset_v6.0.4/{scen}.json")
     ap.add_argument("--learners", default=",".join(LEARNERS), help="v6.0.0.1: comma-separated subset of ppo,dqn,ddqn")
     ap.add_argument("--ppo-params", default="", help="v6.0.0.1: extra PPO flags, e.g. target_kl=0.02 or n_epochs=4")
