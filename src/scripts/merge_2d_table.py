@@ -8,10 +8,11 @@ Sources (all on the fixed v6.0.4 test set, 5000 ILP-optimal instances per scenar
 Per scenario the gap is first averaged over seeds; a cell is the plain mean of the three scenario gaps.
 Writes paper_contents/v6.0.0-merge/table_2d.md, table_2d.en.md, table_2d.png (heatmap of section 1),
 table_2d.json (the same numbers for the panel's summary page, /api/v2/summary) and the paper versions:
-  fig_gap_bars.{pdf,png}   gap per scenario, strategy groups x algorithm bars, error bar = std over seeds
-  fig_gap_viol.{pdf,png}   mean gap vs violation rate per strategy x algorithm (lower-left is better)
-  table_main.tex           booktabs table, mean +- std over seeds, best / second best per gap column marked
-std is the sample std (n-1) over seeds of the per-seed gap; for "Mean" the per-seed gap is first averaged over scenarios.
+  fig_gap_bars.{pdf,png}   gap, strategy groups x algorithm bars, error bar = std over seeds
+  fig_gap_viol.{pdf,png}   gap vs violation rate per strategy x algorithm (lower-left is better)
+  table_main.tex           booktabs table: gap mean +- std over seeds (best bold, second underlined), violation rate
+The paper versions do not split LT / GT / EQ: gap is always the mean over the three scenarios. std is the sample std
+(n-1) over seeds of the per-seed gap, each seed's gap first averaged over the scenarios.
 
     .venv/bin/python src/scripts/merge_2d_table.py
 """
@@ -111,7 +112,7 @@ def plot(rows):
     for i, r in enumerate(A):
         for j, v in enumerate(r):
             ax.text(j, i, f"{v:.2f}%", ha="center", va="center", color="white" if v > 0.6 * hi else "black")
-    fig.colorbar(im, ax=ax, label="AR gap (%), mean of LT / GT / EQ")
+    fig.colorbar(im, ax=ax, label="AR gap (%)")
     plt.tight_layout(); plt.savefig(OUT / "table_2d.png", dpi=150); plt.close()
 
 
@@ -147,20 +148,17 @@ def paper(rows):
                          "pdf.fonttype": 42, "axes.spines.top": False, "axes.spines.right": False})
     P = per_seed(rows)
 
-    # 1. grouped bars, one panel per scenario (double-column width)
-    fig, axes = plt.subplots(1, 3, figsize=(7.0, 2.3))
+    # 1. grouped bars (single-column width)
+    fig, ax = plt.subplots(figsize=(3.5, 2.4))
     w = 0.26
-    for ax, s in zip(axes, SCENS):
-        for j, l in enumerate(LEARNERS):
-            c, h, _ = ALGO_STYLE[l]
-            ys = [100 * st.mean(P[m, l]["gap"][s]) for m in MECHS]
-            es = [100 * sd(P[m, l]["gap"][s]) for m in MECHS]
-            ax.bar([i + (j - 1) * w for i in range(len(MECHS))], ys, w, yerr=es, color=c, hatch=h, edgecolor="black",
-                   linewidth=0.4, error_kw=dict(elinewidth=0.6, capsize=1.5), label=NAME[l])
-        ax.set_xticks(range(len(MECHS)), [NAME[m] for m in MECHS], rotation=20)
-        ax.set_title(SCEN_TITLE[s]); ax.grid(axis="y", linewidth=0.3, alpha=0.6); ax.set_axisbelow(True)
-    axes[0].set_ylabel("AR gap (%)")
-    axes[0].legend(frameon=False, loc="upper left")
+    for j, l in enumerate(LEARNERS):
+        c, h, _ = ALGO_STYLE[l]
+        ax.bar([i + (j - 1) * w for i in range(len(MECHS))], [100 * st.mean(P[m, l]["mean"]) for m in MECHS], w,
+               yerr=[100 * sd(P[m, l]["mean"]) for m in MECHS], color=c, hatch=h, edgecolor="black", linewidth=0.4,
+               error_kw=dict(elinewidth=0.6, capsize=1.5), label=NAME[l])
+    ax.set_xticks(range(len(MECHS)), [NAME[m] for m in MECHS])
+    ax.set_ylabel("AR gap (%)"); ax.grid(axis="y", linewidth=0.3, alpha=0.6); ax.set_axisbelow(True)
+    ax.legend(frameon=False, loc="upper left")
     plt.tight_layout()
     for ext in ("pdf", "png"):
         plt.savefig(OUT / f"fig_gap_bars.{ext}", dpi=300)
@@ -181,7 +179,7 @@ def paper(rows):
     for sp in ins.spines.values():
         sp.set_visible(True); sp.set_linewidth(0.5)
     ax.indicate_inset_zoom(ins, edgecolor="0.4", linewidth=0.5)
-    ax.set_xlabel("AR gap (%), mean of LT / GT / EQ"); ax.set_ylabel("Violation rate (%)")
+    ax.set_xlabel("AR gap (%)"); ax.set_ylabel("Violation rate (%)")
     ax.grid(linewidth=0.3, alpha=0.6); ax.set_axisbelow(True)
     h1 = [Line2D([], [], ls="", marker="s", color=STRAT_COLOR[m], mec="black", mew=0.4, label=NAME[m]) for m in MECHS]
     h2 = [Line2D([], [], ls="", marker=ALGO_STYLE[l][2], color="white", mec="black", mew=0.6, label=NAME[l]) for l in LEARNERS]
@@ -192,23 +190,21 @@ def paper(rows):
     plt.close()
 
     # 3. booktabs table
-    cols = SCENS + ["mean"]
-    val = lambda m, l, c: P[m, l]["mean"] if c == "mean" else P[m, l]["gap"][c]
-    rank = {c: sorted(st.mean(val(m, l, c)) for m in MECHS for l in LEARNERS) for c in cols}
-    def fmt(m, l, c):
-        xs = val(m, l, c); v = f"{100 * st.mean(xs):.2f} $\\pm$ {100 * sd(xs):.2f}"
-        return f"\\textbf{{{v}}}" if st.mean(xs) == rank[c][0] else f"\\underline{{{v}}}" if st.mean(xs) == rank[c][1] else v
+    rank = sorted(st.mean(P[m, l]["mean"]) for m in MECHS for l in LEARNERS)
+    def fmt(m, l):
+        xs = P[m, l]["mean"]; v = f"{100 * st.mean(xs):.2f} $\\pm$ {100 * sd(xs):.2f}"
+        return f"\\textbf{{{v}}}" if st.mean(xs) == rank[0] else f"\\underline{{{v}}}" if st.mean(xs) == rank[1] else v
     T = ["% generated by src/scripts/merge_2d_table.py -- do not edit by hand", "\\begin{table}[t]", "\\centering",
-         "\\caption{AR gap (\\%, lower is better) on the test set (5000 ILP-optimal instances per scenario), mean $\\pm$ std over "
-         "seeds; best in bold, second best underlined. Viol.: share of test instances with a capacity or privacy violation.}",
-         "\\label{tab:main}", "\\small", "\\begin{tabular}{llccccc}", "\\toprule",
-         "Strategy & Algorithm & LT & GT & EQ & Mean & Viol.\\ (\\%) \\\\", "\\midrule"]
+         "\\caption{AR gap (\\%, lower is better) on the test set, mean $\\pm$ std over seeds; best in bold, second best "
+         "underlined. Viol.: share of test instances with a capacity or privacy violation.}",
+         "\\label{tab:main}", "\\small", "\\begin{tabular}{llcc}", "\\toprule",
+         "Strategy & Algorithm & AR gap (\\%) & Viol.\\ (\\%) \\\\", "\\midrule"]
     for i, m in enumerate(MECHS):
         if i:
             T.append("\\midrule")
         for j, l in enumerate(LEARNERS):
             v = 100 * st.mean(P[m, l]["viol"].values())
-            T.append(f"{NAME[m] if j == 0 else ''} & {NAME[l]} & " + " & ".join(fmt(m, l, c) for c in cols) + f" & {v:.2f} \\\\")
+            T.append(f"{NAME[m] if j == 0 else ''} & {NAME[l]} & {fmt(m, l)} & {v:.2f} \\\\")
     T += ["\\bottomrule", "\\end{tabular}", "\\end{table}", ""]
     (OUT / "table_main.tex").write_text("\n".join(T))
 

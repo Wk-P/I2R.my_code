@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-29 00:10:47",
+ "generated_at": "2026-10-29 00:14:35",
  "script": "src/scripts/merge_2d_table.py",
  "test_set": "data/testset_v6.0.4/{scen}.json",
  "n_test": 5000,
