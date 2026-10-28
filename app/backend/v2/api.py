@@ -14,6 +14,7 @@ v5.0.3's schema-2 manifest is converted by data.normalize.
     GET /api/v2/runs/{space}/{scen}/{algo}/{exp_id}/trace    training trace (moving averages, thinned)
     GET /api/v2/runs/{space}/{scen}/{algo}/{exp_id}/file/{f} a png / csv / json of the run
     GET /api/v2/summary                                      strategy x RL_algorithm summary (gap over LT / GT / EQ)
+    GET /api/v2/summary/file/{f}                             its paper figures / LaTeX table (listed in table_2d.json)
     GET /api/v2/system, /api/v2/gpu_history, /api/v2/queue   machine and queue
 """
 from __future__ import annotations
@@ -355,6 +356,16 @@ def summary():
     if d is None:
         raise HTTPException(404, "paper_contents/v6.0.0-merge/table_2d.json not found")
     return d
+
+
+@router.get("/summary/file/{fname}")
+def summary_file(fname: str):
+    d = D.read_json(D.PAPER / "v6.0.0-merge" / "table_2d.json") or {}
+    p = D.PAPER / "v6.0.0-merge" / fname
+    if fname not in d.get("files", []) or not p.is_file():
+        raise HTTPException(404, fname)
+    media = {".tex": "text/plain; charset=utf-8"}.get(p.suffix)
+    return FileResponse(p, media_type=media, filename=fname if p.suffix in (".pdf", ".tex") else None)
 
 
 @router.get("/version_trend")

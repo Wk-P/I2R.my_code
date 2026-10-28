@@ -4,13 +4,24 @@
 // A heatmap of the means, then the per-scenario breakdown with the violation rate.
 import { ref, computed, onMounted } from "vue";
 import { t, tl } from "../i18n.js";
-import { getSummary } from "../api.js";
+import { getSummary, summaryFile } from "../api.js";
 import { pct } from "../format.js";
 import { scenName } from "../labels.js";
 
 const d = ref(null);
 const failed = ref(false);
-onMounted(async () => { d.value = await getSummary(); failed.value = !d.value; });
+const tex = ref("");
+onMounted(async () => {
+  d.value = await getSummary(); failed.value = !d.value;
+  if (d.value?.files?.includes("table_main.tex")) tex.value = await (await fetch(summaryFile("table_main.tex", d.value.generated_at))).text();
+});
+const file = (f) => summaryFile(f, d.value?.generated_at);
+// best / second best per column, as in table_main.tex
+function mark(v, s) {
+  const xs = d.value.cells.map((c) => (s ? c.gap[s] : c.mean)).sort((a, b) => a - b);
+  return v === xs[0] ? "best" : v === xs[1] ? "second" : "";
+}
+const pm = (c, s) => `${(100 * (s ? c.gap[s] : c.mean)).toFixed(2)} ± ${(100 * (s ? c.gap_std[s] : c.mean_std)).toFixed(2)}`;
 
 const mean = (xs) => xs.reduce((a, c) => a + c, 0) / xs.length;
 const cell = (st, rl) => d.value.cells.find((c) => c.strategy === st && c.RL_algorithm === rl);
@@ -102,6 +113,49 @@ function heat(v) {
           <span class="faint">{{ t("生成于", "Generated") }} {{ d.generated_at }} · <code>{{ d.script }}</code></span>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-h"><h2>{{ t("论文图表", "Paper figures") }}</h2>
+          <span class="faint small">{{ t("与论文中使用的文件完全一致（矢量 PDF / LaTeX）；误差棒 = 种子间标准差", "Exactly the files used in the paper (vector PDF / LaTeX); error bars = std over seeds") }}</span></div>
+        <div class="card-b">
+          <div class="fig">
+            <div class="fig-h"><b>{{ t("图 1　分场景 gap（分组柱状图）", "Fig. 1　Gap per scenario (grouped bars)") }}</b>
+              <a :href="file('fig_gap_bars.pdf')">PDF</a> · <a :href="file('fig_gap_bars.png')" target="_blank">PNG</a></div>
+            <img :src="file('fig_gap_bars.png')" alt="fig_gap_bars" />
+            <div class="small dim">{{ t("横轴为 strategy，组内三根柱为 PPO / DQN / Double DQN；三个子图分别为 LT、GT、EQ，纵轴各自独立。",
+              "Strategy on the x-axis, PPO / DQN / Double DQN within each group; panels LT, GT, EQ with independent y-axes.") }}</div>
+          </div>
+          <div class="fig narrow">
+            <div class="fig-h"><b>{{ t("图 2　gap–违约率（左下最好）", "Fig. 2　Gap vs violation rate (lower-left is better)") }}</b>
+              <a :href="file('fig_gap_viol.pdf')">PDF</a> · <a :href="file('fig_gap_viol.png')" target="_blank">PNG</a></div>
+            <img :src="file('fig_gap_viol.png')" alt="fig_gap_viol" />
+            <div class="small dim">{{ t("颜色 = strategy，形状 = 算法；横向误差棒 = 三场景平均 gap 的种子间标准差；内嵌图放大左下角。只有 Mask 落在违约率 0 上。",
+              "Colour = strategy, marker = algorithm; horizontal bars = std over seeds of the mean gap; the inset zooms into the lower-left corner. Only Mask lies on zero violation.") }}</div>
+          </div>
+          <div class="fig">
+            <div class="fig-h"><b>{{ t("表 1　主结果表（booktabs）", "Table 1　Main results (booktabs)") }}</b>
+              <a :href="file('table_main.tex')">.tex</a></div>
+            <div class="table-wrap">
+              <table class="tbl paper">
+                <thead><tr><th>Strategy</th><th>Algorithm</th><th v-for="s in d.scenarios" :key="s" class="num">{{ s.toUpperCase() }}</th>
+                  <th class="num">Mean</th><th class="num">Viol. (%)</th></tr></thead>
+                <tbody>
+                  <template v-for="st in d.strategies" :key="st">
+                    <tr v-for="(rl, i) in d.RL_algorithms" :key="rl" :class="{ first: i === 0 }">
+                      <td>{{ i === 0 ? st : "" }}</td><td>{{ rl }}</td>
+                      <td v-for="s in d.scenarios" :key="s" class="num" :class="mark(cell(st, rl).gap[s], s)">{{ pm(cell(st, rl), s) }}</td>
+                      <td class="num" :class="mark(cell(st, rl).mean)">{{ pm(cell(st, rl)) }}</td>
+                      <td class="num">{{ (100 * cell(st, rl).viol).toFixed(2) }}</td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <div class="small dim">{{ t("均值 ± 种子间标准差（%）；每列加粗为最好、下划线为次好。", "Mean ± std over seeds (%); per column bold = best, underlined = second best.") }}</div>
+            <details><summary class="small">LaTeX</summary><pre class="tex">{{ tex }}</pre></details>
+          </div>
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -118,4 +172,12 @@ function heat(v) {
 .heat .m { background: var(--panel-2); color: var(--dim); font-size: 14px; }
 .tbl tr.first td { border-top: 1px solid var(--border-strong); }
 .bad { color: var(--bad); }
+.fig { margin-bottom: 22px; }
+.fig img { width: 100%; max-width: 1000px; display: block; margin: 8px 0; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.fig.narrow img { max-width: 560px; }
+.fig-h { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.fig-h b { margin-right: 8px; }
+.tbl.paper td.best { font-weight: 750; }
+.tbl.paper td.second { text-decoration: underline; }
+pre.tex { font-size: 11.5px; background: var(--panel-2); padding: 10px; border-radius: 6px; overflow-x: auto; }
 </style>

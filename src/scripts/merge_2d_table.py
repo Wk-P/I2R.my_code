@@ -6,8 +6,12 @@ Sources (all on the fixed v6.0.4 test set, 5000 ILP-optimal instances per scenar
   Unconstraint seed 1 -> v6.0.1-unconstraint-test-50k (G12; seeds 2, 3 from v6.0.4-test-50k)
   others     -> v6.0.4-test-50k (v6.0.0 models)
 Per scenario the gap is first averaged over seeds; a cell is the plain mean of the three scenario gaps.
-Writes paper_contents/v6.0.0-merge/table_2d.md, table_2d.en.md, table_2d.png (heatmap of section 1) and
-table_2d.json (the same numbers for the panel's summary page, /api/v2/summary).
+Writes paper_contents/v6.0.0-merge/table_2d.md, table_2d.en.md, table_2d.png (heatmap of section 1),
+table_2d.json (the same numbers for the panel's summary page, /api/v2/summary) and the paper versions:
+  fig_gap_bars.{pdf,png}   gap per scenario, strategy groups x algorithm bars, error bar = std over seeds
+  fig_gap_viol.{pdf,png}   mean gap vs violation rate per strategy x algorithm (lower-left is better)
+  table_main.tex           booktabs table, mean +- std over seeds, best / second best per gap column marked
+std is the sample std (n-1) over seeds of the per-seed gap; for "Mean" the per-seed gap is first averaged over scenarios.
 
     .venv/bin/python src/scripts/merge_2d_table.py
 """
@@ -111,15 +115,115 @@ def plot(rows):
     plt.tight_layout(); plt.savefig(OUT / "table_2d.png", dpi=150); plt.close()
 
 
+def per_seed(rows):
+    """{(mech, learner): {"gap": {scen: [per-seed gap]}, "mean": [per-seed mean over scenarios], "viol": {scen: mean}}}"""
+    out = {}
+    for m in MECHS:
+        for l in LEARNERS:
+            sel = [r for r in rows if (r["mech"], r["learner"]) == (m, l)]
+            seeds = sorted({r["seed"] for r in sel})
+            g = {s: {r["seed"]: r["new"]["gap"] for r in sel if r["scen"] == s} for s in SCENS}
+            out[m, l] = dict(seeds=seeds, gap={s: [g[s][k] for k in seeds] for s in SCENS},
+                             mean=[st.mean(g[s][k] for s in SCENS) for k in seeds],
+                             viol={s: max(st.mean(1 - r["new"]["vf"] - r["new"]["exit"] for r in sel if r["scen"] == s), 0.0) for s in SCENS})
+    return out
+
+
+sd = lambda xs: st.stdev(xs) if len(xs) > 1 else 0.0
+# Okabe-Ito (colour-blind safe); hatches keep the bars apart in grey-scale print
+ALGO_STYLE = {"ppo": ("#0072B2", "", "o"), "dqn": ("#E69F00", "//", "^"), "ddqn": ("#009E73", "..", "s")}
+STRAT_COLOR = {"mask": "#0072B2", "repair": "#009E73", "lagrange": "#E69F00", "none": "#D55E00"}
+SCEN_TITLE = {"lt": "LT (scarce)", "gt": "GT (ample)", "eq": "EQ (balanced)"}
+
+
+def paper(rows):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["Times New Roman", "Liberation Serif", "DejaVu Serif"],
+                         "mathtext.fontset": "stix", "font.size": 8, "axes.titlesize": 8.5, "axes.labelsize": 8,
+                         "legend.fontsize": 7.5, "xtick.labelsize": 7.5, "ytick.labelsize": 7.5, "axes.linewidth": 0.6,
+                         "pdf.fonttype": 42, "axes.spines.top": False, "axes.spines.right": False})
+    P = per_seed(rows)
+
+    # 1. grouped bars, one panel per scenario (double-column width)
+    fig, axes = plt.subplots(1, 3, figsize=(7.0, 2.3))
+    w = 0.26
+    for ax, s in zip(axes, SCENS):
+        for j, l in enumerate(LEARNERS):
+            c, h, _ = ALGO_STYLE[l]
+            ys = [100 * st.mean(P[m, l]["gap"][s]) for m in MECHS]
+            es = [100 * sd(P[m, l]["gap"][s]) for m in MECHS]
+            ax.bar([i + (j - 1) * w for i in range(len(MECHS))], ys, w, yerr=es, color=c, hatch=h, edgecolor="black",
+                   linewidth=0.4, error_kw=dict(elinewidth=0.6, capsize=1.5), label=NAME[l])
+        ax.set_xticks(range(len(MECHS)), [NAME[m] for m in MECHS], rotation=20)
+        ax.set_title(SCEN_TITLE[s]); ax.grid(axis="y", linewidth=0.3, alpha=0.6); ax.set_axisbelow(True)
+    axes[0].set_ylabel("AR gap (%)")
+    axes[0].legend(frameon=False, loc="upper left")
+    plt.tight_layout()
+    for ext in ("pdf", "png"):
+        plt.savefig(OUT / f"fig_gap_bars.{ext}", dpi=300)
+    plt.close()
+
+    # 2. gap vs violation rate (single-column width)
+    fig, ax = plt.subplots(figsize=(3.5, 2.6))
+    # the methods that matter crowd the lower-left corner: repeat them in a zoomed inset
+    ins = ax.inset_axes([0.40, 0.25, 0.40, 0.42])
+    for a, ms in ((ax, 5), (ins, 4.5)):
+        for m in MECHS:
+            for l in LEARNERS:
+                x = 100 * st.mean(P[m, l]["mean"]); y = 100 * st.mean(P[m, l]["viol"].values())
+                a.errorbar(x, y, xerr=100 * sd(P[m, l]["mean"]), fmt=ALGO_STYLE[l][2], color=STRAT_COLOR[m], ms=ms,
+                           mec="black", mew=0.4, elinewidth=0.6, capsize=1.5)
+    ins.set_xlim(3.5, 8.6); ins.set_ylim(-0.3, 2.7)
+    ins.tick_params(labelsize=6); ins.grid(linewidth=0.3, alpha=0.6)
+    for sp in ins.spines.values():
+        sp.set_visible(True); sp.set_linewidth(0.5)
+    ax.indicate_inset_zoom(ins, edgecolor="0.4", linewidth=0.5)
+    ax.set_xlabel("AR gap (%), mean of LT / GT / EQ"); ax.set_ylabel("Violation rate (%)")
+    ax.grid(linewidth=0.3, alpha=0.6); ax.set_axisbelow(True)
+    h1 = [Line2D([], [], ls="", marker="s", color=STRAT_COLOR[m], mec="black", mew=0.4, label=NAME[m]) for m in MECHS]
+    h2 = [Line2D([], [], ls="", marker=ALGO_STYLE[l][2], color="white", mec="black", mew=0.6, label=NAME[l]) for l in LEARNERS]
+    ax.legend(handles=h1 + h2, frameon=False, loc="upper left", ncol=2, handletextpad=0.3, columnspacing=0.8)
+    plt.tight_layout()
+    for ext in ("pdf", "png"):
+        plt.savefig(OUT / f"fig_gap_viol.{ext}", dpi=300)
+    plt.close()
+
+    # 3. booktabs table
+    cols = SCENS + ["mean"]
+    val = lambda m, l, c: P[m, l]["mean"] if c == "mean" else P[m, l]["gap"][c]
+    rank = {c: sorted(st.mean(val(m, l, c)) for m in MECHS for l in LEARNERS) for c in cols}
+    def fmt(m, l, c):
+        xs = val(m, l, c); v = f"{100 * st.mean(xs):.2f} $\\pm$ {100 * sd(xs):.2f}"
+        return f"\\textbf{{{v}}}" if st.mean(xs) == rank[c][0] else f"\\underline{{{v}}}" if st.mean(xs) == rank[c][1] else v
+    T = ["% generated by src/scripts/merge_2d_table.py -- do not edit by hand", "\\begin{table}[t]", "\\centering",
+         "\\caption{AR gap (\\%, lower is better) on the test set (5000 ILP-optimal instances per scenario), mean $\\pm$ std over "
+         "seeds; best in bold, second best underlined. Viol.: share of test instances with a capacity or privacy violation.}",
+         "\\label{tab:main}", "\\small", "\\begin{tabular}{llccccc}", "\\toprule",
+         "Strategy & Algorithm & LT & GT & EQ & Mean & Viol.\\ (\\%) \\\\", "\\midrule"]
+    for i, m in enumerate(MECHS):
+        if i:
+            T.append("\\midrule")
+        for j, l in enumerate(LEARNERS):
+            v = 100 * st.mean(P[m, l]["viol"].values())
+            T.append(f"{NAME[m] if j == 0 else ''} & {NAME[l]} & " + " & ".join(fmt(m, l, c) for c in cols) + f" & {v:.2f} \\\\")
+    T += ["\\bottomrule", "\\end{tabular}", "\\end{table}", ""]
+    (OUT / "table_main.tex").write_text("\n".join(T))
+
+
 def dump(rows):
     # names as docs/data_spec.md: strategy maskable / repair / lagrangian / unconstraint, RL_algorithm PPO / DQN / DDQN
     STRAT = {"mask": "maskable", "repair": "repair", "lagrange": "lagrangian", "none": "unconstraint"}
     _, gap, viol = stats(rows)
+    P = per_seed(rows)
     sel = lambda m, l: [r for r in rows if (r["mech"], r["learner"]) == (m, l)]
     cells = [dict(strategy=STRAT[m], RL_algorithm=l.upper(), seeds=sorted({r["seed"] for r in sel(m, l)}),
                   gap={s: gap(m, l, s) for s in SCENS}, mean=st.mean(gap(m, l, s) for s in SCENS),
                   viol=max(viol[m, l], 0.0),
-                  exit=st.mean(r["new"]["exit"] for r in sel(m, l)) if m == "mask" else None)
+                  exit=st.mean(r["new"]["exit"] for r in sel(m, l)) if m == "mask" else None,
+                  gap_std={s: sd(P[m, l]["gap"][s]) for s in SCENS}, mean_std=sd(P[m, l]["mean"]), viol_by_scen=P[m, l]["viol"])
              for m in MECHS for l in LEARNERS]
     src = {"zh": "Mask PPO = v6.0.5-PPO-hyparam（n_epochs=6）；Lagrangian = v6.0.1-lagrangian（标准 Lagrangian）；Unconstraint seed 1 = v6.0.1-unconstraint；其余 = v6.0.0",
            "en": "Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6); Lagrangian = v6.0.1-lagrangian (standard Lagrangian); Unconstraint seed 1 = v6.0.1-unconstraint; others = v6.0.0"}
@@ -127,13 +231,15 @@ def dump(rows):
         generated_at=time.strftime("%Y-%m-%d %H:%M:%S"), script="src/scripts/merge_2d_table.py",
         test_set="data/testset_v6.0.4/{scen}.json", n_test=5000, scenarios=SCENS,
         strategies=[STRAT[m] for m in MECHS], RL_algorithms=[l.upper() for l in LEARNERS], sources=src,
-        batches=[f"{MASK_PPO_SRC}-test-50k", "v6.0.1-lagrangian-test-50k", "v6.0.1-unconstraint-test-50k", "v6.0.4-test-50k"], cells=cells), indent=1))
+        batches=[f"{MASK_PPO_SRC}-test-50k", "v6.0.1-lagrangian-test-50k", "v6.0.1-unconstraint-test-50k", "v6.0.4-test-50k"], cells=cells,
+        files=["fig_gap_bars.pdf", "fig_gap_bars.png", "fig_gap_viol.pdf", "fig_gap_viol.png", "table_main.tex", "table_2d.png"]), indent=1))
 
 
 def main():
     rows = load()
     OUT.mkdir(parents=True, exist_ok=True)
     plot(rows)
+    paper(rows)
     dump(rows)
     (OUT / "table_2d.md").write_text(build(rows, "zh"))
     (OUT / "table_2d.en.md").write_text(build(rows, "en"))

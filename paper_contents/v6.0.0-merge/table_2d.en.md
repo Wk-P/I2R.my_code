@@ -1,6 +1,6 @@
 # v6.0.0-merge 2-D summary: mechanism × algorithm (gap averaged over three scenarios)
 
-- Generated 2026-10-29 00:02:42; script `src/scripts/merge_2d_table.py`; no training, no re-evaluation.
+- Generated 2026-10-29 00:10:47; script `src/scripts/merge_2d_table.py`; no training, no re-evaluation.
 - Test set: the fixed v6.0.4 test set, 5000 ILP-optimal instances per scenario.
 - Sources: Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6, `v6.0.5-PPO-hyparam-test-50k`); Lagrangian = v6.0.1-lagrangian (standard Lagrangian, `v6.0.1-lagrangian-test-50k`); Unconstraint seed 1 = v6.0.1-unconstraint (`v6.0.1-unconstraint-test-50k`); others = v6.0.0 (`v6.0.4-test-50k`).
 - **gap** = 1 − mean(AR) / mean(ILP AR), AR over legal placements; per scenario averaged over seeds, each cell = plain mean of the LT, GT, EQ gaps; row / column means are plain means of the cells.
