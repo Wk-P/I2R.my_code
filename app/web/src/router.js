@@ -5,6 +5,7 @@ import Batch from "./pages/Batch.vue";
 import Run from "./pages/Run.vue";
 import Monitor from "./pages/Monitor.vue";
 import Compare from "./pages/Compare.vue";
+import Summary from "./pages/Summary.vue";
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -14,6 +15,7 @@ export const router = createRouter({
     { path: "/batches/:name", component: Batch, props: true, meta: { nav: "batches" } },
     { path: "/runs/:space/:scenario/:algo/:exp_id", component: Run, props: true, meta: { nav: "batches" } },
     { path: "/compare", component: Compare, meta: { nav: "compare" } },
+    { path: "/summary", component: Summary, meta: { nav: "summary" } },
     { path: "/monitor", component: Monitor, meta: { nav: "monitor" } },
     { path: "/machine", redirect: "/monitor" },
     { path: "/:p(.*)*", redirect: "/" },

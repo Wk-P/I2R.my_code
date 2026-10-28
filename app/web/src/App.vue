@@ -11,6 +11,7 @@ const nav = computed(() => [
   { key: "overview", to: "/", icon: "◎", label: t("总览", "Overview") },
   { key: "monitor", to: "/monitor", icon: "◉", label: t("实时监控", "Live monitor") },
   { key: "batches", to: "/batches", icon: "☰", label: t("批次", "Batches") },
+  { key: "summary", to: "/summary", icon: "▦", label: t("总图", "Summary") },
   { key: "compare", to: "/compare?a=v6.0.0&b=v6.0.0.2", icon: "⇄", label: t("批次对比", "Compare") },
 ]);
 let timer;

@@ -18,6 +18,7 @@ export const getReportData = (name) => get(`/api/v2/batches/${e(name)}/report_da
 export const getRun = (r) => get(runPath(r));
 export const getTrace = (r, points = 300, window = 1000) => get(`${runPath(r)}/trace?points=${points}&window=${window}`);
 export const runFile = (r, f) => `${runPath(r)}/file/${e(f)}?v=${Date.now() >> 16}`;
+export const getSummary = () => get("/api/v2/summary");
 export const getVersionTrend = () => get("/api/v2/version_trend");
 export const getLive = () => get("/api/v2/live");
 export const getSystem = () => get("/api/v2/system");

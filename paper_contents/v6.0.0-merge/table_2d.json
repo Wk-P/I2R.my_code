@@ -1,0 +1,234 @@
+{
+ "generated_at": "2026-10-28 23:42:27",
+ "script": "src/scripts/merge_2d_table.py",
+ "test_set": "data/testset_v6.0.4/{scen}.json",
+ "n_test": 5000,
+ "scenarios": [
+  "lt",
+  "gt",
+  "eq"
+ ],
+ "strategies": [
+  "maskable",
+  "repair",
+  "lagrangian",
+  "unconstraint"
+ ],
+ "RL_algorithms": [
+  "PPO",
+  "DQN",
+  "DDQN"
+ ],
+ "sources": {
+  "zh": "Mask PPO = v6.0.5-PPO-hyparam\uff08n_epochs=6\uff09\uff1bLagrangian = v6.0.1-lagrangian\uff08\u6807\u51c6 Lagrangian\uff09\uff1b\u5176\u4f59 = v6.0.0",
+  "en": "Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6); Lagrangian = v6.0.1-lagrangian (standard Lagrangian); others = v6.0.0"
+ },
+ "batches": [
+  "v6.0.5-PPO-hyparam-test-50k",
+  "v6.0.1-lagrangian-test-50k",
+  "v6.0.4-test-50k"
+ ],
+ "cells": [
+  {
+   "strategy": "maskable",
+   "RL_algorithm": "PPO",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.06220119181230247,
+    "gt": 0.03275479127674796,
+    "eq": 0.03640723361765471
+   },
+   "mean": 0.04378773890223505,
+   "viol": 0.0,
+   "exit": 0.004622222222222222
+  },
+  {
+   "strategy": "maskable",
+   "RL_algorithm": "DQN",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.13574267090209235,
+    "gt": 0.044078989005706615,
+    "eq": 0.03537083548960115
+   },
+   "mean": 0.07173083179913337,
+   "viol": 0.0,
+   "exit": 0.012911111111111111
+  },
+  {
+   "strategy": "maskable",
+   "RL_algorithm": "DDQN",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.10616689854449157,
+    "gt": 0.05053536602594422,
+    "eq": 0.03647158241106252
+   },
+   "mean": 0.06439128232716611,
+   "viol": 1.406451151529807e-18,
+   "exit": 0.010177777777777779
+  },
+  {
+   "strategy": "repair",
+   "RL_algorithm": "PPO",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.08556088151131513,
+    "gt": 0.06043494329709361,
+    "eq": 0.06851028696172094
+   },
+   "mean": 0.0715020372567099,
+   "viol": 0.008488888888888891,
+   "exit": null
+  },
+  {
+   "strategy": "repair",
+   "RL_algorithm": "DQN",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.12492063979860075,
+    "gt": 0.034115674284581655,
+    "eq": 0.03606220647594812
+   },
+   "mean": 0.06503284018637684,
+   "viol": 0.018822222222222223,
+   "exit": null
+  },
+  {
+   "strategy": "repair",
+   "RL_algorithm": "DDQN",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.15553731724192146,
+    "gt": 0.029437798647547992,
+    "eq": 0.036096238086042086
+   },
+   "mean": 0.07369045132517052,
+   "viol": 0.02195555555555557,
+   "exit": null
+  },
+  {
+   "strategy": "lagrangian",
+   "RL_algorithm": "PPO",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.0632169383283571,
+    "gt": 0.0685940843334157,
+    "eq": 0.05547172188411512
+   },
+   "mean": 0.062427581515295975,
+   "viol": 0.006422222222222218,
+   "exit": null
+  },
+  {
+   "strategy": "lagrangian",
+   "RL_algorithm": "DQN",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.1837149458414217,
+    "gt": 0.08274574886799395,
+    "eq": 0.10870642299325639
+   },
+   "mean": 0.12505570590089068,
+   "viol": 0.01204444444444445,
+   "exit": null
+  },
+  {
+   "strategy": "lagrangian",
+   "RL_algorithm": "DDQN",
+   "seeds": [
+    1,
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.22874925196282792,
+    "gt": 0.05028649888667432,
+    "eq": 0.13613951858191667
+   },
+   "mean": 0.13839175647713964,
+   "viol": 0.021088888888888872,
+   "exit": null
+  },
+  {
+   "strategy": "unconstraint",
+   "RL_algorithm": "PPO",
+   "seeds": [
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.07357647115108679,
+    "gt": 0.0465906138393658,
+    "eq": 0.060098764772965996
+   },
+   "mean": 0.0600886165878062,
+   "viol": 0.007799999999999992,
+   "exit": null
+  },
+  {
+   "strategy": "unconstraint",
+   "RL_algorithm": "DQN",
+   "seeds": [
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.30917023161183427,
+    "gt": 0.1372416187091381,
+    "eq": 0.2849418291635516
+   },
+   "mean": 0.24378455982817465,
+   "viol": 0.2812,
+   "exit": null
+  },
+  {
+   "strategy": "unconstraint",
+   "RL_algorithm": "DDQN",
+   "seeds": [
+    2,
+    3
+   ],
+   "gap": {
+    "lt": 0.2551852863472873,
+    "gt": 0.2081175032261634,
+    "eq": 0.1735476248281171
+   },
+   "mean": 0.21228347146718926,
+   "viol": 0.30576666666666663,
+   "exit": null
+  }
+ ]
+}
