@@ -3,6 +3,7 @@
 Sources (all on the fixed v6.0.4 test set, 5000 ILP-optimal instances per scenario):
   Mask PPO   -> v6.0.5-PPO-hyparam-test-50k, n_epochs=6 runs only
   Lagrangian -> v6.0.1-lagrangian-test-50k (standard Lagrangian)
+  Unconstraint seed 1 -> v6.0.1-unconstraint-test-50k (G12; seeds 2, 3 from v6.0.4-test-50k)
   others     -> v6.0.4-test-50k (v6.0.0 models)
 Per scenario the gap is first averaged over seeds; a cell is the plain mean of the three scenario gaps.
 Writes paper_contents/v6.0.0-merge/table_2d.md, table_2d.en.md, table_2d.png (heatmap of section 1) and
@@ -33,7 +34,7 @@ def load():
     man = json.loads((ROOT / f"logs/{MASK_PPO_SRC}/manifest.json").read_text())
     keep = {r["exp_id"] for r in man["runs"] if r["params"].get("n_epochs") == MASK_PPO_EPOCHS}
     mask_ppo = [r for r in rd(f"{MASK_PPO_SRC}-test-50k") if r["exp_id"] in keep]
-    return rows + mask_ppo + rd("v6.0.1-lagrangian-test-50k")
+    return rows + mask_ppo + rd("v6.0.1-lagrangian-test-50k") + rd("v6.0.1-unconstraint-test-50k")
 
 
 def stats(rows):
@@ -57,8 +58,8 @@ def build(rows, lang):
                f"- Generated {time.strftime('%Y-%m-%d %H:%M:%S')}; script `src/scripts/merge_2d_table.py`; no training, no re-evaluation."))
     L.append(T("- 测试集：v6.0.4 固定测试集，每场景 5000 个 ILP 最优实例。",
                "- Test set: the fixed v6.0.4 test set, 5000 ILP-optimal instances per scenario."))
-    L.append(T("- 来源：Mask PPO = v6.0.5-PPO-hyparam（n_epochs=6，`v6.0.5-PPO-hyparam-test-50k`）；Lagrangian = v6.0.1-lagrangian（标准 Lagrangian，`v6.0.1-lagrangian-test-50k`）；其余 = v6.0.0（`v6.0.4-test-50k`）。",
-               "- Sources: Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6, `v6.0.5-PPO-hyparam-test-50k`); Lagrangian = v6.0.1-lagrangian (standard Lagrangian, `v6.0.1-lagrangian-test-50k`); others = v6.0.0 (`v6.0.4-test-50k`)."))
+    L.append(T("- 来源：Mask PPO = v6.0.5-PPO-hyparam（n_epochs=6，`v6.0.5-PPO-hyparam-test-50k`）；Lagrangian = v6.0.1-lagrangian（标准 Lagrangian，`v6.0.1-lagrangian-test-50k`）；Unconstraint seed 1 = v6.0.1-unconstraint（`v6.0.1-unconstraint-test-50k`）；其余 = v6.0.0（`v6.0.4-test-50k`）。",
+               "- Sources: Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6, `v6.0.5-PPO-hyparam-test-50k`); Lagrangian = v6.0.1-lagrangian (standard Lagrangian, `v6.0.1-lagrangian-test-50k`); Unconstraint seed 1 = v6.0.1-unconstraint (`v6.0.1-unconstraint-test-50k`); others = v6.0.0 (`v6.0.4-test-50k`)."))
     L.append(T("- **gap** = 1 − mean(AR) / mean(ILP AR)，AR 只计合法放置；每场景先对种子取均值，每格 = LT、GT、EQ 三个场景 gap 的算术平均；行/列平均为该行/列各格的算术平均。",
                "- **gap** = 1 − mean(AR) / mean(ILP AR), AR over legal placements; per scenario averaged over seeds, each cell = plain mean of the LT, GT, EQ gaps; row / column means are plain means of the cells."))
     L.append("")
@@ -120,13 +121,13 @@ def dump(rows):
                   viol=max(viol[m, l], 0.0),
                   exit=st.mean(r["new"]["exit"] for r in sel(m, l)) if m == "mask" else None)
              for m in MECHS for l in LEARNERS]
-    src = {"zh": "Mask PPO = v6.0.5-PPO-hyparam（n_epochs=6）；Lagrangian = v6.0.1-lagrangian（标准 Lagrangian）；其余 = v6.0.0",
-           "en": "Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6); Lagrangian = v6.0.1-lagrangian (standard Lagrangian); others = v6.0.0"}
+    src = {"zh": "Mask PPO = v6.0.5-PPO-hyparam（n_epochs=6）；Lagrangian = v6.0.1-lagrangian（标准 Lagrangian）；Unconstraint seed 1 = v6.0.1-unconstraint；其余 = v6.0.0",
+           "en": "Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6); Lagrangian = v6.0.1-lagrangian (standard Lagrangian); Unconstraint seed 1 = v6.0.1-unconstraint; others = v6.0.0"}
     (OUT / "table_2d.json").write_text(json.dumps(dict(
         generated_at=time.strftime("%Y-%m-%d %H:%M:%S"), script="src/scripts/merge_2d_table.py",
         test_set="data/testset_v6.0.4/{scen}.json", n_test=5000, scenarios=SCENS,
         strategies=[STRAT[m] for m in MECHS], RL_algorithms=[l.upper() for l in LEARNERS], sources=src,
-        batches=[f"{MASK_PPO_SRC}-test-50k", "v6.0.1-lagrangian-test-50k", "v6.0.4-test-50k"], cells=cells), indent=1))
+        batches=[f"{MASK_PPO_SRC}-test-50k", "v6.0.1-lagrangian-test-50k", "v6.0.1-unconstraint-test-50k", "v6.0.4-test-50k"], cells=cells), indent=1))
 
 
 def main():

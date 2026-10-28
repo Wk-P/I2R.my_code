@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-28 23:42:27",
+ "generated_at": "2026-10-29 00:02:42",
  "script": "src/scripts/merge_2d_table.py",
  "test_set": "data/testset_v6.0.4/{scen}.json",
  "n_test": 5000,
@@ -20,12 +20,13 @@
   "DDQN"
  ],
  "sources": {
-  "zh": "Mask PPO = v6.0.5-PPO-hyparam\uff08n_epochs=6\uff09\uff1bLagrangian = v6.0.1-lagrangian\uff08\u6807\u51c6 Lagrangian\uff09\uff1b\u5176\u4f59 = v6.0.0",
-  "en": "Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6); Lagrangian = v6.0.1-lagrangian (standard Lagrangian); others = v6.0.0"
+  "zh": "Mask PPO = v6.0.5-PPO-hyparam\uff08n_epochs=6\uff09\uff1bLagrangian = v6.0.1-lagrangian\uff08\u6807\u51c6 Lagrangian\uff09\uff1bUnconstraint seed 1 = v6.0.1-unconstraint\uff1b\u5176\u4f59 = v6.0.0",
+  "en": "Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6); Lagrangian = v6.0.1-lagrangian (standard Lagrangian); Unconstraint seed 1 = v6.0.1-unconstraint; others = v6.0.0"
  },
  "batches": [
   "v6.0.5-PPO-hyparam-test-50k",
   "v6.0.1-lagrangian-test-50k",
+  "v6.0.1-unconstraint-test-50k",
   "v6.0.4-test-50k"
  ],
  "cells": [
@@ -186,48 +187,51 @@
    "strategy": "unconstraint",
    "RL_algorithm": "PPO",
    "seeds": [
+    1,
     2,
     3
    ],
    "gap": {
-    "lt": 0.07357647115108679,
-    "gt": 0.0465906138393658,
-    "eq": 0.060098764772965996
+    "lt": 0.07272025683241445,
+    "gt": 0.05102693524717546,
+    "eq": 0.059877079382456934
    },
-   "mean": 0.0600886165878062,
-   "viol": 0.007799999999999992,
+   "mean": 0.06120809048734895,
+   "viol": 0.00753333333333333,
    "exit": null
   },
   {
    "strategy": "unconstraint",
    "RL_algorithm": "DQN",
    "seeds": [
+    1,
     2,
     3
    ],
    "gap": {
-    "lt": 0.30917023161183427,
-    "gt": 0.1372416187091381,
-    "eq": 0.2849418291635516
+    "lt": 0.29880132960048916,
+    "gt": 0.15372843564742833,
+    "eq": 0.29670034472342793
    },
-   "mean": 0.24378455982817465,
-   "viol": 0.2812,
+   "mean": 0.24974336999044847,
+   "viol": 0.30444444444444446,
    "exit": null
   },
   {
    "strategy": "unconstraint",
    "RL_algorithm": "DDQN",
    "seeds": [
+    1,
     2,
     3
    ],
    "gap": {
-    "lt": 0.2551852863472873,
-    "gt": 0.2081175032261634,
-    "eq": 0.1735476248281171
+    "lt": 0.2742300078965973,
+    "gt": 0.19077762027704617,
+    "eq": 0.2127419380739959
    },
-   "mean": 0.21228347146718926,
-   "viol": 0.30576666666666663,
+   "mean": 0.22591652208254645,
+   "viol": 0.33886666666666665,
    "exit": null
   }
  ]
