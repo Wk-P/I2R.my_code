@@ -1,6 +1,6 @@
 # v6.0.0-merge 二维汇总：机制 × 算法（三场景平均 gap）
 
-- 生成时间 2026-10-29 00:14:35；脚本 `src/scripts/merge_2d_table.py`；不训练、不重新评估。
+- 生成时间 2026-10-29 16:01:08；脚本 `src/scripts/merge_2d_table.py`；不训练、不重新评估。
 - 测试集：v6.0.4 固定测试集，每场景 5000 个 ILP 最优实例。
 - 来源：Mask PPO = v6.0.5-PPO-hyparam（n_epochs=6，`v6.0.5-PPO-hyparam-test-50k`）；Lagrangian = v6.0.1-lagrangian（标准 Lagrangian，`v6.0.1-lagrangian-test-50k`）；Unconstraint seed 1 = v6.0.1-unconstraint（`v6.0.1-unconstraint-test-50k`）；其余 = v6.0.0（`v6.0.4-test-50k`）。
 - **gap** = 1 − mean(AR) / mean(ILP AR)，AR 只计合法放置；每场景先对种子取均值，每格 = LT、GT、EQ 三个场景 gap 的算术平均；行/列平均为该行/列各格的算术平均。

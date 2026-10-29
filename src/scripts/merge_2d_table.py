@@ -7,7 +7,9 @@ Sources (all on the fixed v6.0.4 test set, 5000 ILP-optimal instances per scenar
   others     -> v6.0.4-test-50k (v6.0.0 models)
 Per scenario the gap is first averaged over seeds; a cell is the plain mean of the three scenario gaps.
 Writes paper_contents/v6.0.0-merge/table_2d.md, table_2d.en.md, table_2d.png (heatmap of section 1),
-table_2d.json (the same numbers for the panel's summary page, /api/v2/summary) and the paper versions:
+table_2d.json (the same numbers for the panel's summary page, /api/v2/summary; also per-scenario AR / ILP AR, the
+mean training reward curve of every cell and, when src/scripts/bench_time_v6.py has run, the ILP-vs-variant timing)
+and the paper versions:
   fig_gap_bars.{pdf,png}   gap, strategy groups x algorithm bars, error bar = std over seeds
   fig_gap_viol.{pdf,png}   gap vs violation rate per strategy x algorithm (lower-left is better)
   table_main.tex           booktabs table: gap mean +- std over seeds (best bold, second underlined), violation rate
@@ -209,17 +211,58 @@ def paper(rows):
     (OUT / "table_main.tex").write_text("\n".join(T))
 
 
+CURVE_BINS = 100
+
+
+def reward_curves(rows):
+    """Training episode reward per cell: each run's training_curve.csv averaged in CURVE_BINS equal step bins over
+    [0, its total steps] (no run is resumed), then averaged over seeds and scenarios. Returns {(mech, learner): [...]},
+    x = bin centres in steps."""
+    import pandas as pd
+    out, steps = {}, set()
+    for m in MECHS:
+        for l in LEARNERS:
+            ys = []
+            for r in rows:
+                if (r["mech"], r["learner"]) != (m, l):
+                    continue
+                d = Path(r["dir"])
+                n = json.loads((d / "run.json").read_text())["steps"]
+                steps.add(n)
+                c = pd.read_csv(d / "training_curve.csv", usecols=["timestep", "episode_reward"])
+                b = (c["timestep"] * CURVE_BINS // n).clip(upper=CURVE_BINS - 1)
+                ys.append(c.groupby(b)["episode_reward"].mean().reindex(range(CURVE_BINS)))
+            out[m, l] = [None if v != v else round(float(v), 5) for v in pd.concat(ys, axis=1).mean(axis=1)]
+    assert len(steps) == 1, steps
+    n = steps.pop()
+    return [round((k + 0.5) * n / CURVE_BINS) for k in range(CURVE_BINS)], out
+
+
+def timing(strat):
+    """time_bench.json of src/scripts/bench_time_v6.py with the variants renamed to strategy|RL_algorithm, or None."""
+    p = OUT / "time_bench.json"
+    if not p.is_file():
+        return None
+    tb = json.loads(p.read_text())
+    tb["rl"] = {f"{strat[k.split('|')[0]]}|{k.split('|')[1].upper()}": v for k, v in tb["rl"].items()}
+    return tb
+
+
 def dump(rows):
     # names as docs/data_spec.md: strategy maskable / repair / lagrangian / unconstraint, RL_algorithm PPO / DQN / DDQN
     STRAT = {"mask": "maskable", "repair": "repair", "lagrange": "lagrangian", "none": "unconstraint"}
     _, gap, viol = stats(rows)
     P = per_seed(rows)
     sel = lambda m, l: [r for r in rows if (r["mech"], r["learner"]) == (m, l)]
+    avg = lambda m, l, s, k: st.mean(r["new"][k] for r in sel(m, l) if r["scen"] == s)
+    cx, cy = reward_curves(rows)
     cells = [dict(strategy=STRAT[m], RL_algorithm=l.upper(), seeds=sorted({r["seed"] for r in sel(m, l)}),
                   gap={s: gap(m, l, s) for s in SCENS}, mean=st.mean(gap(m, l, s) for s in SCENS),
                   viol=max(viol[m, l], 0.0),
                   exit=st.mean(r["new"]["exit"] for r in sel(m, l)) if m == "mask" else None,
-                  gap_std={s: sd(P[m, l]["gap"][s]) for s in SCENS}, mean_std=sd(P[m, l]["mean"]), viol_by_scen=P[m, l]["viol"])
+                  gap_std={s: sd(P[m, l]["gap"][s]) for s in SCENS}, mean_std=sd(P[m, l]["mean"]), viol_by_scen=P[m, l]["viol"],
+                  ar={s: avg(m, l, s, "ar") for s in SCENS}, ilp_ar={s: avg(m, l, s, "ilp") for s in SCENS},
+                  reward_curve=cy[m, l])
              for m in MECHS for l in LEARNERS]
     src = {"zh": "Mask PPO = v6.0.5-PPO-hyparam（n_epochs=6）；Lagrangian = v6.0.1-lagrangian（标准 Lagrangian）；Unconstraint seed 1 = v6.0.1-unconstraint；其余 = v6.0.0",
            "en": "Mask PPO = v6.0.5-PPO-hyparam (n_epochs=6); Lagrangian = v6.0.1-lagrangian (standard Lagrangian); Unconstraint seed 1 = v6.0.1-unconstraint; others = v6.0.0"}
@@ -228,6 +271,7 @@ def dump(rows):
         test_set="data/testset_v6.0.4/{scen}.json", n_test=5000, scenarios=SCENS,
         strategies=[STRAT[m] for m in MECHS], RL_algorithms=[l.upper() for l in LEARNERS], sources=src,
         batches=[f"{MASK_PPO_SRC}-test-50k", "v6.0.1-lagrangian-test-50k", "v6.0.1-unconstraint-test-50k", "v6.0.4-test-50k"], cells=cells,
+        curve_steps=cx, time_bench=timing(STRAT),
         files=["fig_gap_bars.pdf", "fig_gap_bars.png", "fig_gap_viol.pdf", "fig_gap_viol.png", "table_main.tex", "table_2d.png"]), indent=1))
 
 
