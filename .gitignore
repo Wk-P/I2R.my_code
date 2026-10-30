@@ -63,3 +63,6 @@ chat/
 
 # program runing log
 nohup.out
+
+# claude
+.claude/
