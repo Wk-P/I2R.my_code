@@ -29,7 +29,7 @@ Mechanisms:
             dual variable updated by the trainer, fixed within an episode (set_lambda
             takes effect at the next reset, v5.0.3) and visible in the observation as
             lambda / lam_max.
-  repair    an infeasible action is replaced by the best-fit feasible ECU
+  repair    an infeasible action is replaced by the capacity-based best-fit feasible ECU
             (argmax demand / capacity); if none exists the episode ends
             (dead end). Executed placements are therefore always feasible.
   (mask)    since v4.3.1.4 a dead end ends the episode before the next
