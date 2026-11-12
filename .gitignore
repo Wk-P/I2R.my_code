@@ -1,68 +1,50 @@
-__pycache__/**
+# ── Python / environments ─────────────────────────────────
+__pycache__/
 *.pyc
-.vscode/
-.venv/
-*.zip
-run_scripts/run_background.log
-run_scripts/run_background.pid
-.claude/
-.env.email
-
-# Experiment results, images, and intermediate data — not tracked in git
-**/results/
-run_scripts/results_combined/
-figures/
-panel/
-reports/
-*.csv
-*.log
-*.pid
-
-
-archive/
-app/frontend/node_modules/
-app/backend/static/assets/
-app/backend/static/index.html
-# new panel (app/web, built into app/backend/static_v2; served at /)
-app/web/node_modules/
-app/backend/static_v2/
-app/backend/v2/.trace_cache/
-old-conference-data/
-old-research-code/
-logs/
-old-*
-CLAUDE.md
-
-
-
-20260616_231249.md
-
-conference-report/
-
-
-log_sources.json
-monitor_state.json
-
-notion/.venv-gpu/
-notion/
 # editable install metadata (src layout)
 *.egg-info/
-build/
-GPU_FAN*.sh
+.venv/
+.venv-gpu/
 **/.cache/
 
-# deploy: secrets and build-time exports
+# ── Editor / agent / local secrets ───────────────────────
+.vscode/
+.claude/
+CLAUDE.md
+.env.email
 deploy/.env
 deploy/ref-src/
 
-
-*.zip
-
-chat/
-
-
-# program runing log
+# ── Experiment outputs (regenerable, not tracked) ────────
+**/results/
+logs/
+*.csv
+*.log
+*.pid
 nohup.out
 
-# claude
-.claude/
+# ── Local-only material ──────────────────────────────────
+archive/
+chat/
+notion/
+GPU_FAN*.sh
+*.zip
+
+# ── Panel app build artefacts and runtime state ──────────
+app/frontend/node_modules/
+app/web/node_modules/
+app/backend/static/assets/
+app/backend/static/index.html
+app/backend/static_v2/
+app/backend/v2/.trace_cache/
+app/backend/log_sources.json
+app/backend/monitor_state.json
+
+# ── Local-only paper material (literature notes, reading notes, PDFs) ──
+papers/*.pdf
+paper_contents/202611/Paper CN Writting.md
+paper_contents/202611/Background/bib-ref*.md
+paper_contents/202611/Background/LITERATURE_MAP*.md
+paper_contents/202611/Background/related_work_*.md
+paper_contents/202611/Background/paper_summaries*.md
+paper_contents/202611/Background/reading_questions*.md
