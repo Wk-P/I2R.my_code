@@ -6,7 +6,7 @@ This chapter defines the service placement problem studied in this thesis. Secti
 
 We consider an edge computing system consisting of $N$ edge computing units (ECUs) and $M$ services that must be placed on them. Each ECU $n \in \{1, \dots, N\}$ has a resource capacity $c_n$, and each service $m \in \{1, \dots, M\}$ has a resource demand $e_m$. Every service must be deployed on exactly one ECU, and an ECU is considered *active* once at least one service is deployed on it.
 
-Some services must not share an ECU because co-locating them creates a privacy risk. Following \cite{xu2020trust}, these relations are described by $K$ privacy conflict sets $C_1, \dots, C_K \subseteq \{1, \dots, M\}$: any two services belonging to the same conflict set must be placed on different ECUs.
+Some services must not share an ECU because co-locating them creates a privacy risk. \cite{xu2020trust} defines these relations as pairwise conflicts between services. We organize the pairwise conflicts into $K$ privacy conflict sets $C_1, \dots, C_K \subseteq \{1, \dots, M\}$: any two services in the same conflict set conflict with each other and must be placed on different ECUs.
 
 The placement decision is described by two groups of binary variables:
 
@@ -39,7 +39,7 @@ Table 3.1 summarizes the notation.
 | $x_{mn} \in \{0,1\}$ | Service $m$ is deployed on ECU $n$ |
 | $y_n \in \{0,1\}$ | ECU $n$ is active |
 
-The goal is to use the edge resources efficiently. We adopt the *average resource utilization* (AR) of \cite{xu2020trust}, defined as the mean utilization over all active ECUs:
+The goal is to use the edge resources efficiently. We adopt the *average resource utilization* (AR) of \cite{xu2020trust}, defined as the mean utilization over all active ECUs. In \cite{xu2020trust} all ECUs have the same capacity; we generalize to heterogeneous capacities $c_n$:
 
 $$
 \text{AR}(x, y) = \frac{F(x)}{G(y)},\qquad
@@ -106,7 +106,7 @@ As a consequence, no exact algorithm with polynomial or pseudo-polynomial runnin
 
 In edge computing, services that process sensitive data may expose each other's information when they run on the same physical node, for example through shared memory, storage, or side channels. Privacy leakage cannot be compensated by better resource utilization, so it must be treated as a *hard* constraint: a placement that violates it is unacceptable regardless of its AR.
 
-Following \cite{xu2020trust}, the privacy relations are modeled by the conflict sets $C_k$. Constraint (C4),
+\cite{xu2020trust} describes the privacy relations as a set of conflicting service pairs and treats them as a hard constraint. We represent the same pairwise relations with the conflict sets $C_k$, each of which corresponds to a clique of the conflict graph. Constraint (C4),
 
 $$
 \sum_{m \in C_k} x_{mn} \le 1, \qquad \forall k,\ \forall n,
@@ -118,6 +118,12 @@ The privacy conflict constraint makes the problem considerably harder than pure 
 
 <!--
 TODO
-- List the changes this thesis makes to the model of xu2020trust (marked "待列" in the old material 202611/Problem/3.2; not yet listed).
+- List the changes this thesis makes to the model of xu2020trust (facts checked against the original; see notes/reading_questions.en.md [1]):
+  - Objective: [1] has three objectives, max AR, min load-balance variance AL, min energy TE (SPEA2 + TOPSIS); we keep only AR.
+  - AR: same denominator (active ECUs); [1] uses one capacity c, we use heterogeneous c_n.
+  - Constraints: [1] has only the privacy conflict (Eq. 17) and execution time t_m ≤ TO (Eq. 18); capacity and exactly-once are not written explicitly. We state C1–C3 explicitly and drop the time constraint.
+  - Conflicts: [1] uses pairwise conflicting service pairs; we organize them into K conflict sets (cliques).
+  - Solution: [1] computes no optimum; we solve the ILP exactly (Dinkelbach) and approximate it with Safe RL.
+  - Parameters: [1] uses c=7, e_m∈[1,6], M=50–250; none of our parameters come from [1].
 - Optional: Fig. 3.1 (figs/fig_ilp_vs_saferl.pdf / .eps).
 -->
