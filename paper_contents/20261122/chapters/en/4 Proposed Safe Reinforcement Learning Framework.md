@@ -56,7 +56,7 @@ $$
 s_t = \big(\, c,\ e,\ A,\ z_t,\ t \,\big),
 $$
 
-where $c \in \mathbb{R}^N$ is the vector of ECU capacities, $e \in \mathbb{R}^M$ is the vector of service demands in placement order, $A \in \{0,1\}^{M\times M}$ is the conflict graph (Section 3.3), $z_t \in \{0, 1, \dots, N\}^M$ records the ECU of each service (0 for not yet placed), and $t$ is the current step. Under the Lagrangian strategy, the state also includes $\lambda/(1+\lambda)$, so that the policy can observe the current penalty weight (Section 4.3.2). The state therefore contains complete information about the instance and the partial placement. Its dimension is $N + M + M^2 + M + 1$, which is 266, 131, and 136 for the three scenarios of Section 5.1. Feature construction and normalization take place inside the policy network (Section 4.1).
+where $c \in \mathbb{R}^N$ is the vector of ECU capacities, $e \in \mathbb{R}^M$ is the vector of service demands in placement order, $A \in \{0,1\}^{M\times M}$ is the adjacency matrix of the conflict graph $G$ (Section 3.3), $z_t \in \{0, 1, \dots, N\}^M$ records the ECU of each service (0 for not yet placed), and $t$ is the current step. Under the Lagrangian strategy, the state also includes $\lambda/(1+\lambda)$, so that the policy can observe the current penalty weight (Section 4.3.2). The state therefore contains complete information about the instance and the partial placement. Its dimension is $N + M + M^2 + M + 1$, which is 266, 131, and 136 for the three scenarios of Section 5.1. Feature construction and normalization take place inside the policy network (Section 4.1).
 
 ### 4.2.2 Action Space
 

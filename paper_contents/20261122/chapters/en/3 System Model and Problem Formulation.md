@@ -6,7 +6,7 @@ This chapter defines the service placement problem studied in this thesis. Secti
 
 We consider an edge computing system consisting of $N$ edge computing units (ECUs) and $M$ services that must be placed on them. Each ECU $n \in \{1, \dots, N\}$ has a resource capacity $c_n$, and each service $m \in \{1, \dots, M\}$ has a resource demand $e_m$. Every service must be deployed on exactly one ECU, and an ECU is considered *active* once at least one service is deployed on it.
 
-Some services must not share an ECU because co-locating them creates a privacy risk. \cite{xu2020trust} defines these relations as pairwise conflicts between services. We organize the pairwise conflicts into $K$ privacy conflict sets $C_1, \dots, C_K \subseteq \{1, \dots, M\}$: any two services in the same conflict set conflict with each other and must be placed on different ECUs.
+Some services must not share an ECU because co-locating them creates a privacy risk. \cite{xu2020trust} defines these relations as pairwise conflicts between services. We describe them with $K$ privacy conflict sets $C_1, \dots, C_K \subseteq \{1, \dots, M\}$: any two services in the same conflict set conflict with each other and must be placed on different ECUs. A single conflicting pair is a conflict set of size two, so this description includes the pairwise model of \cite{xu2020trust} as a special case.
 
 The placement decision is described by two groups of binary variables:
 
@@ -106,13 +106,13 @@ As a consequence, no exact algorithm with polynomial or pseudo-polynomial runnin
 
 In edge computing, services that process sensitive data may expose each other's information when they run on the same physical node, for example through shared memory, storage, or side channels. Privacy leakage cannot be compensated by better resource utilization, so it must be treated as a *hard* constraint: a placement that violates it is unacceptable regardless of its AR.
 
-\cite{xu2020trust} describes the privacy relations as a set of conflicting service pairs and treats them as a hard constraint. We represent the same pairwise relations with the conflict sets $C_k$, each of which corresponds to a clique of the conflict graph. Constraint (C4),
+\cite{xu2020trust} describes the privacy relations as a set of conflicting service pairs and treats them as a hard constraint. In our model, the pairwise relations are induced by the conflict sets: two services conflict if and only if they share a conflict set, so each conflict set is a clique of the conflict graph defined below. Constraint (C4),
 
 $$
 \sum_{m \in C_k} x_{mn} \le 1, \qquad \forall k,\ \forall n,
 $$
 
-states that at most one service from each conflict set may be deployed on any ECU. Equivalently, two services that belong to a common conflict set must never be co-located. For the sequential decision process in Chapter 4, it is convenient to represent the conflict sets as a symmetric conflict graph $A \in \{0,1\}^{M \times M}$, where $A_{mk} = 1$ if and only if $m \ne k$ and services $m$ and $k$ belong to a common conflict set.
+states that at most one service from each conflict set may be deployed on any ECU. Equivalently, two services that belong to a common conflict set must never be co-located. For the sequential decision process in Chapter 4, it is convenient to represent the conflict sets by the conflict graph $G = (\{1,\dots,M\}, E)$ with symmetric adjacency matrix $A \in \{0,1\}^{M \times M}$, where $A_{mm'} = 1$ if and only if $m \ne m'$ and services $m$ and $m'$ belong to a common conflict set.
 
 The privacy conflict constraint makes the problem considerably harder than pure capacity-constrained packing. Capacity violations depend only on the total demand on an ECU, whereas a conflict excludes an ECU for a service regardless of how much free capacity it has. In our experimental setting ($K = 10$ conflict sets, pairwise conflict probability $p = 0.6$; see Section 5.1), conflicts are dense. A sequence of individually reasonable placements can therefore leave a later service with no ECU that is both large enough and conflict-free. We call such a state a *dead end*. Since all test instances are feasible by construction, a dead end is always caused by earlier placement decisions. How a learning agent avoids, or reacts to, dead ends is the central difference between the constraint-handling strategies compared in this thesis.
 
@@ -122,7 +122,7 @@ TODO
   - Objective: [1] has three objectives, max AR, min load-balance variance AL, min energy TE (SPEA2 + TOPSIS); we keep only AR.
   - AR: same denominator (active ECUs); [1] uses one capacity c, we use heterogeneous c_n.
   - Constraints: [1] has only the privacy conflict (Eq. 17) and execution time t_m ≤ TO (Eq. 18); capacity and exactly-once are not written explicitly. We state C1–C3 explicitly and drop the time constraint.
-  - Conflicts: [1] uses pairwise conflicting service pairs; we organize them into K conflict sets (cliques).
+  - Conflicts: [1] uses pairwise conflicting service pairs; we define K conflict sets C_k as primitives, and the pairwise conflicts (conflict graph G, adjacency matrix A) are induced by them; each C_k is a clique of G.
   - Solution: [1] computes no optimum; we solve the ILP exactly (Dinkelbach) and approximate it with Safe RL.
   - Parameters: [1] uses c=7, e_m∈[1,6], M=50–250; none of our parameters come from [1].
 - Optional: Fig. 3.1 (figs/fig_ilp_vs_saferl.pdf / .eps).

@@ -1,4 +1,4 @@
-"""Slide figures (16:9, sans-serif 15 pt, 300 dpi PNG) -> ../slides_figs/
+"""Slide figures (16:9, sans-serif 19 pt base, labels >= 16 pt, 300 dpi PNG) -> ../slides_figs/5_Experimental_Results/{Gap,Violation,Time}/
 
 Every figure is drawn on ONE scope only: the main line uses the mean of LT / EQ / GT (the paper's headline numbers,
 e.g. PPO-M 4.36%); backup/ holds the identical figure for each scenario (<name>_lt / _eq / _gt), nothing is mixed.
@@ -6,16 +6,13 @@ e.g. PPO-M 4.36%); backup/ holds the identical figure for each scenario (<name>_
   main (three-scenario mean)                 backup (one per scenario)
   1_gap.png               gap, mechanism x learner, error bar = std over seeds        backup/1_gap_{lt,eq,gt}.png
   2a_viol.png             executed violation rate, mechanism x learner                backup/2a_viol_{lt,eq,gt}.png
-  2b_viol_breakdown.png   failures per variant: EXIT / privacy / capacity / both     backup/2b_viol_breakdown_{lt,eq,gt}.png
   2c_gap_vs_viol.png      gap vs violation rate (closes groups 1 and 2)              -- (per scenario: see 1 and 2a)
   3_time.png              online time per instance, ILP + the 12 variants (linear)   backup/3_time_{lt,eq,gt}.png
 
 Sources: gap = table_2d.json (Tables 7, 8); violations = the 108 test runs of src/scripts/merge_2d_table.load()
 (Tables 9-11); time = time_full.json (Table 6). A three-scenario mean is the plain mean of the three scenario values
 (gap: Table 7's per-seed mean over scenarios, then mean over seeds). Violation = 1 - violation-free - EXIT (EXIT is
-not an executed violation). Breakdown is exact: privacy only = viol - cap, capacity only = viol - priv,
-both = cap + priv - viol (per-instance shares). Colours: learner PPO / DQN / DDQN = blue / orange / aqua; ILP and
-EXIT grey.
+not an executed violation). Colours: learner PPO / DQN / DDQN = blue / orange / aqua; ILP grey.
 
     .venv/bin/python paper_contents/20261122/experiments/plot_slides.py
 """
@@ -34,11 +31,15 @@ from matplotlib.patches import Patch
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-OUT = HERE.parent / "slides_figs"
+OUT = HERE.parent / "slides_figs"          # one folder per figure topic; other folders: plot_system_model.py,
+CH = "5_Experimental_Results"               # chapter folder / topic folder
+FOLDER = {"1_gap": f"{CH}/Gap", "2a_viol": f"{CH}/Violation",
+          "2c_gap_vs_viol": f"{CH}/Violation", "3_time": f"{CH}/Time"}
 sys.path.insert(0, str(ROOT / "src" / "scripts"))
 
-MECHS = [("maskable", "mask", "M", "Mask"), ("repair", "repair", "R", "Repair"),
-         ("lagrangian", "lagrange", "L", "Lagrangian"), ("unconstraint", "none", "U", "Unconstraint")]
+MECHS = [("unconstraint", "none", "U", "Unconstrained"), ("lagrangian", "lagrange", "L", "Lagrangian"),
+         ("maskable", "mask", "M", "Action Masking"), ("repair", "repair", "R", "Action Repair")]
+I_MASK = [m[0] for m in MECHS].index("maskable")
 LEARNERS = [("PPO", "ppo", "#2a78d6"), ("DQN", "dqn", "#eb6834"), ("DDQN", "ddqn", "#1baf7a")]
 SCENS = ["lt", "eq", "gt"]
 SCOPE = {"mean": "mean of LT / EQ / GT", "lt": "LT", "eq": "EQ", "gt": "GT"}
@@ -46,13 +47,15 @@ INK, MUTED, GRID, C_ILP = "#0b0b0b", "#52514e", "#e4e3df", "#8a8984"
 SIZE, MS, LW = (12.0, 6.75), 11, 1.6
 
 plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
-                     "font.size": 15, "axes.spines.top": False, "axes.spines.right": False,
-                     "axes.edgecolor": MUTED, "axes.labelcolor": INK, "xtick.color": MUTED, "ytick.color": INK,
-                     "axes.linewidth": 0.8, "savefig.facecolor": "white", "legend.frameon": False})
+                     "font.size": 19, "axes.spines.top": False, "axes.spines.right": False,
+                     "axes.edgecolor": MUTED, "axes.labelcolor": INK, "xtick.color": INK, "ytick.color": INK,
+                     "axes.linewidth": 1.4, "savefig.facecolor": "white", "legend.frameon": False,
+                     "font.weight": "bold", "axes.labelweight": "bold",            # big-screen: bold text
+                     "xtick.major.width": 1.4, "ytick.major.width": 1.4})
 
 
 def fname(base, scope):
-    return base if scope == "mean" else f"backup/{base}_{scope}"
+    return f"{FOLDER[base]}/{base}" if scope == "mean" else f"{FOLDER[base]}/backup/{base}_{scope}"
 
 
 def save(fig, name, tight=True):
@@ -70,7 +73,7 @@ def recessive(ax, axis="y"):
 
 def scope_tag(ax, scope):
     ax.text(1.0, 1.02, SCOPE[scope] if scope == "mean" else f"Scenario: {SCOPE[scope]}", transform=ax.transAxes,
-            ha="right", va="bottom", color=MUTED, fontsize=14, fontweight="normal" if scope == "mean" else "bold")
+            ha="right", va="bottom", color=MUTED, fontsize=17, fontweight="bold")
 
 
 # ── data ────────────────────────────────────────────────────────────────────
@@ -116,34 +119,11 @@ def grouped(ax, vals, errs=None):
         ax.bar(xs, v, w - 0.02, color=col, label=lname, yerr=None if errs is None else e,
                error_kw=dict(ecolor=MUTED, elinewidth=LW * 0.8, capsize=4))
         for xi, vi, ei in zip(xs, v, e):
-            ax.text(xi, vi + ei + hi * 0.012, "0" if vi < 1e-9 else f"{vi:.2f}%", ha="center", va="bottom",
-                    fontsize=12.5)
+            ax.text(xi, vi + ei + hi * 0.012, "0" if vi < 1e-9 else f"{vi:.2f}", ha="center", va="bottom",
+                    fontsize=16)                                       # axis label carries the unit (%)
     ax.set_xticks(x, [m[3] for m in MECHS])
-    ax.tick_params(axis="x", length=0, labelsize=16)
+    ax.tick_params(axis="x", length=0, labelsize=19)
     recessive(ax)
-
-
-def variant_rows():
-    rows = []
-    for i, (m, mk, tag, _) in enumerate(MECHS):
-        rows += ([None] if i else []) + [(f"{l}-{tag}", mk, lk) for l, lk, _ in LEARNERS]
-    return rows
-
-
-def row_axis(ax, rows):
-    top, ticks = len(rows) - 1, {}
-    for k, r in enumerate(rows):
-        if r is None:
-            ax.axhline(top - k, color=GRID, lw=LW * 0.8)
-        else:
-            ticks[r[0]] = top - k
-    ax.set_yticks(list(ticks.values()), list(ticks.keys()))
-    for t in ax.get_yticklabels():
-        t.set_fontweight("bold" if t.get_text() == "PPO-M" else "normal")
-    ax.tick_params(axis="y", length=0)
-    ax.spines["left"].set_visible(False)
-    ax.set_ylim(-0.7, top + 0.7)
-    return ticks
 
 
 # ── 1. GAP ──────────────────────────────────────────────────────────────────
@@ -155,7 +135,7 @@ def fig_gap(scope):
     fig, ax = plt.subplots(figsize=SIZE)
     grouped(ax, vals, errs)
     ax.set_ylabel("Relative gap (%)")
-    ax.legend(loc="upper left", ncol=3)
+    ax.legend(loc="upper right", ncol=3)
     scope_tag(ax, scope)
     save(fig, fname("1_gap", scope))
 
@@ -167,48 +147,11 @@ def fig_viol(R, scope):
     grouped(ax, vals)
     hi = ax.get_ylim()[1]
     ax.set_ylabel("Executed constraint violations (%)")
-    ax.legend(loc="upper left", ncol=3)
-    ax.annotate("0 by construction:\ninfeasible ECUs are masked", xy=(0, hi * 0.07), xytext=(0, hi * 0.32),
-                ha="center", fontsize=14, arrowprops=dict(arrowstyle="-", color=MUTED, lw=1))
+    ax.legend(loc="upper right", ncol=3)
+    ax.annotate("0 by construction:\ninfeasible ECUs are masked", xy=(I_MASK, hi * 0.07), xytext=(I_MASK, hi * 0.32),
+                ha="center", fontsize=17, arrowprops=dict(arrowstyle="-", color=MUTED, lw=1))
     scope_tag(ax, scope)
     save(fig, fname("2a_viol", scope))
-
-
-SEGS = [("EXIT (stop, not executed)", C_ILP, lambda d: d["exit"]),
-        ("Privacy only", "#e34948", lambda d: d["viol"] - d["cap"]),
-        ("Capacity only", "#eda100", lambda d: d["viol"] - d["priv"]),
-        ("Both", "#6250d6", lambda d: d["cap"] + d["priv"] - d["viol"])]
-
-
-def fig_breakdown(R, scope):
-    rows = variant_rows()
-    totals = {r[0]: R[r[1], r[2], scope]["exit"] + R[r[1], r[2], scope]["viol"] for r in filter(None, rows)}
-    small = [t for t in totals.values() if t < 20]
-    xmax = max(1.0, float(np.ceil(max(small) * 1.18)))     # bars above 20% are cut at xmax, value written
-    fig, ax = plt.subplots(figsize=SIZE)
-    ticks = row_axis(ax, rows)
-    for name, mk, lk in filter(None, rows):
-        d, yy, left = R[mk, lk, scope], ticks[name], 0.0
-        for _, col, f in SEGS:
-            v = max(0.0, f(d))
-            vis = max(0.0, min(v, xmax - left))
-            if vis > 0:
-                ax.barh(yy, vis, 0.62, left=left, color=col, edgecolor="white", linewidth=1.5)
-            left += v
-        t = totals[name]
-        if t > xmax:
-            ax.text(xmax * 0.99, yy, f"{t:.1f}%  →", ha="right", va="center", color="white", fontweight="bold")
-        else:
-            ax.text(t + xmax * 0.012, yy, "0" if t < 1e-9 else f"{t:.2f}%", ha="left", va="center",
-                    fontweight="bold" if name == "PPO-M" else "normal")
-    ax.set_xlim(0, xmax)
-    cut = any(t > xmax for t in totals.values())
-    ax.set_xlabel("Share of test instances (%)" + (f"   —   bars beyond {xmax:g}% are cut, value shown" if cut else ""))
-    recessive(ax, "x")
-    ax.legend(handles=[Patch(color=c, label=n) for n, c, _ in SEGS], loc="lower left", bbox_to_anchor=(0, 1.0),
-              ncol=4, borderaxespad=0.2, handlelength=1.2, columnspacing=1.2)
-    scope_tag(ax, scope)
-    save(fig, fname("2b_viol_breakdown", scope))
 
 
 def fig_gap_vs_viol(R):
@@ -224,8 +167,8 @@ def fig_gap_vs_viol(R):
             ax.plot(x, y, mk, color=col, ms=MS * 1.15, mec="white", mew=1.2, zorder=3)
             dx, dy = off[n]
             ax.annotate(n, (x, y), xytext=(dx, dy), textcoords="offset points", va="center",
-                        ha="left" if dx > 0 else "right", fontsize=13,
-                        fontweight="bold" if n == "PPO-M" else "normal", annotation_clip=True)
+                        ha="left" if dx > 0 else "right", fontsize=17,
+                        fontweight="bold", annotation_clip=True)
         recessive(ax, "both")
     a.set_xlim(-0.15, 2.45); b.set_xlim(29.5, 35)
     a.set_xticks([0, 0.5, 1.0, 1.5, 2.0])
@@ -235,14 +178,16 @@ def fig_gap_vs_viol(R):
         ax.plot([xs - 0.012 * (1 if xs else 4), xs + 0.012 * (1 if xs else 4)], [-0.02, 0.02],
                 transform=ax.transAxes, color=INK, lw=1, clip_on=False)
     a.set_ylabel("Relative gap (%)")
-    fig.supxlabel("Executed constraint violations (%)", fontsize=15)
+    fig.supxlabel("Executed constraint violations (%)", fontsize=19, fontweight="bold")
     a.text(0.02, 0.97, "lower-left = better", transform=a.transAxes, color=MUTED, va="top")
-    b.text(1.0, 1.01, SCOPE["mean"], transform=b.transAxes, ha="right", va="bottom", color=MUTED, fontsize=14)
-    hs = [Line2D([], [], ls="", marker="o", color=col, ms=MS, label=l) for l, _, col in LEARNERS]
-    hs += [Line2D([], [], ls="", marker=mshape[t], color=MUTED, ms=MS, label=name) for _, _, t, name in MECHS]
-    fig.legend(handles=hs, loc="upper left", ncol=7, borderaxespad=0.3, handletextpad=0.2, columnspacing=1.0)
-    fig.subplots_adjust(left=0.07, right=0.985, top=0.88, bottom=0.12)
-    save(fig, "2c_gap_vs_viol", tight=False)
+    b.text(1.0, 1.01, SCOPE["mean"], transform=b.transAxes, ha="right", va="bottom", color=MUTED, fontsize=17)
+    h1 = [Line2D([], [], ls="", marker="o", color=col, ms=MS, label=l) for l, _, col in LEARNERS]
+    h2 = [Line2D([], [], ls="", marker=mshape[t], color=MUTED, ms=MS, label=name) for _, _, t, name in MECHS]
+    kw = dict(loc="upper left", borderaxespad=0.3, handletextpad=0.2, columnspacing=1.2)
+    fig.legend(handles=h1, ncol=3, bbox_to_anchor=(0.0, 1.0), **kw)      # row 1: learner (colour)
+    fig.legend(handles=h2, ncol=4, bbox_to_anchor=(0.0, 0.935), **kw)    # row 2: mechanism (marker)
+    fig.subplots_adjust(left=0.07, right=0.985, top=0.83, bottom=0.12)
+    save(fig, fname("2c_gap_vs_viol", "mean"), tight=False)
 
 
 # ── 3. Executed time ────────────────────────────────────────────────────────
@@ -257,14 +202,11 @@ def fig_time(scope):
     for _, mk, tag, _ in MECHS:
         for l, lk, col in LEARNERS:
             names.append(f"{l}-{tag}"); vals.append(mean(d["rl"][f"{mk}|{lk}"])); cols.append(col)
-    rl = vals[1:]
     x = np.arange(len(names)) + np.array([0] + [0.6 + (i // 3) * 0.35 for i in range(12)])   # gap after ILP, mechs
     fig, ax = plt.subplots(figsize=SIZE)
     ax.bar(x, vals, 0.8, color=cols)
     for xi, v in zip(x, vals):
-        ax.text(xi, v + ilp * 0.012, f"{v:,.0f}", ha="center", va="bottom", fontsize=12.5)
-    ax.text(x[1:].mean(), ilp * 0.55, f"RL: {ilp / max(rl):.1f}–{ilp / min(rl):.1f}× faster than ILP",
-            ha="center", va="center", fontsize=20, fontweight="bold")
+        ax.text(xi, v + ilp * 0.012, f"{v:,.0f}", ha="center", va="bottom", fontsize=16)
     ax.set_xticks(x, names, rotation=45, ha="right", rotation_mode="anchor")
     ax.tick_params(axis="x", length=0)
     ax.set_ylim(0, ilp * 1.12)
@@ -278,13 +220,13 @@ def fig_time(scope):
 
 
 if __name__ == "__main__":
-    if OUT.exists():                                    # everything in slides_figs/ is generated here
-        shutil.rmtree(OUT)
+    for d in set(FOLDER.values()):                      # only the folders owned by this script are regenerated
+        if (OUT / d).exists():
+            shutil.rmtree(OUT / d)
     R = runs()
     for scope in ["mean"] + SCENS:
         fig_gap(scope)
         fig_viol(R, scope)
-        fig_breakdown(R, scope)
         fig_time(scope)
     fig_gap_vs_viol(R)
-    print("\n".join(sorted(str(p.relative_to(OUT)) for p in OUT.rglob("*.png"))))
+    print("\n".join(sorted(str(p.relative_to(OUT)) for d in set(FOLDER.values()) for p in (OUT / d).rglob("*.png"))))

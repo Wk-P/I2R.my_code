@@ -1,5 +1,5 @@
 """Per-scenario figures for the paper -> figs/<name>.{pdf,eps,png} (Times, 8 pt, 7 in wide, double column).
-The slide versions (and the rest of the slide set) come from plot_slides.py -> ../slides_figs/.
+The slide versions (and the rest of the slide set) come from plot_slides.py -> ../slides_figs/5_Experimental_Results/.
 
   fig_gap_scenarios   dot plot: one row per variant (12), the relative AR gap on LT / EQ / GT as three markers joined
                       by a grey range line, the three-scenario mean as a black tick with its value on the right.
@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 FIGS = HERE.parent / "figs"
 SCENS = [("lt", "LT"), ("eq", "EQ"), ("gt", "GT")]
 SCEN_STYLE = {"lt": ("#6250d6", "o"), "eq": ("#eda100", "^"), "gt": ("#008300", "s")}   # same as plot_slides.py
-MECHS = [("maskable", "M"), ("repair", "R"), ("lagrangian", "L"), ("unconstraint", "U")]
+MECHS = [("unconstraint", "U"), ("lagrangian", "L"), ("maskable", "M"), ("repair", "R")]
 LEARNERS = ["PPO", "DQN", "DDQN"]
 INK, MUTED, GRID, RANGE, C_ILP, C_RL = "#0b0b0b", "#52514e", "#e4e3df", "#c9c8c3", "#8a8984", "#2a78d6"
 

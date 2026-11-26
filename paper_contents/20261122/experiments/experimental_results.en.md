@@ -10,7 +10,7 @@
 |---|---|
 | Scenarios (N ECUs, M services) | LT (10, 15); EQ (10, 10); GT (15, 10) |
 | Capacity c_n / demand e_m | {50, 55, …, 195} / {10, 15, …, 95}, uniform |
-| Privacy conflicts | K = 10 conflict sets, pairwise conflict probability p = 0.6 |
+| Privacy conflicts | K = 10 conflict sets; each service joins each set independently with probability q, two services share at least one set with probability p = 0.6 |
 | Feasibility | every instance is solved to optimality by the ILP (Optimal) |
 | Train / test | 50,000 / 5,000 instances per scenario, disjoint; the test set is fixed and shared by all methods |
 | Baseline | ILP: Dinkelbach iteration (tolerance 1e-6, 3.06 iterations on average), PuLP + CBC, single thread |
