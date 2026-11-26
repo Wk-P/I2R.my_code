@@ -50,3 +50,7 @@ paper_contents/202611/Background/paper_summaries*.md
 paper_contents/202611/Background/reading_questions*.md
 paper_contents/20261122/notes/
 paper_contents/*/bib_pdf/
+paper_contents/20261126/related_work/
+
+# -- Delete remote "paper_contents" ------------------
+paper_contents/
